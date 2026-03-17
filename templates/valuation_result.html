@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+
+{% block title %}Valuation Result — {{ ticker }}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1>DCF Valuation: {{ ticker }}{% if company_name %} — {{ company_name }}{% endif %}</h1>
+
+    {% if error %}
+    <div class="alert alert-error">
+        <strong>Error:</strong> {{ error }}
+    </div>
+    <a href="/" class="btn">Start Over</a>
+    {% elif dcf %}
+
+    <!-- Valuation Summary -->
+    <div class="summary-grid">
+        <div class="summary-card {% if dcf.upside_downside > 0 %}positive{% else %}negative{% endif %}">
+            <h3>Implied Share Price</h3>
+            <div class="big-number">${{ "%.2f"|format(dcf.implied_share_price) }}</div>
+        </div>
+        <div class="summary-card">
+            <h3>Current Price</h3>
+            <div class="big-number">${{ "%.2f"|format(current_price) }}</div>
+        </div>
+        <div class="summary-card {% if dcf.upside_downside > 0 %}positive{% else %}negative{% endif %}">
+            <h3>Upside / Downside</h3>
+            <div class="big-number">{{ "%.1f"|format(dcf.upside_downside) }}%</div>
+        </div>
+    </div>
+
+    <!-- CAPM & WACC -->
+    <div class="section">
+        <h2>CAPM & WACC</h2>
+        <table class="data-table">
+            <tr><td>Beta</td><td>{{ "%.3f"|format(capm.beta) }}</td></tr>
+            <tr><td>R-squared</td><td>{{ "%.3f"|format(capm.r_squared) }}</td></tr>
+            <tr><td>Risk-Free Rate</td><td>{{ "%.2f"|format(capm.risk_free_rate * 100) }}%</td></tr>
+            <tr><td>Equity Risk Premium</td><td>{{ "%.2f"|format(capm.equity_risk_premium * 100) }}%</td></tr>
+            <tr><td>Cost of Equity</td><td>{{ "%.2f"|format(capm.cost_of_equity * 100) }}%</td></tr>
+            <tr><td>Cost of Debt (pre-tax)</td><td>{{ "%.2f"|format(wacc.cost_of_debt * 100) }}%</td></tr>
+            <tr><td>Tax Rate</td><td>{{ "%.2f"|format(wacc.tax_rate * 100) }}%</td></tr>
+            <tr><td>Equity Weight (E/V)</td><td>{{ "%.1f"|format(wacc.equity_weight * 100) }}%</td></tr>
+            <tr><td>Debt Weight (D/V)</td><td>{{ "%.1f"|format(wacc.debt_weight * 100) }}%</td></tr>
+            <tr class="highlight"><td><strong>WACC</strong></td><td><strong>{{ "%.2f"|format(wacc.wacc * 100) }}%</strong></td></tr>
+        </table>
+    </div>
+
+    <!-- Projected FCFFs -->
+    <div class="section">
+        <h2>Projected Free Cash Flow to Firm</h2>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Year</th>
+                    <th>Revenue</th>
+                    <th>EBIT</th>
+                    <th>NOPAT</th>
+                    <th>D&A</th>
+                    <th>CapEx</th>
+                    <th>ΔWC</th>
+                    <th>FCFF</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for f in dcf.projected_fcffs %}
+                <tr>
+                    <td>{{ f.year }}</td>
+                    <td>{{ "{:,.0f}"|format(f.revenue) }}</td>
+                    <td>{{ "{:,.0f}"|format(f.ebit) }}</td>
+                    <td>{{ "{:,.0f}"|format(f.nopat) }}</td>
+                    <td>{{ "{:,.0f}"|format(f.depreciation_amortization) }}</td>
+                    <td>{{ "{:,.0f}"|format(f.capital_expenditures) }}</td>
+                    <td>{{ "{:,.0f}"|format(f.change_in_working_capital) }}</td>
+                    <td><strong>{{ "{:,.0f}"|format(f.fcff) }}</strong></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- DCF Bridge -->
+    <div class="section">
+        <h2>DCF Valuation Bridge</h2>
+        <table class="data-table">
+            <tr><td>PV of Projected FCFFs</td><td>{{ "{:,.0f}"|format(dcf.pv_fcffs) }}</td></tr>
+            <tr><td>Terminal Value (undiscounted)</td><td>{{ "{:,.0f}"|format(dcf.terminal_value) }}</td></tr>
+            <tr><td>PV of Terminal Value</td><td>{{ "{:,.0f}"|format(dcf.pv_terminal_value) }}</td></tr>
+            <tr class="highlight"><td><strong>Enterprise Value</strong></td><td><strong>{{ "{:,.0f}"|format(dcf.enterprise_value) }}</strong></td></tr>
+            <tr><td>Less: Net Debt</td><td>({{ "{:,.0f}"|format(dcf.net_debt) }})</td></tr>
+            <tr class="highlight"><td><strong>Equity Value</strong></td><td><strong>{{ "{:,.0f}"|format(dcf.equity_value) }}</strong></td></tr>
+            <tr><td>Diluted Shares Outstanding</td><td>{{ "{:,.0f}"|format(dcf.diluted_shares) }}</td></tr>
+            <tr class="highlight"><td><strong>Implied Share Price</strong></td><td><strong>${{ "%.2f"|format(dcf.implied_share_price) }}</strong></td></tr>
+        </table>
+    </div>
+
+    <!-- Assumptions Used -->
+    <div class="section">
+        <h2>Assumptions Used</h2>
+        <table class="data-table">
+            <tr><td>Projection Years</td><td>{{ assumptions.projection_years }}</td></tr>
+            <tr><td>Terminal Growth Rate</td><td>{{ "%.2f"|format(assumptions.terminal_growth_rate * 100) }}%</td></tr>
+            <tr><td>Revenue Growth Rates</td><td>{% for g in assumptions.revenue_growth_rates %}{{ "%.1f"|format(g * 100) }}%{% if not loop.last %}, {% endif %}{% endfor %}</td></tr>
+            <tr><td>Operating Margin</td><td>{{ "%.1f"|format(assumptions.operating_margin * 100) }}%</td></tr>
+            <tr><td>Tax Rate</td><td>{{ "%.1f"|format(assumptions.tax_rate * 100) }}%</td></tr>
+            <tr><td>D&A (% of Revenue)</td><td>{{ "%.1f"|format(assumptions.da_pct_revenue * 100) }}%</td></tr>
+            <tr><td>CapEx (% of Revenue)</td><td>{{ "%.1f"|format(assumptions.capex_pct_revenue * 100) }}%</td></tr>
+            <tr><td>NWC (% of Revenue)</td><td>{{ "%.1f"|format(assumptions.nwc_pct_revenue * 100) }}%</td></tr>
+        </table>
+    </div>
+
+    <div class="actions">
+        <a href="/" class="btn">New Valuation</a>
+        <a href="/assumptions?ticker={{ ticker }}&company_name={{ company_name }}&is_path={{ dcf.projected_fcffs[0].year - assumptions.projection_years }}&bs_path=&cf_path="
+           class="btn btn-secondary">Adjust Assumptions</a>
+    </div>
+
+    {% endif %}
+</div>
+{% endblock %}

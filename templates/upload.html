@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Financial Statements{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1>Upload Financial Statements</h1>
+    <p>Upload S&P Capital IQ Pro Excel exports for the three financial statements.</p>
+
+    <form action="/upload" method="post" enctype="multipart/form-data">
+        <div class="form-group">
+            <label for="ticker">Ticker Symbol</label>
+            <input type="text" id="ticker" name="ticker" placeholder="e.g., AAPL" required>
+        </div>
+
+        <div class="form-group">
+            <label for="company_name">Company Name (optional)</label>
+            <input type="text" id="company_name" name="company_name" placeholder="e.g., Apple Inc.">
+        </div>
+
+        <div class="form-group">
+            <label for="excel_file">Capital IQ Export (single .xlsx with B/S, I/S, C/F sheets)</label>
+            <input type="file" id="excel_file" name="excel_file" accept=".xlsx,.xls" required>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Upload & Continue</button>
+    </form>
+</div>
+{% endblock %}
