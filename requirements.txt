@@ -7,3 +7,5 @@ openpyxl
 numpy
 scipy
 yfinance
+python-dotenv
+pdfplumber

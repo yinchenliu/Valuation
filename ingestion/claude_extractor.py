@@ -32,7 +32,6 @@ ENVIRONMENT VARIABLES
 from __future__ import annotations
 
 import json
-import os
 import re
 import textwrap
 from pathlib import Path
@@ -53,7 +52,7 @@ Provider = Literal["claude", "gemini"]
 # Default model IDs per provider
 _DEFAULT_MODELS: dict[str, str] = {
     "claude": "claude-sonnet-4-6",
-    "gemini": "gemini-2.5-flash",
+    "gemini": "gemini-3-flash-preview",
 }
 
 
@@ -77,33 +76,37 @@ _SCHEMA = {
             "depreciation_amortization": "float — depreciation and amortization can be found in the cash flow statement",
             "other_operating_expense": "float — all other operating cost lines not listed above",
             "operating_income": "float — EBIT / operating income / operating profit",
-            "interest_expense": "float — interest expense on debt. POSITIVE. .",
+            "interest_expense": "float — interest expense on debt. POSITIVE.",
             "interest_income": "float — interest / investment income. POSITIVE.",
             "other_non_operating": "float — net other income/expense below op line (signed)",
             "tax_expense": "float — income tax provision. POSITIVE.",
             "net_income": "float — net income attributable to common shareholders",
             "diluted_shares": "float — diluted weighted-avg shares (same units as F/S, typically millions)",
             "cfo": "float — net cash from operating activities",
-            "capex": "float — capital expenditures / purchases of PP&E/ purchases of intangible assets/ acquisition. this can be found in the investing activities in the cash flow statement, do not include any securities purchases. POSITIVE.",
+            "capex": "float — SUM of ALL non-securities investing outflows from the cash flow statement investing section: 'Purchases of property and equipment' PLUS 'Acquisitions, net of cash acquired, and purchases of intangible assets'. Add both lines together. Do NOT include purchases/sales of marketable or non-marketable securities. POSITIVE.",
             "sbc": "float — stock-based compensation (add-back in operating section)",
-            "cash": "float — cash and cash equivalents (balance sheet, period-end)",
-            "short_term_investments": "float — marketable securities / short-term investments",
-            "accounts_receivable": "float",
-            "inventory": "float — 0 if not applicable",
-            "other_current_assets": "float",
-            "ppe_net": "float — PP&E net of accumulated depreciation",
-            "goodwill": "float",
-            "intangible_assets": "float — intangibles other than goodwill",
-            "other_non_current_assets": "float",
-            "accounts_payable": "float",
-            "accrued_liabilities": "float — accrued expenses / compensation",
-            "other_current_liabilities": "float",
-            "short_term_debt": "float — current portion of LT debt + notes payable",
-            "long_term_debt": "float — long-term debt / notes due beyond 1 year",
-            "other_non_current_liabilities": "float",
-            "total_equity": "float — total stockholders / shareholders equity"
+            "change_in_working_capital": "float — total 'Changes in assets and liabilities, net of acquisitions' from operating activities in the cash flow statement. SIGNED: negative when net working capital increases (cash outflow), positive when it decreases (cash inflow). This is the SUM of all individual asset/liability change lines (e.g. change in accounts receivable, change in accounts payable, etc.).",
         }
     ],
+    "latest_balance_sheet": {
+        "year": "int — the most recent fiscal year in the filing",
+        "cash": "float — cash and cash equivalents (period-end)",
+        "short_term_investments": "float — marketable securities / short-term investments",
+        "accounts_receivable": "float",
+        "inventory": "float — 0 if not applicable",
+        "other_current_assets": "float — ALL other current assets not listed above (prepaid, deferred, etc.)",
+        "ppe_net": "float — PP&E net of accumulated depreciation",
+        "goodwill": "float",
+        "intangible_assets": "float — intangibles other than goodwill",
+        "other_non_current_assets": "float — CATCH-ALL: SUM of every non-current asset NOT already listed above. Includes non-marketable securities, deferred income taxes (asset), operating lease right-of-use assets, equity method investments, and any other line items. This field must make total_non_current_assets balance.",
+        "accounts_payable": "float",
+        "accrued_liabilities": "float — accrued expenses / accrued compensation and benefits",
+        "other_current_liabilities": "float — CATCH-ALL: SUM of every current liability NOT already listed above. Includes accrued revenue share, deferred revenue, accrued expenses and other current liabilities, and any other line items.",
+        "short_term_debt": "float — current portion of LT debt + notes payable + commercial paper",
+        "long_term_debt": "float — long-term debt / notes due beyond 1 year",
+        "other_non_current_liabilities": "float — CATCH-ALL: SUM of every non-current liability NOT already listed above. Includes non-current income taxes payable, operating lease liabilities, pension obligations, deferred tax liabilities, and any other line items.",
+        "total_equity": "float — total stockholders / shareholders equity",
+    },
     "non_recurring_items": [
         {
             "year": "int",
@@ -128,9 +131,8 @@ SYSTEM_PROMPT = textwrap.dedent(f"""
     You are a senior financial analyst extracting structured data from SEC filings.
 
     You will receive the full text of a 10-K or 10-Q filing. Locate the Income
-    Statement, Balance Sheet, and Cash Flow Statement, then extract the data for
-    ALL fiscal years present and return a single valid JSON object matching the
-    schema below.
+    Statement, Balance Sheet, and Cash Flow Statement, then extract the data and
+    return a single valid JSON object matching the schema below.
 
     OUTPUT: Return ONLY the JSON object. No markdown fences, no explanation,
     no text before or after. The first character of your response must be {{.
@@ -139,19 +141,31 @@ SYSTEM_PROMPT = textwrap.dedent(f"""
     {_SCHEMA_STR}
 
     EXTRACTION RULES:
-    - Extract ALL fiscal years present in the filing (typically 3-5 years).
+    - "historical_years": extract Income Statement and Cash Flow data for ALL
+      fiscal years present in the filing (typically 2-3 years).
+    - "latest_balance_sheet": extract Balance Sheet data for ONLY the most
+      recent fiscal year end in the filing.
     - All monetary values: use the same currency and units as the source (usually USD Millions).
     - All values must be POSITIVE numbers (expenses, costs, taxes, capex).
       Signs are implied by the field name, not the value.
     - If a line item is not reported or not applicable, use 0.
     - Do NOT invent or estimate numbers. Only use what is explicitly stated.
-    - Balance sheet values are period-END (not averages).
     - For "sga": combine Sales & Marketing + General & Administrative if reported separately.
       line on the income statement. Do NOT pull this from the cash flow statement.
     - For "interest_expense": gross interest on debt (positive). don't put the net interest expense here, go to the footnote and find the berakout of the gross interest expense.
     - For "cfo": use the total "Net cash provided by operating activities" line.
-    - For "capex": acquisition or purchases of PP&E/ purchases of intangible assets.(absolute value).
-      Do not include securities purchases.
+    - For "capex": SUM of 'Purchases of property and equipment' PLUS 'Acquisitions, net of
+      cash acquired, and purchases of intangible assets' from the investing section of the
+      cash flow statement. You MUST add BOTH lines together. Do NOT include purchases/sales
+      of marketable or non-marketable securities. Return the absolute value (positive).
+
+    BALANCE SHEET RULES (latest_balance_sheet only):
+    - CRITICAL: The balance sheet MUST balance: Total Assets = Total Liabilities + Total Equity.
+    - The "other_" catch-all fields (other_current_assets, other_non_current_assets,
+      other_current_liabilities, other_non_current_liabilities) must capture ALL line items
+      not mapped to a named field. Sum every remaining line into the appropriate catch-all.
+    - After filling all fields, verify: sum of asset fields = total_equity + sum of liability fields.
+      If they don't balance, adjust the catch-all fields to close the gap.
 
     NON-RECURRING ITEM RULES:
     - Read MD&A and Notes to Financial Statements for one-time, non-recurring,
@@ -176,14 +190,14 @@ SYSTEM_PROMPT = textwrap.dedent(f"""
 
 def _validate_extracted_data(
     llm_years: list[dict],
-    warn_pct: float = 0.5,
-    fail_pct: float = 2.0,
-) -> None:
-    """Arithmetic reconciliation of LLM-extracted P&L data.
+    fail_pct: float = 1.0,
+) -> list[str]:
+    """Arithmetic reconciliation of LLM-extracted I/S data.
 
     Verifies that the LLM's stated subtotals (gross_profit, operating_income,
     net_income) can be re-derived from the component line items it returned.
-    Raises ValueError if any mismatch exceeds fail_pct.
+
+    Returns a list of error descriptions (empty = all passed).
     """
     print(f"\n{'='*65}")
     print("EXTRACTED DATA VALIDATION — ARITHMETIC CHECK")
@@ -191,7 +205,7 @@ def _validate_extracted_data(
     print(f"  {'Year':<6}  {'Field':<18}  {'Stated':>10}  {'Derived':>10}  {'Diff':>9}  Status")
     print(f"  {'-'*64}")
 
-    failures: list[str] = []
+    errors: list[str] = []
 
     for yr in sorted(llm_years, key=lambda x: x["year"]):
         year       = int(yr["year"])
@@ -214,10 +228,13 @@ def _validate_extracted_data(
         ebit_derived = gp_derived - sga - rd - other_opex
         ni_derived   = ebit_derived + int_inc - int_exp + other_nop - tax
 
-        for label, stated, derived in [
-            ("Gross Profit", gp_stated,   gp_derived),
-            ("Oper. Income", ebit_stated, ebit_derived),
-            ("Net Income",   ni_stated,   ni_derived),
+        for label, stated, derived, formula in [
+            ("Gross Profit", gp_stated, gp_derived,
+             f"revenue({rev:,.0f}) - cost_of_revenue({cogs:,.0f})"),
+            ("Oper. Income", ebit_stated, ebit_derived,
+             f"gross_profit({gp_derived:,.0f}) - sga({sga:,.0f}) - rd_expense({rd:,.0f}) - other_operating_expense({other_opex:,.0f})"),
+            ("Net Income", ni_stated, ni_derived,
+             f"operating_income({ebit_derived:,.0f}) + interest_income({int_inc:,.0f}) - interest_expense({int_exp:,.0f}) + other_non_operating({other_nop:,.0f}) - tax_expense({tax:,.0f})"),
         ]:
             if stated == 0 and derived == 0:
                 continue
@@ -226,11 +243,12 @@ def _validate_extracted_data(
             diff_pct = abs(diff) / base * 100 if base else 0.0
             if diff_pct > fail_pct:
                 status = "FAIL"
-                failures.append(
-                    f"  [{year}] {label}: stated={stated:,.0f}  "
-                    f"derived={derived:,.0f}  diff={diff:+,.0f}"
+                errors.append(
+                    f"[{year}] {label}: stated={stated:,.0f} but derived={derived:,.0f} "
+                    f"(diff={diff:+,.0f}). Derivation: {formula} = {derived:,.0f}. "
+                    f"Fix the component fields so they reconcile to your stated {label}."
                 )
-            elif diff_pct > warn_pct:
+            elif diff_pct > 0.5:
                 status = "WARN"
             else:
                 status = "OK"
@@ -238,8 +256,7 @@ def _validate_extracted_data(
 
     print(f"\n{'='*65}")
 
-    if failures:
-        raise ValueError("LLM extraction validation FAILED:\n" + "\n".join(failures))
+    return errors
 
 
 # ---------------------------------------------------------------------------
@@ -327,7 +344,7 @@ def _call_gemini(
         contents=user_prompt,
         config=types.GenerateContentConfig(
             system_instruction=system_prompt,
-            max_output_tokens=32768,
+            max_output_tokens=65536,            # enough for thinking + JSON response
             temperature=0.0,                    # deterministic extraction
             response_mime_type="application/json",  # force valid JSON output
         ),
@@ -353,10 +370,13 @@ def _parse_llm_response(
     json_str: str,
     ticker: str,
     company_name: str,
-) -> tuple[FinancialStatements, list[NonRecurringItem]]:
-    """Convert LLM JSON output into Phase 1 domain objects."""
+) -> tuple[FinancialStatements, list[NonRecurringItem], list[str]]:
+    """Convert LLM JSON output into Phase 1 domain objects.
+
+    Returns (FinancialStatements, NonRecurringItems, validation_errors).
+    """
     data = json.loads(json_str)
-    _validate_extracted_data(data.get("historical_years", []))
+    validation_errors = _validate_extracted_data(data.get("historical_years", []))
 
     income_statements: list[IncomeStatement] = []
     balance_sheets: list[BalanceSheet] = []
@@ -380,41 +400,21 @@ def _parse_llm_response(
             diluted_shares_outstanding=float(yr.get("diluted_shares", 0)),
         ))
 
-        balance_sheets.append(BalanceSheet(
-            year=year,
-            cash_and_equivalents=float(yr.get("cash", 0)),
-            short_term_investments=float(yr.get("short_term_investments", 0)),
-            accounts_receivable=float(yr.get("accounts_receivable", 0)),
-            inventory=float(yr.get("inventory", 0)),
-            other_current_assets=float(yr.get("other_current_assets", 0)),
-            ppe_net=float(yr.get("ppe_net", 0)),
-            goodwill=float(yr.get("goodwill", 0)),
-            intangible_assets=float(yr.get("intangible_assets", 0)),
-            other_non_current_assets=float(yr.get("other_non_current_assets", 0)),
-            accounts_payable=float(yr.get("accounts_payable", 0)),
-            short_term_debt=float(yr.get("short_term_debt", 0)),
-            current_portion_lt_debt=0.0,
-            accrued_liabilities=float(yr.get("accrued_liabilities", 0)),
-            other_current_liabilities=float(yr.get("other_current_liabilities", 0)),
-            long_term_debt=float(yr.get("long_term_debt", 0)),
-            other_non_current_liabilities=float(yr.get("other_non_current_liabilities", 0)),
-            total_equity=float(yr.get("total_equity", 0)),
-        ))
-
         # Reconstruct CFS so cash_from_operations == cfo exactly
         cfo = float(yr.get("cfo", 0))
         net_income = float(yr.get("net_income", 0))
         da = float(yr.get("depreciation_amortization", 0))
         sbc = float(yr.get("sbc", 0))
         capex = float(yr.get("capex", 0))
-        other_ops = cfo - net_income - da - sbc   # residual
+        delta_wc = float(yr.get("change_in_working_capital", 0))  # CFS convention: negative = outflow
+        other_ops = cfo - net_income - da - sbc - delta_wc   # residual
 
         cash_flow_statements.append(CashFlowStatement(
             year=year,
             net_income=net_income,
             depreciation_amortization=da,
             stock_based_compensation=sbc,
-            change_in_working_capital=0.0,
+            change_in_working_capital=delta_wc,
             other_operating_activities=other_ops,
             capital_expenditures=-capex,   # stored as negative per convention
             acquisitions=0.0,
@@ -425,6 +425,30 @@ def _parse_llm_response(
             shares_repurchased=0.0,
             dividends_paid=0.0,
             other_financing_activities=0.0,
+        ))
+
+    # Parse latest_balance_sheet (single object, not per-year)
+    bs_data = data.get("latest_balance_sheet", {})
+    if bs_data:
+        balance_sheets.append(BalanceSheet(
+            year=int(bs_data.get("year", 0)),
+            cash_and_equivalents=float(bs_data.get("cash", 0)),
+            short_term_investments=float(bs_data.get("short_term_investments", 0)),
+            accounts_receivable=float(bs_data.get("accounts_receivable", 0)),
+            inventory=float(bs_data.get("inventory", 0)),
+            other_current_assets=float(bs_data.get("other_current_assets", 0)),
+            ppe_net=float(bs_data.get("ppe_net", 0)),
+            goodwill=float(bs_data.get("goodwill", 0)),
+            intangible_assets=float(bs_data.get("intangible_assets", 0)),
+            other_non_current_assets=float(bs_data.get("other_non_current_assets", 0)),
+            accounts_payable=float(bs_data.get("accounts_payable", 0)),
+            short_term_debt=float(bs_data.get("short_term_debt", 0)),
+            current_portion_lt_debt=0.0,
+            accrued_liabilities=float(bs_data.get("accrued_liabilities", 0)),
+            other_current_liabilities=float(bs_data.get("other_current_liabilities", 0)),
+            long_term_debt=float(bs_data.get("long_term_debt", 0)),
+            other_non_current_liabilities=float(bs_data.get("other_non_current_liabilities", 0)),
+            total_equity=float(bs_data.get("total_equity", 0)),
         ))
 
     non_recurring = [
@@ -448,7 +472,7 @@ def _parse_llm_response(
         balance_sheets=sorted(balance_sheets, key=lambda x: x.year),
         cash_flow_statements=sorted(cash_flow_statements, key=lambda x: x.year),
     )
-    return financials, non_recurring
+    return financials, non_recurring, validation_errors
 
 
 # ---------------------------------------------------------------------------
@@ -492,14 +516,19 @@ def extract_financials(
 
     resolved_model = model or _DEFAULT_MODELS[provider]
 
+    import os
+    # dotenv is loaded by config.py at import time; keys come from
+    # .env file OR system environment — no intermediate config vars needed.
+    import config as _  # noqa: F401 — triggers dotenv load
+
     if provider == "claude":
         api_key = os.environ.get("ANTHROPIC_API_KEY", "")
         if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY environment variable is not set.")
+            raise ValueError("ANTHROPIC_API_KEY is not set. Add it to .env or system env.")
     else:
         api_key = os.environ.get("GEMINI_API_KEY", "")
         if not api_key:
-            raise ValueError("GEMINI_API_KEY environment variable is not set.")
+            raise ValueError("GEMINI_API_KEY is not set. Add it to .env or system env.")
 
     # --- Read PDF ---
     print(f"  Provider: {provider.upper()}  |  Model: {resolved_model}")
@@ -524,25 +553,68 @@ def extract_financials(
         print(raw)
         print("=" * 65 + "\n")
 
-    # --- Parse + Validate ---
+    # --- Parse + Validate + Feedback loop ---
+    MAX_RETRIES = 2
     json_str = _extract_json(raw)
-    try:
-        return _parse_llm_response(json_str, ticker, company_name)
-    except json.JSONDecodeError as exc:
-        ctx_start = max(0, exc.pos - 120)
-        ctx_end = min(len(json_str), exc.pos + 120)
-        print(f"\n  [JSON parse error] {exc}")
-        print(f"  Context around position {exc.pos}:\n  ...{json_str[ctx_start:ctx_end]}...")
 
-        print(f"\n  Retrying — asking {provider.upper()} to repair the JSON...")
+    for attempt in range(1 + MAX_RETRIES):
+        # Handle malformed JSON
+        try:
+            financials, non_recurring, val_errors = _parse_llm_response(json_str, ticker, company_name)
+        except json.JSONDecodeError as exc:
+            ctx_start = max(0, exc.pos - 120)
+            ctx_end = min(len(json_str), exc.pos + 120)
+            print(f"\n  [JSON parse error] {exc}")
+            print(f"  Context around position {exc.pos}:\n  ...{json_str[ctx_start:ctx_end]}...")
+
+            if attempt >= MAX_RETRIES:
+                raise
+            print(f"\n  Retrying — asking {provider.upper()} to repair the JSON...")
+            fix_prompt = (
+                "The following JSON is malformed. Return ONLY the corrected JSON object "
+                "with no markdown fences and no additional text.\n\n"
+                + json_str
+            )
+            if provider == "claude":
+                raw2, _, _ = _call_claude(SYSTEM_PROMPT, fix_prompt, resolved_model, api_key)
+            else:
+                raw2, _, _ = _call_gemini(SYSTEM_PROMPT, fix_prompt, resolved_model, api_key)
+            json_str = _extract_json(raw2)
+            continue
+
+        # Validation passed — return
+        if not val_errors:
+            return financials, non_recurring
+
+        # Validation failed — feedback loop
+        if attempt >= MAX_RETRIES:
+            print(f"\n  [WARN] Validation errors remain after {MAX_RETRIES} retries:")
+            for e in val_errors:
+                print(f"    {e}")
+            return financials, non_recurring
+
+        print(f"\n  Validation errors found — sending feedback to {provider.upper()} (retry {attempt + 1}/{MAX_RETRIES})...")
+        error_list = "\n".join(f"  - {e}" for e in val_errors)
         fix_prompt = (
-            "The following JSON is malformed. Return ONLY the corrected JSON object "
-            "with no markdown fences and no additional text.\n\n"
+            "The following JSON was extracted from a 10-K filing but has arithmetic "
+            "errors in the income statement. The stated subtotals do not match the "
+            "component line items.\n\n"
+            "ERRORS:\n" + error_list + "\n\n"
+            "Fix the JSON so that ALL of these reconcile exactly:\n"
+            "  gross_profit = revenue - cost_of_revenue\n"
+            "  operating_income = gross_profit - sga - rd_expense - other_operating_expense\n"
+            "  net_income = operating_income + interest_income - interest_expense + other_non_operating - tax_expense\n\n"
+            "If a subtotal is correct, adjust the component fields. If the components "
+            "are correct, adjust the subtotal. Use ONLY numbers from the original filing.\n\n"
+            "Return ONLY the corrected JSON object. No markdown fences, no explanation.\n\n"
             + json_str
         )
         if provider == "claude":
-            raw2, _, _ = _call_claude(SYSTEM_PROMPT, fix_prompt, resolved_model, api_key)
+            raw2, in2, out2 = _call_claude(SYSTEM_PROMPT, fix_prompt, resolved_model, api_key)
         else:
-            raw2, _, _ = _call_gemini(SYSTEM_PROMPT, fix_prompt, resolved_model, api_key)
-        json_str2 = _extract_json(raw2)
-        return _parse_llm_response(json_str2, ticker, company_name)
+            raw2, in2, out2 = _call_gemini(SYSTEM_PROMPT, fix_prompt, resolved_model, api_key)
+        if in2 or out2:
+            print(f"  Retry tokens — input: {in2:,}  output: {out2:,}")
+        json_str = _extract_json(raw2)
+
+    return financials, non_recurring

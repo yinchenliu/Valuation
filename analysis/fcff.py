@@ -72,7 +72,6 @@ def calculate_fcff_projected(
     da_pct_revenue: float,
     capex_pct_revenue: float,
     nwc_pct_revenue: float,
-    prior_nwc: float,
 ) -> ProjectedFCFF:
     """Calculate FCFF from projected assumptions.
 
@@ -83,15 +82,13 @@ def calculate_fcff_projected(
         tax_rate: Effective tax rate.
         da_pct_revenue: D&A as % of revenue.
         capex_pct_revenue: CapEx as % of revenue.
-        nwc_pct_revenue: Net working capital as % of revenue.
-        prior_nwc: Prior year's net working capital (for delta).
+        nwc_pct_revenue: Change in NWC as % of revenue (from historical CFS).
     """
     ebit = revenue * operating_margin
     nopat = ebit * (1 - tax_rate)
     da = revenue * da_pct_revenue
     capex = revenue * capex_pct_revenue
-    current_nwc = revenue * nwc_pct_revenue
-    delta_nwc = current_nwc - prior_nwc
+    delta_nwc = revenue * nwc_pct_revenue
 
     return ProjectedFCFF(
         year=year,

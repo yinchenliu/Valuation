@@ -82,14 +82,21 @@ def derive_assumptions(
             capex_pcts.append(abs(cf.capital_expenditures) / inc.revenue)
     capex_pct = ov.capex_pct_revenue if ov.capex_pct_revenue is not None else _historical_average(capex_pcts)
 
-    # --- NWC as % of revenue ---
-    nwc_pcts = []
-    for y in years:
-        bs = financials.get_balance_sheet(y)
-        inc = financials.get_income_statement(y)
-        if bs and inc and inc.revenue > 0:
-            nwc_pcts.append(bs.net_working_capital / inc.revenue)
-    nwc_pct = ov.nwc_pct_revenue if ov.nwc_pct_revenue is not None else _historical_average(nwc_pcts)
+    # --- NWC change as % of revenue (from CFS "Changes in assets and liabilities") ---
+    # CFS convention: negative = WC increase (cash outflow).
+    # We negate so nwc_pct is positive when WC grows (outflow that reduces FCFF).
+    nwc_pct = 0.0
+    if ov.nwc_pct_revenue is not None:
+        nwc_pct = ov.nwc_pct_revenue
+    else:
+        nwc_pcts = []
+        for y in years:
+            cf = financials.get_cash_flow(y)
+            inc = financials.get_income_statement(y)
+            if cf and inc and inc.revenue > 0:
+                nwc_pcts.append(-cf.change_in_working_capital / inc.revenue)
+        # Use plain average (not _historical_average) — zero WC change is valid
+        nwc_pct = float(np.mean(nwc_pcts)) if nwc_pcts else 0.0
 
     return {
         "revenue_growth_rates": rev_growth,
@@ -118,19 +125,14 @@ def project_fcffs(
     """
     latest_year = financials.latest_year
     latest_is = financials.get_income_statement(latest_year)
-    latest_bs = financials.get_balance_sheet(latest_year)
 
     last_revenue = latest_is.revenue
-    last_nwc = latest_bs.net_working_capital if latest_bs else 0.0
 
     projected = []
     for i in range(assumptions["projection_years"]):
         year = latest_year + i + 1
         growth = assumptions["revenue_growth_rates"][i]
         revenue = last_revenue * (1 + growth)
-
-        nwc_pct = assumptions["nwc_pct_revenue"]
-        current_nwc = revenue * nwc_pct
 
         fcff = calculate_fcff_projected(
             year=year,
@@ -139,12 +141,10 @@ def project_fcffs(
             tax_rate=assumptions["tax_rate"],
             da_pct_revenue=assumptions["da_pct_revenue"],
             capex_pct_revenue=assumptions["capex_pct_revenue"],
-            nwc_pct_revenue=nwc_pct,
-            prior_nwc=last_nwc,
+            nwc_pct_revenue=assumptions["nwc_pct_revenue"],
         )
         projected.append(fcff)
 
         last_revenue = revenue
-        last_nwc = current_nwc
 
     return projected

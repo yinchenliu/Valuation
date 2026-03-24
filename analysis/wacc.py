@@ -27,8 +27,6 @@ def calculate_cost_of_debt(
 
     Rd = Interest Expense / Total Debt
 
-    Many Capital IQ "As Reported" exports fold interest expense into
-    "Other Income/Expense, Net" rather than reporting it as a standalone line.
     When interest_expense = 0 but the company carries debt, we fall back to
     config.DEFAULT_COST_OF_DEBT rather than returning 0%.
     """

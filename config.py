@@ -1,9 +1,15 @@
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 # Project paths
 BASE_DIR = Path(__file__).parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
+
+# Load .env from project root — values are merged into os.environ.
+# System env vars still work; .env just provides a convenient local override.
+load_dotenv(BASE_DIR / ".env")
 
 # Default valuation assumptions
 DEFAULT_PROJECTION_YEARS = 5
@@ -13,8 +19,7 @@ DEFAULT_RISK_FREE_RATE = 0.04  # 4.0% fallback if market fetch fails
 DEFAULT_BETA_LOOKBACK_YEARS = 5
 DEFAULT_RETURN_FREQUENCY = "monthly"  # "daily" or "monthly"
 
-# Cost of debt fallback: used when interest expense is not reported separately
-# (common in CIQ "As Reported" where interest is folded into "Other income/expense, net").
+# Cost of debt fallback: used when interest expense is not reported separately.
 # Set to a conservative investment-grade spread. Override per company as needed.
 DEFAULT_COST_OF_DEBT = 0.04  # 4.0% pre-tax
 
@@ -25,5 +30,3 @@ DEFAULT_REVENUE_GROWTH_LOOKBACK_YEARS = 3
 # S&P 500 ticker for CAPM
 SP500_TICKER = "^GSPC"
 
-# Phase 2: Claude API key (set via environment variable)
-# ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")

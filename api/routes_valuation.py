@@ -8,15 +8,22 @@ from fastapi.templating import Jinja2Templates
 
 from analysis.capm import run_capm
 from analysis.dcf import run_dcf
+from analysis.normalizer import normalize_financials
 from analysis.projector import derive_assumptions, project_fcffs
 from analysis.wacc import calculate_wacc
 from config import BASE_DIR
-from ingestion.capital_iq_parser import parse_capital_iq
+from ingestion.claude_extractor import extract_financials
+from models.financial_statements import FinancialStatements
 from ingestion.price_fetcher import fetch_price_data
 from models.valuation import ProjectionAssumptions
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
+# In-memory cache: extraction results from assumptions_page are reused in run_valuation
+# so the LLM is only called once per PDF upload.
+# Key: file_path -> (normalized FinancialStatements)
+_extraction_cache: dict[str, FinancialStatements] = {}
 
 
 @router.get("/assumptions", response_class=HTMLResponse)
@@ -32,7 +39,10 @@ async def assumptions_page(
 
     if file_path:
         try:
-            financials = parse_capital_iq(file_path, ticker, company_name)
+            financials, non_recurring = extract_financials(file_path, ticker, company_name)
+            financials = normalize_financials(financials, non_recurring)
+            # Cache the normalized financials so run_valuation doesn't re-call the LLM
+            _extraction_cache[file_path] = financials
             defaults = derive_assumptions(financials)
             # Format for display
             defaults["revenue_growth_display"] = [f"{g * 100:.1f}" for g in defaults["revenue_growth_rates"]]
@@ -77,10 +87,15 @@ async def run_valuation(
 ):
     """Execute the full DCF valuation pipeline."""
     try:
-        # 1. Parse financial statements
-        financials = parse_capital_iq(file_path, ticker, company_name)
+        # 1. Use cached normalized financials from assumptions_page (avoids re-calling LLM)
+        if file_path in _extraction_cache:
+            financials = _extraction_cache.pop(file_path)
+        else:
+            # Fallback: extract + normalize if cache miss (e.g. direct POST)
+            raw_fin, non_recurring = extract_financials(file_path, ticker, company_name)
+            financials = normalize_financials(raw_fin, non_recurring)
 
-        # 2. Build assumptions
+        # 2. Build assumptions (from post-adjustment financials)
         rev_growth_list = []
         if revenue_growth.strip():
             rev_growth_list = [float(x.strip()) / 100 for x in revenue_growth.split(",")]
@@ -123,7 +138,7 @@ async def run_valuation(
         if shares == 0:
             import yfinance as yf
             info = yf.Ticker(ticker).info
-            shares = info.get("sharesOutstanding", 0) / 1e6  # Convert to millions (CIQ units)
+            shares = info.get("sharesOutstanding", 0) / 1e6  # Convert to millions
         market_cap = price_data.current_price * shares
 
         wacc_result = calculate_wacc(

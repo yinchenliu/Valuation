@@ -1,4 +1,4 @@
-"""File upload routes for Capital IQ Excel exports."""
+"""File upload routes for 10-K/10-Q PDF filings."""
 
 from __future__ import annotations
 
@@ -15,11 +15,11 @@ router = APIRouter()
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 
-def _save_upload(file: UploadFile, prefix: str, ticker: str) -> Path:
+def _save_upload(file: UploadFile, ticker: str) -> Path:
     """Save an uploaded file to the uploads directory."""
     ticker_dir = UPLOAD_DIR / ticker.upper()
     ticker_dir.mkdir(parents=True, exist_ok=True)
-    dest = ticker_dir / f"{prefix}_{file.filename}"
+    dest = ticker_dir / file.filename
     with open(dest, "wb") as f:
         shutil.copyfileobj(file.file, f)
     return dest
@@ -36,10 +36,10 @@ async def upload_files(
     request: Request,
     ticker: str = Form(...),
     company_name: str = Form(""),
-    excel_file: UploadFile = File(...),
+    pdf_file: UploadFile = File(...),
 ):
-    """Handle upload of a single Capital IQ Excel workbook (3 sheets)."""
-    file_path = _save_upload(excel_file, "CIQ", ticker)
+    """Handle upload of a 10-K/10-Q PDF filing."""
+    file_path = _save_upload(pdf_file, ticker)
 
     # Store file path in session-like query params for the assumptions page
     return RedirectResponse(
