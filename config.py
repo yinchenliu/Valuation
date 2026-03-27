@@ -9,7 +9,7 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 # Load .env from project root — values are merged into os.environ.
 # System env vars still work; .env just provides a convenient local override.
-load_dotenv(BASE_DIR / ".env")
+load_dotenv(BASE_DIR / ".env", override=False)
 
 # Default valuation assumptions
 DEFAULT_PROJECTION_YEARS = 5

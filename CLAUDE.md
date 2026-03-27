@@ -25,13 +25,23 @@ Upload 10-K PDF → LLM Extraction → FinancialStatements + NonRecurringItems (
                   FastAPI routes → Jinja2 templates → Browser
 ```
 
-### LLM Boundary (extraction only)
+### LLM Boundary (extraction only — two-pass architecture)
 
-The LLM's role is strictly limited to **data extraction from 10-K/10-Q PDFs**:
-1. **Parse financial statements** — read the B/S, I/S, C/F from the filing and return the `FinancialStatements` dataclass contract. Every number must come directly from the source PDF. The LLM must NOT hallucinate, estimate, or project any financial figures.
-2. **Analyze footnotes** — identify non-recurring/one-time items from the notes to financial statements and return the `NonRecurringItem` dataclass contract (description, amount, line item, direction, category, source reference).
+The LLM's role is strictly limited to **data extraction from 10-K/10-Q PDFs**, split into two focused passes per PDF:
+
+**Pass 1 — Financial Statement Extraction (table reading)**
+- Extract I/S, C/F, and optionally B/S for target years only
+- Prompt focused on number precision and arithmetic reconciliation
+- Year-targeted: can extract specific fiscal years instead of all years in a filing
+
+**Pass 2 — Non-Recurring Item Analysis (footnote reasoning)**
+- Analyze MD&A and Notes for one-time/unusual items
+- Receives the extracted I/S summary from Pass 1 as context to anchor findings
+- Returns `NonRecurringItem` list (description, amount, line item, direction, category, source)
 
 The LLM is a **read-only extraction layer**. It does not make assumptions, projections, or valuation judgments.
+
+**Multi-PDF smart routing** (`extract_multi_year()`): When multiple 10-K PDFs are provided, the oldest filing extracts all years (including comparatives), while newer filings extract only their primary fiscal year. B/S is extracted only from the most recent filing. This avoids duplicate extraction across overlapping comparative years.
 
 ### Deterministic Code (everything else)
 
@@ -44,7 +54,8 @@ All financial logic after extraction is handled by deterministic, auditable Pyth
 ### Pipeline flow in code
 
 `routes_valuation.py:run_valuation()` orchestrates the full pipeline:
-1. `claude_extractor.extract_financials()` → `FinancialStatements` + `NonRecurringItem` list (from 10-K PDF)
+1. `claude_extractor.extract_financials()` → Pass 1 (I/S + C/F + B/S) → Pass 2 (NRIs using I/S context) → `FinancialStatements` + `NonRecurringItem` list
+   - For multi-PDF: `extract_multi_year()` routes years to filings, merges results
 2. `normalizer.normalize_financials()` → adjusted (Non-GAAP) financials
 3. `projector.derive_assumptions()` → default projection assumptions from historicals
 4. `price_fetcher.fetch_price_data()` → stock/market returns for CAPM
