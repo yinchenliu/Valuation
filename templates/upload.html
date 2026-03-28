@@ -4,8 +4,8 @@
 
 {% block content %}
 <div class="card">
-    <h1>Upload 10-K Filing</h1>
-    <p>Upload a 10-K or 10-Q PDF filing. Financial data will be extracted automatically via LLM.</p>
+    <h1>Upload 10-K Filings</h1>
+    <p>Upload one or more 10-K/10-Q PDF filings. Financial data will be extracted automatically via LLM.</p>
 
     <form action="/upload" method="post" enctype="multipart/form-data">
         <div class="form-group">
@@ -19,8 +19,9 @@
         </div>
 
         <div class="form-group">
-            <label for="pdf_file">10-K / 10-Q PDF Filing</label>
-            <input type="file" id="pdf_file" name="pdf_file" accept=".pdf" required>
+            <label for="pdf_files">10-K / 10-Q PDF Filings</label>
+            <input type="file" id="pdf_files" name="pdf_files" accept=".pdf" multiple required>
+            <small>Select multiple files for multi-year analysis (e.g., 2023, 2024, 2025 10-Ks)</small>
         </div>
 
         <button type="submit" class="btn btn-primary">Upload & Continue</button>

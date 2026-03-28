@@ -27,7 +27,7 @@ from analysis.dcf import run_dcf
 TICKER       = "ABBV"
 COMPANY      = "AbbVie Inc."
 PROVIDER     = "gemini"
-MODEL        = "gemini-3.1-pro-preview" #gemini-3-flash-preview
+MODEL        = "gemini-3.1-flash-lite-preview" #gemini-3-flash-preview
 
 FILINGS = [
     (2023, r"C:\Users\yinchenliu\Downloads\ABBV\AbbVie Inc._10-K_2023-12-31_English.pdf"),

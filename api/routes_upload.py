@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 from pathlib import Path
 
@@ -25,6 +26,12 @@ def _save_upload(file: UploadFile, ticker: str) -> Path:
     return dest
 
 
+def _guess_fiscal_year(filename: str) -> int | None:
+    """Try to extract a 4-digit year from the filename."""
+    match = re.search(r"(20\d{2})", filename)
+    return int(match.group(1)) if match else None
+
+
 @router.get("/", response_class=HTMLResponse)
 async def upload_page(request: Request):
     """Render the file upload page."""
@@ -36,17 +43,25 @@ async def upload_files(
     request: Request,
     ticker: str = Form(...),
     company_name: str = Form(""),
-    pdf_file: UploadFile = File(...),
+    pdf_files: list[UploadFile] = File(...),
 ):
-    """Handle upload of a 10-K/10-Q PDF filing."""
-    file_path = _save_upload(pdf_file, ticker)
+    """Handle upload of one or more 10-K/10-Q PDF filings."""
+    file_paths = []
+    for f in pdf_files:
+        path = _save_upload(f, ticker)
+        year = _guess_fiscal_year(f.filename or "")
+        file_paths.append((year, str(path)))
 
-    # Store file path in session-like query params for the assumptions page
+    # Pass file info as comma-separated "year:path" pairs
+    file_params = ",".join(
+        f"{year or 0}:{path}" for year, path in file_paths
+    )
+
     return RedirectResponse(
         url=(
             f"/assumptions?ticker={ticker.upper()}"
             f"&company_name={company_name}"
-            f"&file_path={file_path}"
+            f"&files={file_params}"
         ),
         status_code=303,
     )

@@ -375,8 +375,15 @@ def _call_gemini(
     model: str,
     api_key: str,
     pdf_bytes: bytes | None = None,
+    max_retries: int = 5,
 ) -> tuple[str, int, int]:
-    """Call Google Gemini. Returns (response_text, input_tokens, output_tokens)."""
+    """Call Google Gemini. Returns (response_text, input_tokens, output_tokens).
+
+    Retries automatically on 429 (rate limit) and 503 (overloaded) errors
+    with exponential backoff.
+    """
+    import time
+    import re
     from google import genai
     from google.genai import types
 
@@ -387,25 +394,40 @@ def _call_gemini(
         contents.append(types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"))
     contents.append(user_prompt)
 
-    response = client.models.generate_content(
-        model=model,
-        contents=contents,
-        config=types.GenerateContentConfig(
-            system_instruction=system_prompt,
-            max_output_tokens=65536,
-            temperature=0.0,
-            response_mime_type="application/json",
-        ),
-    )
-    finish_reason = None
-    if response.candidates:
-        finish_reason = str(response.candidates[0].finish_reason)
-    text = response.text or ""
-    in_tok = getattr(response.usage_metadata, "prompt_token_count", 0) or 0
-    out_tok = getattr(response.usage_metadata, "candidates_token_count", 0) or 0
-    if finish_reason and finish_reason not in ("FinishReason.STOP", "STOP", "1"):
-        print(f"  [WARN] Gemini finish_reason={finish_reason} — response may be truncated")
-    return text, in_tok, out_tok
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    max_output_tokens=65536,
+                    temperature=0.0,
+                    response_mime_type="application/json",
+                ),
+            )
+            finish_reason = None
+            if response.candidates:
+                finish_reason = str(response.candidates[0].finish_reason)
+            text = response.text or ""
+            in_tok = getattr(response.usage_metadata, "prompt_token_count", 0) or 0
+            out_tok = getattr(response.usage_metadata, "candidates_token_count", 0) or 0
+            if finish_reason and finish_reason not in ("FinishReason.STOP", "STOP", "1"):
+                print(f"  [WARN] Gemini finish_reason={finish_reason} — response may be truncated")
+            return text, in_tok, out_tok
+        except Exception as e:
+            error_str = str(e)
+            is_retryable = "429" in error_str or "503" in error_str or "RESOURCE_EXHAUSTED" in error_str or "UNAVAILABLE" in error_str
+            if not is_retryable or attempt == max_retries:
+                raise
+            # Try to extract suggested retry delay from error message
+            wait = 2 ** attempt  # default exponential backoff
+            delay_match = re.search(r"retry in ([\d.]+)s", error_str, re.IGNORECASE)
+            if delay_match:
+                wait = max(wait, float(delay_match.group(1)) + 1)
+            print(f"  [RETRY {attempt}/{max_retries}] {e.__class__.__name__} — waiting {wait:.0f}s ...")
+            time.sleep(wait)
+    raise RuntimeError("Unreachable")
 
 
 def _call_llm(
@@ -818,7 +840,7 @@ def extract_financials(
     pdf_path: str | Path,
     ticker: str = "",
     company_name: str = "",
-    provider: Provider = "claude",
+    provider: Provider = "gemini",
     model: str | None = None,
     target_years: list[int] | None = None,
     include_bs: bool = True,
@@ -871,7 +893,7 @@ def extract_multi_year(
     filings: list[tuple[int, str | Path]],
     ticker: str = "",
     company_name: str = "",
-    provider: Provider = "claude",
+    provider: Provider = "gemini",
     model: str | None = None,
     debug: bool = False,
 ) -> tuple[FinancialStatements, list[NonRecurringItem]]:

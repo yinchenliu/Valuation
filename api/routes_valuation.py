@@ -12,7 +12,7 @@ from analysis.normalizer import normalize_financials
 from analysis.projector import derive_assumptions, project_fcffs
 from analysis.wacc import calculate_wacc
 from config import BASE_DIR
-from ingestion.claude_extractor import extract_financials
+from ingestion.claude_extractor import extract_financials, extract_multi_year
 from models.financial_statements import FinancialStatements
 from ingestion.price_fetcher import fetch_price_data
 from models.valuation import ProjectionAssumptions
@@ -21,9 +21,40 @@ router = APIRouter()
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 # In-memory cache: extraction results from assumptions_page are reused in run_valuation
-# so the LLM is only called once per PDF upload.
-# Key: file_path -> (normalized FinancialStatements)
+# so the LLM is only called once per upload.
 _extraction_cache: dict[str, FinancialStatements] = {}
+
+
+def _parse_files_param(files_str: str) -> list[tuple[int, str]]:
+    """Parse the 'files' query param into [(fiscal_year, path), ...]."""
+    result = []
+    for entry in files_str.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        year_str, _, path = entry.partition(":")
+        result.append((int(year_str), path))
+    return result
+
+
+def _extract_from_files(
+    filings: list[tuple[int, str]],
+    ticker: str,
+    company_name: str,
+) -> tuple[FinancialStatements, list]:
+    """Run extraction for single or multi-file uploads."""
+    if len(filings) == 1:
+        _, pdf_path = filings[0]
+        return extract_financials(pdf_path, ticker, company_name)
+
+    # For multi-file, filter out entries with year=0 (couldn't guess year)
+    valid = [(y, p) for y, p in filings if y > 0]
+    if not valid:
+        # Fallback: use the first file as a single extraction
+        _, pdf_path = filings[0]
+        return extract_financials(pdf_path, ticker, company_name)
+
+    return extract_multi_year(valid, ticker, company_name)
 
 
 @router.get("/assumptions", response_class=HTMLResponse)
@@ -31,18 +62,29 @@ async def assumptions_page(
     request: Request,
     ticker: str = "",
     company_name: str = "",
+    files: str = "",
+    # Legacy single-file param
     file_path: str = "",
 ):
     """Show assumptions page with defaults derived from historical data."""
     error = None
     defaults = {}
 
-    if file_path:
+    # Build filings list from either new multi-file or legacy single-file param
+    if files:
+        filings = _parse_files_param(files)
+    elif file_path:
+        filings = [(0, file_path)]
+    else:
+        filings = []
+
+    cache_key = files or file_path
+
+    if filings:
         try:
-            financials, non_recurring = extract_financials(file_path, ticker, company_name)
+            financials, non_recurring = _extract_from_files(filings, ticker, company_name)
             financials = normalize_financials(financials, non_recurring)
-            # Cache the normalized financials so run_valuation doesn't re-call the LLM
-            _extraction_cache[file_path] = financials
+            _extraction_cache[cache_key] = financials
             defaults = derive_assumptions(financials)
             # Format for display
             defaults["revenue_growth_display"] = [f"{g * 100:.1f}" for g in defaults["revenue_growth_rates"]]
@@ -58,7 +100,7 @@ async def assumptions_page(
         "request": request,
         "ticker": ticker,
         "company_name": company_name,
-        "file_path": file_path,
+        "files": files or file_path,
         "defaults": defaults,
         "error": error,
     })
@@ -69,7 +111,7 @@ async def run_valuation(
     request: Request,
     ticker: str = Form(...),
     company_name: str = Form(""),
-    file_path: str = Form(...),
+    files: str = Form(""),
     projection_years: int = Form(5),
     terminal_growth_rate: float = Form(2.5),
     revenue_growth: str = Form(""),  # Comma-separated percentages
@@ -88,11 +130,12 @@ async def run_valuation(
     """Execute the full DCF valuation pipeline."""
     try:
         # 1. Use cached normalized financials from assumptions_page (avoids re-calling LLM)
-        if file_path in _extraction_cache:
-            financials = _extraction_cache.pop(file_path)
+        if files in _extraction_cache:
+            financials = _extraction_cache.pop(files)
         else:
-            # Fallback: extract + normalize if cache miss (e.g. direct POST)
-            raw_fin, non_recurring = extract_financials(file_path, ticker, company_name)
+            # Fallback: extract + normalize if cache miss
+            filings = _parse_files_param(files) if ":" in files else [(0, files)]
+            raw_fin, non_recurring = _extract_from_files(filings, ticker, company_name)
             financials = normalize_financials(raw_fin, non_recurring)
 
         # 2. Build assumptions (from post-adjustment financials)

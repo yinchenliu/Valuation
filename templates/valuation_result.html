@@ -66,13 +66,13 @@
                 {% for f in dcf.projected_fcffs %}
                 <tr>
                     <td>{{ f.year }}</td>
-                    <td>{{ "{:,.0f}"|format(f.revenue) }}</td>
-                    <td>{{ "{:,.0f}"|format(f.ebit) }}</td>
-                    <td>{{ "{:,.0f}"|format(f.nopat) }}</td>
-                    <td>{{ "{:,.0f}"|format(f.depreciation_amortization) }}</td>
-                    <td>{{ "{:,.0f}"|format(f.capital_expenditures) }}</td>
-                    <td>{{ "{:,.0f}"|format(f.change_in_working_capital) }}</td>
-                    <td><strong>{{ "{:,.0f}"|format(f.fcff) }}</strong></td>
+                    <td>{{ "{:,.0f}".format(f.revenue) }}</td>
+                    <td>{{ "{:,.0f}".format(f.ebit) }}</td>
+                    <td>{{ "{:,.0f}".format(f.nopat) }}</td>
+                    <td>{{ "{:,.0f}".format(f.depreciation_amortization) }}</td>
+                    <td>{{ "{:,.0f}".format(f.capital_expenditures) }}</td>
+                    <td>{{ "{:,.0f}".format(f.change_in_working_capital) }}</td>
+                    <td><strong>{{ "{:,.0f}".format(f.fcff) }}</strong></td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -83,13 +83,13 @@
     <div class="section">
         <h2>DCF Valuation Bridge</h2>
         <table class="data-table">
-            <tr><td>PV of Projected FCFFs</td><td>{{ "{:,.0f}"|format(dcf.pv_fcffs) }}</td></tr>
-            <tr><td>Terminal Value (undiscounted)</td><td>{{ "{:,.0f}"|format(dcf.terminal_value) }}</td></tr>
-            <tr><td>PV of Terminal Value</td><td>{{ "{:,.0f}"|format(dcf.pv_terminal_value) }}</td></tr>
-            <tr class="highlight"><td><strong>Enterprise Value</strong></td><td><strong>{{ "{:,.0f}"|format(dcf.enterprise_value) }}</strong></td></tr>
-            <tr><td>Less: Net Debt</td><td>({{ "{:,.0f}"|format(dcf.net_debt) }})</td></tr>
-            <tr class="highlight"><td><strong>Equity Value</strong></td><td><strong>{{ "{:,.0f}"|format(dcf.equity_value) }}</strong></td></tr>
-            <tr><td>Diluted Shares Outstanding</td><td>{{ "{:,.0f}"|format(dcf.diluted_shares) }}</td></tr>
+            <tr><td>PV of Projected FCFFs</td><td>{{ "{:,.0f}".format(dcf.pv_fcffs) }}</td></tr>
+            <tr><td>Terminal Value (undiscounted)</td><td>{{ "{:,.0f}".format(dcf.terminal_value) }}</td></tr>
+            <tr><td>PV of Terminal Value</td><td>{{ "{:,.0f}".format(dcf.pv_terminal_value) }}</td></tr>
+            <tr class="highlight"><td><strong>Enterprise Value</strong></td><td><strong>{{ "{:,.0f}".format(dcf.enterprise_value) }}</strong></td></tr>
+            <tr><td>Less: Net Debt</td><td>({{ "{:,.0f}".format(dcf.net_debt) }})</td></tr>
+            <tr class="highlight"><td><strong>Equity Value</strong></td><td><strong>{{ "{:,.0f}".format(dcf.equity_value) }}</strong></td></tr>
+            <tr><td>Diluted Shares Outstanding</td><td>{{ "{:,.0f}".format(dcf.diluted_shares) }}</td></tr>
             <tr class="highlight"><td><strong>Implied Share Price</strong></td><td><strong>${{ "%.2f"|format(dcf.implied_share_price) }}</strong></td></tr>
         </table>
     </div>
