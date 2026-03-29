@@ -1,6 +1,6 @@
 # DCF Valuation Platform
 
-A web-based discounted cash flow (DCF) valuation tool that extracts financial data from SEC 10-K/10-Q filings using an LLM and performs fully deterministic valuation analysis.
+A web-based discounted cash flow (DCF) valuation tool that extracts financial data from SEC 10-K/10-Q filings and analyze non-recurring items using an LLM and performs fully deterministic valuation analysis.
 
 ## How It Works
 
@@ -16,7 +16,7 @@ The LLM is strictly an extraction layer — it reads numbers from PDFs. All proj
 ### Prerequisites
 
 - Python 3.10+
-- An Anthropic API key (for PDF extraction via Claude)
+- A Google Gemini API key (default) or Anthropic API key (for PDF extraction)
 
 ### Installation
 
@@ -30,7 +30,10 @@ pip install -r requirements.txt
 Create a `.env` file in the project root:
 
 ```
-ANTHROPIC_API_KEY=your-api-key-here
+GEMINI_API_KEY=your-gemini-api-key-here
+
+# Optional: only needed if switching provider to "claude"
+# ANTHROPIC_API_KEY=your-anthropic-api-key-here
 ```
 
 ### Run
@@ -95,6 +98,6 @@ valuation_platform/
 
 - **FastAPI** + **Uvicorn** — async web framework
 - **Jinja2** — server-side HTML templates
-- **Anthropic Claude API** — PDF financial data extraction
+- **Google Gemini API** (default) or **Anthropic Claude API** — PDF financial data extraction
 - **yfinance** — historical stock and market price data
 - **SciPy / NumPy / Pandas** — numerical computation and data handling
