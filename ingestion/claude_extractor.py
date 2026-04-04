@@ -893,7 +893,7 @@ def extract_multi_year(
     filings: list[tuple[int, str | Path]],
     ticker: str = "",
     company_name: str = "",
-    provider: Provider = "gemini",
+    provider: Provider = "claude",
     model: str | None = None,
     debug: bool = False,
 ) -> tuple[FinancialStatements, list[NonRecurringItem]]:
