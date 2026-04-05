@@ -632,7 +632,16 @@ def main() -> None:
         diluted_shares=shares,
     )
     print_dcf_result(dcf_result)
-
+    # ===== FINAL SUMMARY ========================================================
+    _section("FINAL VALUATION SUMMARY")
+    print(f"  Ticker:             {args.ticker}")
+    print(f"  Company:            {args.company_name}")
+    print(f"  Current Price:      ${price_data.current_price:>11.2f}")
+    print(f"  Implied Price:      ${dcf_result.implied_share_price:>11.2f}")
+    
+    direction = "UPSIDE" if dcf_result.upside_downside >= 0 else "DOWNSIDE"
+    print(f"  Valuation:          {direction} of {dcf_result.upside_downside:>+10.1f}%")
+    print(f"  {'=' * 42}")
     # Done
     elapsed = time.time() - _t0
     m, s = divmod(int(elapsed), 60)
