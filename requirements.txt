@@ -9,3 +9,5 @@ scipy
 yfinance
 python-dotenv
 pdfplumber
+anthropic
+google-genai

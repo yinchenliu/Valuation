@@ -75,9 +75,11 @@ from models.financial_statements import (
 Provider = Literal["claude", "gemini"]
 
 # Default model IDs per provider
+# gemini-3-flash-preview
+# gemini-3.1-pro-preview
 _DEFAULT_MODELS: dict[str, str] = {
     "claude": "claude-sonnet-4-6",
-    "gemini": "gemini-3-flash-preview",
+    "gemini": "gemini-3.1-pro-preview",
 }
 
 

@@ -59,9 +59,12 @@ def fetch_price_data(
         market_prices = market_prices.squeeze()
 
     # Resample to monthly if requested
+    # "ME" (month-end) requires pandas >= 2.2; older versions use "M".
     if frequency == "monthly":
-        stock_prices = stock_prices.resample("ME").last()
-        market_prices = market_prices.resample("ME").last()
+        import pandas as _pd
+        _month = "ME" if tuple(int(x) for x in _pd.__version__.split(".")[:2]) >= (2, 2) else "M"
+        stock_prices = stock_prices.resample(_month).last()
+        market_prices = market_prices.resample(_month).last()
 
     # Calculate returns
     stock_returns = stock_prices.pct_change().dropna()
