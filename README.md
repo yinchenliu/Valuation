@@ -44,6 +44,32 @@ uvicorn app:app --reload
 
 Then open [http://localhost:8000](http://localhost:8000) in your browser.
 
+### Run the CLI from a ticker folder
+
+Put the company's 10-K PDFs in a folder named for its ticker:
+
+```text
+10K_filings/
+└── LLY/
+  ├── LLY_10K_2023-12-31.pdf
+  ├── LLY_10K_2024-12-31.pdf
+  └── LLY_10K_2025-12-31_English.pdf
+```
+
+Then pass only the folder. The ticker is inferred from the folder name and the
+fiscal year from the first four digits of each filing date:
+
+```bash
+python cli.py 10K_filings/LLY
+```
+
+Both `10K` and `10-K` are accepted in filenames. The existing explicit form
+also remains available:
+
+```bash
+python cli.py 2023:10K_2023.pdf 2024:10K_2024.pdf -t LLY
+```
+
 ## Project Structure
 
 ```

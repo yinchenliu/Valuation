@@ -107,7 +107,7 @@ _FINANCIALS_SCHEMA = {
             "interest_income": "float — interest / investment income. POSITIVE.",
             "other_non_operating": "float — net other income/expense below operating line (signed)",
             "tax_expense": "float — income tax provision. POSITIVE.",
-            "net_income": "float — net income attributable to common shareholders",
+            "net_income": "float — TOTAL CONSOLIDATED net income (net income INCLUDING noncontrolling interests, i.e. EBT minus tax_expense, BEFORE any allocation to noncontrolling interests). Do NOT use 'net income attributable to common shareholders' or 'attributable to the parent'.",
             "diluted_shares": "float — diluted weighted-avg shares (same units as F/S)",
             "cfo": "float — net cash provided by operating activities",
             "capex": "float — SUM of 'Purchases of PP&E' PLUS 'Acquisitions and intangible asset purchases' from investing section. Do NOT include securities. POSITIVE.",
@@ -159,6 +159,9 @@ _FINANCIALS_SYSTEM_PROMPT = textwrap.dedent(f"""\
     - For "interest_expense": gross interest on debt (positive). Go to footnotes
       for the breakout if only net interest is on the I/S.
     - For "cfo": use the total "Net cash provided by operating activities".
+    - For "net_income": use TOTAL CONSOLIDATED net income (includes noncontrolling
+      interests; equals EBT minus tax). NEVER use "net income attributable to
+      common shareholders / to the parent", which is net of noncontrolling interests.
     - For "capex": SUM of 'Purchases of PP&E' PLUS 'Acquisitions/intangible asset
       purchases' from investing section. Do NOT include securities. Absolute value.
     - For "change_in_working_capital": sum of ALL individual asset/liability change
@@ -236,7 +239,7 @@ _NRI_SYSTEM_PROMPT = textwrap.dedent(f"""\
 
 def _validate_extracted_data(
     llm_years: list[dict],
-    fail_pct: float = 1.0,
+    fail_pct: float = 0.5,
 ) -> list[str]:
     """Arithmetic reconciliation of LLM-extracted I/S data.
 

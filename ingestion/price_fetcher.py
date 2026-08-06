@@ -21,6 +21,7 @@ class PriceData:
     market_returns: np.ndarray
     dates: pd.DatetimeIndex
     current_price: float
+    periods_per_year: int = 12  # 12 for monthly, 252 for daily returns
 
 
 def fetch_price_data(
@@ -84,4 +85,5 @@ def fetch_price_data(
         market_returns=combined["market"].values,
         dates=combined.index,
         current_price=current_price,
+        periods_per_year=252 if frequency == "daily" else 12,
     )
