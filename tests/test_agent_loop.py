@@ -5,6 +5,8 @@ invisible until they cost money or silently degrade results:
 
 - resending a tool/system prefix that differs byte-for-byte between turns, which
   defeats prompt caching entirely;
+- leaving the growing conversation outside any cache breakpoint, which re-bills
+  the whole transcript every turn;
 - splitting parallel tool results across several user messages, which trains the
   model out of making parallel calls;
 - dropping thinking blocks from the echoed assistant turn;
@@ -207,6 +209,46 @@ def test_prefix_is_stable() -> None:
     )
     check("effort configured", "effort" in client.requests[0].get("output_config", {}))
     check("cache reads accumulated", result.cache_read_tokens > 0, str(result.cache_read_tokens))
+
+
+def test_conversation_is_cached() -> None:
+    """A breakpoint follows the newest results message, and only one exists."""
+    print("\n=== Conversation cache breakpoint ===")
+
+    script = [
+        _Response(content=[_ToolUse("get_extraction_summary", {}, "tu_1")]),
+        _Response(content=[_ToolUse("validate_arithmetic", {}, "tu_2")]),
+        _Response(content=[_ToolUse("get_historical_fcff", {}, "tu_3")]),
+        _Response(content=[_Text("Done.")], stop_reason="end_turn"),
+    ]
+    run, client, result = _drive(script)
+
+    # Recorded requests share their message dicts with the live list, so the last
+    # request is what shows where the marker ended up after three moves.
+    messages = client.requests[-1]["messages"]
+    marked = [
+        (i, j)
+        for i, message in enumerate(messages)
+        if isinstance(message.get("content"), list)
+        for j, block in enumerate(message["content"])
+        if isinstance(block, dict) and "cache_control" in block
+    ]
+    check("exactly one breakpoint in the conversation", len(marked) == 1, str(marked))
+
+    last_user = max(i for i, m in enumerate(messages) if m["role"] == "user")
+    blocks = messages[last_user]["content"]
+    check(
+        "breakpoint on the last block of the newest results message",
+        marked == [(last_user, len(blocks) - 1)],
+        str(marked),
+    )
+    check(
+        "breakpoint is ephemeral",
+        blocks[-1].get("cache_control") == {"type": "ephemeral"},
+        str(blocks[-1].get("cache_control")),
+    )
+    # Four per request is the hard ceiling; the system block already claims one.
+    check("breakpoint budget not exhausted", len(marked) + 1 <= 4, str(len(marked) + 1))
 
 
 def test_parallel_results_in_one_message() -> None:
@@ -514,6 +556,7 @@ def main() -> int:
         return 1
 
     test_prefix_is_stable()
+    test_conversation_is_cached()
     test_parallel_results_in_one_message()
     test_thinking_blocks_echoed()
     test_tool_error_flagged()

@@ -16,9 +16,14 @@ A manual `while stop_reason == "tool_use"` loop is used rather than the SDK's
 beta tool runner. The reason is prompt caching: the loop keeps one message list
 and one frozen tool/system prefix across every turn, so each turn re-reads the
 cached prefix instead of re-billing it (Anthropic via the explicit cache
-breakpoint below, Gemini via implicit prefix caching). It also lets the
+breakpoints below, Gemini via implicit prefix caching). It also lets the
 transcript record each turn's usage, which is how the cache-effectiveness check
 is verified.
+
+Two breakpoints are needed, not one. The system block covers the frozen
+tools/system prefix; a second one rides the newest tool-result message so the
+conversation is cached too. Without it the transcript is re-processed at full
+price on every turn, and the transcript is most of the prompt by the tenth.
 """
 
 from __future__ import annotations
@@ -107,6 +112,27 @@ class AgentResult:
     usage_by_turn: list[dict] = field(default_factory=list)
 
 
+def _move_cache_breakpoint(messages: list[dict], tool_results: list[dict]) -> None:
+    """Move the conversation's cache breakpoint onto the newest results message.
+
+    The marker is *moved* rather than added. Anthropic allows four breakpoints
+    per request, so leaving one behind each turn would fail the run partway
+    through — and gains nothing: the entry an old breakpoint wrote stays
+    readable, and the new one finds it by walking back over this turn's blocks.
+
+    Only the tool-result messages are touched. Assistant turns hold the SDK's own
+    content blocks, which are objects rather than dicts and must go back to the
+    model exactly as they arrived.
+    """
+    for message in messages:
+        content = message.get("content")
+        if isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict):
+                    block.pop("cache_control", None)
+    tool_results[-1]["cache_control"] = {"type": "ephemeral"}
+
+
 def _build_kickoff(run: pipeline.ValuationRun, overrides: ProjectionAssumptions | None) -> str:
     fin = run.raw_financials
     lines = [
@@ -183,9 +209,10 @@ def run_agentic_valuation(
 
     # Frozen prefix: the tool list and system prompt are byte-identical on every
     # turn, so the cache breakpoint on the system block covers tools + system and
-    # each subsequent turn reads it rather than re-processing it. Gemini caches a
-    # repeated prefix implicitly and ignores the breakpoint, so the stability is
-    # what matters on both paths, not the annotation.
+    # each subsequent turn reads it rather than re-processing it. The growing
+    # conversation is covered separately, by `_move_cache_breakpoint`. Gemini
+    # caches a repeated prefix implicitly and ignores both breakpoints, so the
+    # stability is what matters on both paths, not the annotation.
     system_blocks = [{
         "type": "text",
         "text": SYSTEM_PROMPT,
@@ -265,6 +292,7 @@ def run_agentic_valuation(
 
         # All results for a turn go back in a single user message; splitting them
         # trains the model out of making parallel calls.
+        _move_cache_breakpoint(messages, tool_results)
         messages.append({"role": "user", "content": tool_results})
 
     result.error = f"Stopped after {max_iterations} iterations without finishing."
