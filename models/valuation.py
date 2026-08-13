@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
+
+import config
 
 
 @dataclass
@@ -18,6 +21,15 @@ class CAPMResult:
     # Regression diagnostics
     r_squared: float = 0.0
     std_error: float = 0.0
+
+    # Provenance — where the two market inputs came from, so a reader can tell a
+    # live observation from a fallback constant without re-running anything.
+    risk_free_source: str = ""
+    risk_free_as_of: date | None = None
+    risk_free_is_fallback: bool = False
+    erp_source: str = ""
+    erp_as_of: date | None = None
+    erp_is_fallback: bool = False
 
 
 @dataclass
@@ -149,11 +161,69 @@ class DCFResult:
 
 
 @dataclass
+class DerivedAssumptions:
+    """The resolved projection assumptions produced by derive_assumptions().
+
+    Previously a bare dict, which meant every consumer indexed it with string keys
+    and a typo surfaced as a KeyError at projection time. It is a dataclass now,
+    but it still supports mapping access so existing callers and templates keep
+    working unchanged.
+    """
+
+    revenue_growth_rates: list[float]
+    operating_margin: float
+    tax_rate: float
+    da_pct_revenue: float
+    capex_pct_revenue: float
+    nwc_pct_revenue: float
+    projection_years: int
+    terminal_growth_rate: float
+
+    # Which fields came from a user/agent override rather than history.
+    overridden: list[str] = field(default_factory=list)
+
+    _KEYS = (
+        "revenue_growth_rates",
+        "operating_margin",
+        "tax_rate",
+        "da_pct_revenue",
+        "capex_pct_revenue",
+        "nwc_pct_revenue",
+        "projection_years",
+        "terminal_growth_rate",
+    )
+
+    # --- Mapping interface, for backwards compatibility ---
+    def __getitem__(self, key: str):
+        if key not in self._KEYS:
+            raise KeyError(key)
+        return getattr(self, key)
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._KEYS
+
+    def keys(self):
+        return iter(self._KEYS)
+
+    def items(self):
+        return ((k, getattr(self, k)) for k in self._KEYS)
+
+    def values(self):
+        return (getattr(self, k) for k in self._KEYS)
+
+    def get(self, key: str, default=None):
+        return getattr(self, key) if key in self._KEYS else default
+
+    def to_dict(self) -> dict:
+        return {k: getattr(self, k) for k in self._KEYS}
+
+
+@dataclass
 class ProjectionAssumptions:
     """User-configurable assumptions for financial projections."""
 
-    projection_years: int = 5
-    terminal_growth_rate: float = 0.025  # 2.5%
+    projection_years: int = config.DEFAULT_PROJECTION_YEARS
+    terminal_growth_rate: float = config.DEFAULT_TERMINAL_GROWTH_RATE
 
     # Revenue growth — list per year or single rate applied to all
     revenue_growth_rates: list[float] = field(default_factory=list)
@@ -168,11 +238,11 @@ class ProjectionAssumptions:
     nwc_pct_revenue: float | None = None  # None = use historical average
 
     # WACC overrides
-    risk_free_rate: float | None = None  # None = fetch from market
-    equity_risk_premium: float | None = None  # None = historical S&P 500 return - risk-free rate
+    risk_free_rate: float | None = None  # None = fetch live (^TNX), else config fallback
+    equity_risk_premium: float | None = None  # None = config default; "realised" = trailing S&P
     cost_of_debt_override: float | None = None
     beta_override: float | None = None
 
     # Price data
-    beta_lookback_years: int = 5
-    return_frequency: str = "monthly"  # "daily" or "monthly"
+    beta_lookback_years: int = config.DEFAULT_BETA_LOOKBACK_YEARS
+    return_frequency: str = config.DEFAULT_RETURN_FREQUENCY  # "daily" or "monthly"

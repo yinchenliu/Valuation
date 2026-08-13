@@ -2,26 +2,19 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-import numpy as np
 import pandas as pd
 import yfinance as yf
 
+import config
 from config import SP500_TICKER
+from models.market import PriceData
 
-
-@dataclass
-class PriceData:
-    """Historical return data for a stock and the market index."""
-
-    ticker: str
-    stock_returns: np.ndarray
-    market_returns: np.ndarray
-    dates: pd.DatetimeIndex
-    current_price: float
-    periods_per_year: int = 12  # 12 for monthly, 252 for daily returns
+# Re-exported so existing `from ingestion.price_fetcher import PriceData` imports
+# keep working; the definition now lives in models/ so the analysis layer can
+# reference it without importing ingestion.
+__all__ = ["PriceData", "fetch_price_data"]
 
 
 def fetch_price_data(
@@ -39,6 +32,8 @@ def fetch_price_data(
     Returns:
         PriceData with aligned stock and market returns.
     """
+    config.configure_yfinance_cache()
+
     end_date = datetime.today()
     start_date = end_date - timedelta(days=lookback_years * 365)
 

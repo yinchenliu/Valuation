@@ -1,13 +1,27 @@
-fastapi
-uvicorn[standard]
-jinja2
-python-multipart
-pandas
-openpyxl
-numpy
-scipy
-yfinance
-python-dotenv
-pdfplumber
-anthropic
-google-genai
+# Floor pins only. These were previously unpinned, which meant a fresh install
+# picked up whatever was current — that is how the starlette 1.x
+# TemplateResponse signature change silently broke every route.
+fastapi>=0.110
+uvicorn[standard]>=0.27
+starlette>=0.37
+jinja2>=3.1
+python-multipart>=0.0.9
+pandas>=2.0
+openpyxl>=3.1
+numpy>=1.26
+scipy>=1.11
+yfinance>=0.2.40
+python-dotenv>=1.0
+pdfplumber>=0.11
+
+# LLM providers. anthropic drives both the extraction fallback and the agentic
+# orchestration loop in agent/; that loop needs a version new enough for
+# adaptive thinking and output_config.effort.
+#
+# The [vertex] extra pulls in google-auth, needed only for Claude on Google
+# Cloud (CLAUDE_PROVIDER=vertex). Harmless on the first-party path.
+anthropic[vertex]>=0.69
+google-genai>=1.0
+
+# Test-only: tests/test_web_smoke.py drives the app through starlette's TestClient.
+httpx>=0.27

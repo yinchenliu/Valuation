@@ -1,6 +1,8 @@
 """Quick DCF run from cached LLY extraction."""
 import sys, pickle
-sys.path.insert(0, r"C:\Users\yinchenliu\Desktop\Python\python\Scripts\valuation_platform")
+# Resolve the project root from this file's location, so these scripts work
+# regardless of where the repo is checked out.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from pathlib import Path
 from ingestion.price_fetcher import fetch_price_data
 from analysis.capm import run_capm

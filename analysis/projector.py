@@ -9,8 +9,9 @@ import numpy as np
 
 import config
 from analysis.fcff import calculate_fcff_projected
+from analysis.rates import clamp_tax_rate
 from models.financial_statements import FinancialStatements
-from models.valuation import ProjectedFCFF, ProjectionAssumptions
+from models.valuation import DerivedAssumptions, ProjectedFCFF, ProjectionAssumptions
 
 
 def _historical_average(values: list[float]) -> float:
@@ -29,20 +30,22 @@ def _historical_cagr(first: float, last: float, periods: int) -> float:
 def derive_assumptions(
     financials: FinancialStatements,
     overrides: ProjectionAssumptions | None = None,
-) -> dict:
+) -> DerivedAssumptions:
     """Derive projection assumptions from historical financials.
 
-    Returns a dict with keys: revenue_growth_rates, operating_margin, tax_rate,
-    da_pct_revenue, capex_pct_revenue, nwc_pct_revenue, projection_years,
-    terminal_growth_rate.
+    Any field left as None on `overrides` is derived from history; anything set is
+    taken as given and recorded in the returned `overridden` list so the source of
+    each assumption stays visible downstream.
     """
     ov = overrides or ProjectionAssumptions()
     years = financials.years
+    overridden: list[str] = []
 
     # --- Revenue growth ---
     revenues = [financials.get_income_statement(y).revenue for y in years]
     if ov.revenue_growth_rates:
-        rev_growth = ov.revenue_growth_rates
+        rev_growth = list(ov.revenue_growth_rates)
+        overridden.append("revenue_growth_rates")
     else:
         # Use a rolling lookback window to avoid distortion from one-off macro events
         # (e.g. 2020 COVID trough inflating the full-period CAGR).
@@ -57,12 +60,20 @@ def derive_assumptions(
 
     # --- Operating margin ---
     op_margins = [financials.get_income_statement(y).operating_margin for y in years]
-    operating_margin = ov.operating_margin if ov.operating_margin is not None else _historical_average(op_margins)
+    if ov.operating_margin is not None:
+        operating_margin = ov.operating_margin
+        overridden.append("operating_margin")
+    else:
+        operating_margin = _historical_average(op_margins)
 
     # --- Tax rate ---
     tax_rates = [financials.get_income_statement(y).effective_tax_rate for y in years]
-    tax_rate = ov.tax_rate if ov.tax_rate is not None else _historical_average(tax_rates)
-    tax_rate = max(0.0, min(tax_rate, 0.50))
+    if ov.tax_rate is not None:
+        tax_rate = ov.tax_rate
+        overridden.append("tax_rate")
+    else:
+        tax_rate = _historical_average(tax_rates)
+    tax_rate = clamp_tax_rate(tax_rate)
 
     # --- D&A as % of revenue ---
     da_pcts = []
@@ -71,7 +82,11 @@ def derive_assumptions(
         inc = financials.get_income_statement(y)
         if cf and inc and inc.revenue > 0:
             da_pcts.append(cf.depreciation_amortization / inc.revenue)
-    da_pct = ov.da_pct_revenue if ov.da_pct_revenue is not None else _historical_average(da_pcts)
+    if ov.da_pct_revenue is not None:
+        da_pct = ov.da_pct_revenue
+        overridden.append("da_pct_revenue")
+    else:
+        da_pct = _historical_average(da_pcts)
 
     # --- CapEx as % of revenue ---
     capex_pcts = []
@@ -80,7 +95,11 @@ def derive_assumptions(
         inc = financials.get_income_statement(y)
         if cf and inc and inc.revenue > 0:
             capex_pcts.append(abs(cf.capital_expenditures) / inc.revenue)
-    capex_pct = ov.capex_pct_revenue if ov.capex_pct_revenue is not None else _historical_average(capex_pcts)
+    if ov.capex_pct_revenue is not None:
+        capex_pct = ov.capex_pct_revenue
+        overridden.append("capex_pct_revenue")
+    else:
+        capex_pct = _historical_average(capex_pcts)
 
     # --- NWC change as % of revenue (from CFS "Changes in assets and liabilities") ---
     # CFS convention: negative = WC increase (cash outflow).
@@ -88,6 +107,7 @@ def derive_assumptions(
     nwc_pct = 0.0
     if ov.nwc_pct_revenue is not None:
         nwc_pct = ov.nwc_pct_revenue
+        overridden.append("nwc_pct_revenue")
     else:
         nwc_pcts = []
         for y in years:
@@ -98,27 +118,28 @@ def derive_assumptions(
         # Use plain average (not _historical_average) — zero WC change is valid
         nwc_pct = float(np.mean(nwc_pcts)) if nwc_pcts else 0.0
 
-    return {
-        "revenue_growth_rates": rev_growth,
-        "operating_margin": operating_margin,
-        "tax_rate": tax_rate,
-        "da_pct_revenue": da_pct,
-        "capex_pct_revenue": capex_pct,
-        "nwc_pct_revenue": nwc_pct,
-        "projection_years": ov.projection_years,
-        "terminal_growth_rate": ov.terminal_growth_rate,
-    }
+    return DerivedAssumptions(
+        revenue_growth_rates=rev_growth,
+        operating_margin=operating_margin,
+        tax_rate=tax_rate,
+        da_pct_revenue=da_pct,
+        capex_pct_revenue=capex_pct,
+        nwc_pct_revenue=nwc_pct,
+        projection_years=ov.projection_years,
+        terminal_growth_rate=ov.terminal_growth_rate,
+        overridden=overridden,
+    )
 
 
 def project_fcffs(
     financials: FinancialStatements,
-    assumptions: dict,
+    assumptions: DerivedAssumptions | dict,
 ) -> list[ProjectedFCFF]:
     """Generate projected FCFFs for each forecast year.
 
     Args:
         financials: Historical financial statements.
-        assumptions: Dict from derive_assumptions().
+        assumptions: Result of derive_assumptions() (a plain dict also works).
 
     Returns:
         List of ProjectedFCFF for each projection year.

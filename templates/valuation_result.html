@@ -35,8 +35,22 @@
         <table class="data-table">
             <tr><td>Beta</td><td>{{ "%.3f"|format(capm.beta) }}</td></tr>
             <tr><td>R-squared</td><td>{{ "%.3f"|format(capm.r_squared) }}</td></tr>
-            <tr><td>Risk-Free Rate</td><td>{{ "%.2f"|format(capm.risk_free_rate * 100) }}%</td></tr>
-            <tr><td>Equity Risk Premium</td><td>{{ "%.2f"|format(capm.equity_risk_premium * 100) }}%</td></tr>
+            <tr>
+                <td>Risk-Free Rate</td>
+                <td>{{ "%.2f"|format(capm.risk_free_rate * 100) }}%
+                    {% if capm.risk_free_source %}
+                    <small class="provenance">{{ capm.risk_free_source }}{% if capm.risk_free_as_of %}, as of {{ capm.risk_free_as_of }}{% endif %}{% if capm.risk_free_is_fallback %} — FALLBACK{% endif %}</small>
+                    {% endif %}
+                </td>
+            </tr>
+            <tr>
+                <td>Equity Risk Premium</td>
+                <td>{{ "%.2f"|format(capm.equity_risk_premium * 100) }}%
+                    {% if capm.erp_source %}
+                    <small class="provenance">{{ capm.erp_source }}{% if capm.erp_as_of %}, as of {{ capm.erp_as_of }}{% endif %}</small>
+                    {% endif %}
+                </td>
+            </tr>
             <tr><td>Cost of Equity</td><td>{{ "%.2f"|format(capm.cost_of_equity * 100) }}%</td></tr>
             <tr><td>Cost of Debt (pre-tax)</td><td>{{ "%.2f"|format(wacc.cost_of_debt * 100) }}%</td></tr>
             <tr><td>Tax Rate</td><td>{{ "%.2f"|format(wacc.tax_rate * 100) }}%</td></tr>
@@ -109,9 +123,41 @@
         </table>
     </div>
 
+    <!-- GAAP -> Non-GAAP bridge -->
+    {% if non_recurring %}
+    <div class="section">
+        <h2>Non-Recurring Adjustments (GAAP &rarr; Non-GAAP)</h2>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Year</th>
+                    <th>Description</th>
+                    <th>Line Item</th>
+                    <th>Category</th>
+                    <th>Direction</th>
+                    <th>Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in non_recurring|sort(attribute='year', reverse=true) %}
+                <tr>
+                    <td>{{ item.year }}</td>
+                    <td>{{ item.description }}</td>
+                    <td>{{ item.line_item }}</td>
+                    <td>{{ item.category }}</td>
+                    <td>{{ item.direction }}</td>
+                    <td>{{ "{:,.0f}".format(item.amount) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <small>Amounts in millions. "add_back" removes a one-time expense; "remove" strips a one-time gain.</small>
+    </div>
+    {% endif %}
+
     <div class="actions">
         <a href="/" class="btn">New Valuation</a>
-        <a href="/assumptions?ticker={{ ticker }}&company_name={{ company_name }}&is_path={{ dcf.projected_fcffs[0].year - assumptions.projection_years }}&bs_path=&cf_path="
+        <a href="/assumptions?ticker={{ ticker }}&company_name={{ company_name }}&run_id={{ run_id }}&files={{ files|urlencode }}"
            class="btn btn-secondary">Adjust Assumptions</a>
     </div>
 

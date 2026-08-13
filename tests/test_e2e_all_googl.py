@@ -1,6 +1,8 @@
 """Run full DCF pipeline on all GOOGL 10-K PDFs in the google folder."""
 import sys
-sys.path.insert(0, r"C:\Users\yinchenliu\Desktop\Python\python\Scripts\valuation_platform")
+# Resolve the project root from this file's location, so these scripts work
+# regardless of where the repo is checked out.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pathlib import Path
 from ingestion.claude_extractor import extract_financials

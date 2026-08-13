@@ -16,20 +16,21 @@
         <input type="hidden" name="ticker" value="{{ ticker }}">
         <input type="hidden" name="company_name" value="{{ company_name }}">
         <input type="hidden" name="files" value="{{ files }}">
+        <input type="hidden" name="run_id" value="{{ run_id }}">
 
         <h2>Projection Settings</h2>
         <div class="form-row">
             <div class="form-group">
                 <label for="projection_years">Projection Years</label>
                 <select id="projection_years" name="projection_years">
-                    <option value="3">3 Years</option>
-                    <option value="5" selected>5 Years</option>
+                    <option value="3" {% if default_projection_years == 3 %}selected{% endif %}>3 Years</option>
+                    <option value="5" {% if default_projection_years == 5 %}selected{% endif %}>5 Years</option>
                 </select>
             </div>
             <div class="form-group">
                 <label for="terminal_growth_rate">Terminal Growth Rate (%)</label>
                 <input type="number" id="terminal_growth_rate" name="terminal_growth_rate"
-                       value="2.5" step="0.1" min="0" max="5">
+                       value="{{ '%.1f'|format(default_terminal_growth_pct) }}" step="0.1" min="0" max="5">
             </div>
         </div>
 
@@ -49,13 +50,13 @@
                 <label for="operating_margin">Operating Margin (%)</label>
                 <input type="number" id="operating_margin" name="operating_margin"
                        value="{{ defaults.operating_margin_display or '' }}" step="0.1">
-                <small>0 = use historical average</small>
+                <small>Leave blank to use the historical average</small>
             </div>
             <div class="form-group">
                 <label for="tax_rate">Tax Rate (%)</label>
                 <input type="number" id="tax_rate" name="tax_rate"
                        value="{{ defaults.tax_rate_display or '' }}" step="0.1">
-                <small>0 = derive from financials</small>
+                <small>Leave blank to derive from the financials</small>
             </div>
         </div>
 
@@ -83,12 +84,14 @@
             <div class="form-group">
                 <label for="risk_free_rate">Risk-Free Rate (%)</label>
                 <input type="number" id="risk_free_rate" name="risk_free_rate"
-                       value="4.0" step="0.1">
+                       placeholder="auto (live 10Y Treasury)" step="0.1">
+                <small>Leave blank to fetch the current 10Y Treasury yield (^TNX)</small>
             </div>
             <div class="form-group">
                 <label for="equity_risk_premium">Equity Risk Premium (%)</label>
                 <input type="number" id="equity_risk_premium" name="equity_risk_premium"
-                       placeholder="auto (S&P 500 return − risk-free)" step="0.1">
+                       placeholder="auto ({{ '%.1f'|format(cfg.DEFAULT_EQUITY_RISK_PREMIUM * 100) }}%)" step="0.1">
+                <small>Leave blank to use the configured forward ERP</small>
             </div>
         </div>
 
@@ -108,20 +111,40 @@
             <div class="form-group">
                 <label for="beta_lookback_years">Beta Lookback (years)</label>
                 <select id="beta_lookback_years" name="beta_lookback_years">
-                    <option value="3">3 Years</option>
-                    <option value="5" selected>5 Years</option>
+                    <option value="3" {% if default_beta_lookback_years == 3 %}selected{% endif %}>3 Years</option>
+                    <option value="5" {% if default_beta_lookback_years == 5 %}selected{% endif %}>5 Years</option>
                 </select>
             </div>
             <div class="form-group">
                 <label for="return_frequency">Return Frequency</label>
                 <select id="return_frequency" name="return_frequency">
-                    <option value="monthly" selected>Monthly</option>
-                    <option value="daily">Daily</option>
+                    <option value="monthly" {% if default_return_frequency == 'monthly' %}selected{% endif %}>Monthly</option>
+                    <option value="daily" {% if default_return_frequency == 'daily' %}selected{% endif %}>Daily</option>
                 </select>
             </div>
         </div>
 
         <button type="submit" class="btn btn-primary">Run Valuation</button>
+    </form>
+
+    <form action="/valuation/agentic" method="post" class="agentic-form">
+        <input type="hidden" name="ticker" value="{{ ticker }}">
+        <input type="hidden" name="company_name" value="{{ company_name }}">
+        <input type="hidden" name="files" value="{{ files }}">
+        <input type="hidden" name="run_id" value="{{ run_id }}">
+        <div class="form-group">
+            <label for="agent_provider">Orchestrating Model</label>
+            <select id="agent_provider" name="agent_provider">
+                <option value="claude" {% if agent_provider == 'claude' %}selected{% endif %}>Claude</option>
+                <option value="gemini" {% if agent_provider == 'gemini' %}selected{% endif %}>Gemini</option>
+            </select>
+        </div>
+        <button type="submit" class="btn btn-agentic">Run Agentic Valuation</button>
+        <small>
+            The chosen model decides which analysis tools to call and in what order,
+            and reports an audit trail. The arithmetic is the same deterministic code
+            either way — only the sequencing differs.
+        </small>
     </form>
 </div>
 {% endblock %}

@@ -70,6 +70,10 @@ def apply_adjustments(
     return dataclasses.replace(
         income_statement,
         **{f: getattr(income_statement, f) + delta for f, delta in changes.items()},
+        # Record what moved and by how much. IncomeStatement documents this field
+        # as the GAAP -> non-GAAP audit trail, but nothing was writing it, so the
+        # bridge could never be shown downstream.
+        non_recurring_items=dict(changes),
     )
 
 

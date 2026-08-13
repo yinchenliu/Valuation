@@ -1,6 +1,8 @@
 """Dump full contents of LLY extraction cache."""
 import sys, pickle, pprint
-sys.path.insert(0, r"C:\Users\yinchenliu\Desktop\Python\python\Scripts\valuation_platform")
+# Resolve the project root from this file's location, so these scripts work
+# regardless of where the repo is checked out.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 with open(r"C:\Users\yinchenliu\Desktop\Python\python\Scripts\valuation_platform\tests\.cache_lly_extraction.pkl", "rb") as f:
     financials, adjustments = pickle.load(f)

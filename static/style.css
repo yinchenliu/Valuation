@@ -230,3 +230,35 @@ body {
 h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
 h2 { font-size: 1.15rem; }
 p { color: var(--text-secondary); margin-bottom: 1.5rem; }
+
+/* Provenance annotations on market-derived inputs */
+.provenance {
+    display: block;
+    margin-top: 2px;
+    color: #6b7280;
+    font-size: 0.78rem;
+    font-style: italic;
+}
+
+/* Agentic run: audit trail */
+.transcript code.io {
+    font-size: 0.78rem;
+    color: #374151;
+    word-break: break-word;
+}
+.transcript tr.row-error td { background: #fef2f2; }
+.transcript td { vertical-align: top; }
+.muted { color: #9ca3af; }
+.narrative {
+    white-space: pre-wrap;
+    line-height: 1.6;
+    background: #f9fafb;
+    border-left: 3px solid #6366f1;
+    padding: 1rem 1.25rem;
+    border-radius: 4px;
+}
+.btn-agentic {
+    background: #4f46e5;
+    color: #fff;
+}
+.btn-agentic:hover { background: #4338ca; }

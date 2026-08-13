@@ -7,13 +7,23 @@ Beta is estimated by regressing stock returns on market returns.
 
 from __future__ import annotations
 
+from datetime import date
+
 import numpy as np
 from scipy import stats
 
-from ingestion.price_fetcher import PriceData
+from analysis.market_data import (
+    MarketValue,
+    fetch_equity_risk_premium,
+    fetch_risk_free_rate,
+    realised_equity_risk_premium,
+)
+from models.market import PriceData
 from models.valuation import CAPMResult
 
-import config
+# Sentinel for `equity_risk_premium`: opt back in to the backward-looking
+# realised-return ERP that used to be the default.
+REALISED = "realised"
 
 
 def calculate_beta(price_data: PriceData) -> tuple[float, float, float]:
@@ -44,32 +54,48 @@ def annualized_market_return(price_data: PriceData) -> float:
 def run_capm(
     price_data: PriceData,
     risk_free_rate: float | None = None,
-    equity_risk_premium: float | None = None,
+    equity_risk_premium: float | str | None = None,
     beta_override: float | None = None,
 ) -> CAPMResult:
     """Calculate cost of equity using CAPM.
 
     Args:
         price_data: Historical return data from price_fetcher.
-        risk_free_rate: Annual risk-free rate (e.g., 0.04 for 4%). Uses default if None.
-        equity_risk_premium: Market risk premium (e.g., 0.055 for 5.5%). If None,
-            it is computed as the historical annualized S&P 500 return minus the
-            risk-free rate.
+        risk_free_rate: Annual risk-free rate as a decimal (0.04 == 4%). If None,
+            the current 10Y Treasury yield is fetched, falling back to
+            ``config.DEFAULT_RISK_FREE_RATE``.
+        equity_risk_premium: Market risk premium as a decimal (0.055 == 5.5%). If
+            None, uses the versioned ``config.DEFAULT_EQUITY_RISK_PREMIUM``. Pass
+            ``REALISED`` ("realised") to instead derive it from the trailing
+            market return, which is what this function used to do by default.
         beta_override: If provided, skips regression and uses this beta directly.
 
     Returns:
-        CAPMResult with beta, cost of equity, and regression diagnostics.
+        CAPMResult with beta, cost of equity, regression diagnostics, and the
+        provenance of both market inputs.
     """
-    rf = risk_free_rate if risk_free_rate is not None else config.DEFAULT_RISK_FREE_RATE
-
-    if equity_risk_premium is not None:
-        erp = equity_risk_premium
+    if risk_free_rate is not None:
+        rf = MarketValue(
+            value=risk_free_rate,
+            source="caller-supplied override",
+            as_of=date.today(),
+        )
     else:
-        market_return = annualized_market_return(price_data)
-        erp = market_return - rf
-        print(
-            f"  ERP from history: S&P 500 annualized return {market_return:.2%} "
-            f"- risk-free {rf:.2%} = {erp:.2%}"
+        rf = fetch_risk_free_rate()
+
+    if equity_risk_premium is None:
+        erp = fetch_equity_risk_premium()
+    elif isinstance(equity_risk_premium, str):
+        if equity_risk_premium.lower() != REALISED:
+            raise ValueError(
+                f"equity_risk_premium must be a number or {REALISED!r}, got {equity_risk_premium!r}"
+            )
+        erp = realised_equity_risk_premium(annualized_market_return(price_data), rf.value)
+    else:
+        erp = MarketValue(
+            value=equity_risk_premium,
+            source="caller-supplied override",
+            as_of=date.today(),
         )
 
     if beta_override is not None:
@@ -81,8 +107,14 @@ def run_capm(
 
     return CAPMResult(
         beta=beta,
-        risk_free_rate=rf,
-        equity_risk_premium=erp,
+        risk_free_rate=rf.value,
+        equity_risk_premium=erp.value,
         r_squared=r_sq,
         std_error=std_err,
+        risk_free_source=rf.source,
+        risk_free_as_of=rf.as_of,
+        risk_free_is_fallback=rf.is_fallback,
+        erp_source=erp.source,
+        erp_as_of=erp.as_of,
+        erp_is_fallback=erp.is_fallback,
     )

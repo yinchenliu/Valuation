@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <h1>Agentic Valuation — {{ ticker }}</h1>
+    {% if company_name %}<p class="subtitle">{{ company_name }}</p>{% endif %}
+
+    {% if error %}
+    <div class="error-banner">
+        <strong>Error:</strong> {{ error }}
+    </div>
+    {% endif %}
+
+    {% if result and result.narrative %}
+    <div class="section">
+        <h2>Analyst Summary</h2>
+        <div class="narrative">{{ result.narrative }}</div>
+    </div>
+    {% endif %}
+
+    {% if dcf %}
+    <div class="section">
+        <h2>Valuation</h2>
+        <div class="summary-grid">
+            <div class="summary-card">
+                <div class="label">Implied Share Price</div>
+                <div class="value">${{ "%.2f"|format(dcf.implied_share_price) }}</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">Current Price</div>
+                <div class="value">${{ "%.2f"|format(dcf.current_price) }}</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">Upside / Downside</div>
+                <div class="value {{ 'positive' if dcf.upside_downside > 0 else 'negative' }}">
+                    {{ "%+.1f"|format(dcf.upside_downside) }}%
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Discount Rate</h2>
+        <table class="data-table">
+            <tr><td>Beta</td><td>{{ "%.3f"|format(capm.beta) }}</td></tr>
+            <tr><td>R-squared</td><td>{{ "%.3f"|format(capm.r_squared) }}</td></tr>
+            <tr>
+                <td>Risk-Free Rate</td>
+                <td>{{ "%.2f"|format(capm.risk_free_rate * 100) }}%
+                    {% if capm.risk_free_source %}
+                    <small class="provenance">{{ capm.risk_free_source }}{% if capm.risk_free_as_of %}, as of {{ capm.risk_free_as_of }}{% endif %}{% if capm.risk_free_is_fallback %} — FALLBACK{% endif %}</small>
+                    {% endif %}
+                </td>
+            </tr>
+            <tr>
+                <td>Equity Risk Premium</td>
+                <td>{{ "%.2f"|format(capm.equity_risk_premium * 100) }}%
+                    {% if capm.erp_source %}<small class="provenance">{{ capm.erp_source }}</small>{% endif %}
+                </td>
+            </tr>
+            <tr><td>Cost of Equity</td><td>{{ "%.2f"|format(capm.cost_of_equity * 100) }}%</td></tr>
+            <tr class="highlight"><td><strong>WACC</strong></td><td><strong>{{ "%.2f"|format(wacc.wacc * 100) }}%</strong></td></tr>
+        </table>
+    </div>
+    {% endif %}
+
+    <!-- The audit trail: this is the point of the agentic path -->
+    <div class="section">
+        <h2>Audit Trail</h2>
+        <p class="subtitle">
+            Every figure above came from one of these tool calls. The model chose the
+            order; the tools did the arithmetic.
+        </p>
+        {% if transcript %}
+        <table class="data-table transcript">
+            <thead>
+                <tr>
+                    <th style="width:3rem">#</th>
+                    <th style="width:14rem">Tool</th>
+                    <th>Inputs</th>
+                    <th>Result</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in transcript %}
+                <tr class="{{ 'row-error' if not row.ok else '' }}">
+                    <td>{{ row.n }}</td>
+                    <td><code>{{ row.step }}</code></td>
+                    <td>
+                        {% if row.inputs_text %}<code class="io">{{ row.inputs_text }}</code>
+                        {% else %}<span class="muted">&mdash;</span>{% endif %}
+                    </td>
+                    <td>
+                        {% if row.is_error %}<span class="negative">{{ row.output_text }}</span>
+                        {% elif row.output_text %}<code class="io">{{ row.output_text }}</code>
+                        {% else %}<span class="muted">&mdash;</span>{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="muted">No steps recorded.</p>
+        {% endif %}
+    </div>
+
+    {% if result %}
+    <div class="section">
+        <h2>Run Statistics</h2>
+        <table class="data-table">
+            <tr><td>Completed</td><td>{{ "yes" if result.completed else "no" }}</td></tr>
+            <tr><td>Model</td><td><code>{{ result.model or "—" }}</code></td></tr>
+            <tr><td>Backend</td><td>{{ result.backend or "—" }}</td></tr>
+            <tr><td>Model turns</td><td>{{ result.iterations }}</td></tr>
+            <tr><td>Tool calls</td><td>{{ result.tool_calls }}</td></tr>
+            <tr><td>Stop reason</td><td>{{ result.stop_reason or "—" }}</td></tr>
+            <tr><td>Input tokens</td><td>{{ "{:,}".format(result.input_tokens) }}</td></tr>
+            <tr><td>Output tokens</td><td>{{ "{:,}".format(result.output_tokens) }}</td></tr>
+            <tr>
+                <td>Cache read tokens</td>
+                <td>{{ "{:,}".format(result.cache_read_tokens) }}
+                    {% if result.iterations > 1 and result.cache_read_tokens == 0 %}
+                    <small class="provenance">zero across turns suggests a prompt-prefix invalidator</small>
+                    {% endif %}
+                </td>
+            </tr>
+        </table>
+    </div>
+    {% endif %}
+
+    <div class="actions">
+        <a href="/" class="btn">New Valuation</a>
+        <a href="/assumptions?ticker={{ ticker }}&company_name={{ company_name }}&run_id={{ run_id }}&files={{ files|urlencode }}"
+           class="btn btn-secondary">Deterministic Pipeline</a>
+    </div>
+</div>
+{% endblock %}

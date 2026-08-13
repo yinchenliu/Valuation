@@ -1,6 +1,9 @@
 """E2E test: Extract ABBV financials from 3 separate 10-K PDFs, merge, and run DCF."""
 import sys
-sys.path.insert(0, r"C:\Users\yinchenliu\Desktop\Python\python\Scripts\valuation_platform")
+from pathlib import Path
+# Resolve the project root from this file's location, so these scripts work
+# regardless of where the repo is checked out.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ingestion.claude_extractor import extract_financials
 from ingestion.price_fetcher import fetch_price_data

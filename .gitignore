@@ -10,3 +10,4 @@ build/
 venv/
 CLAUDE.md
 10K_filings/
+.yf_cache/

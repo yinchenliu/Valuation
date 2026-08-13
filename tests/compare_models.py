@@ -3,7 +3,9 @@ import sys
 import pickle
 from pathlib import Path
 
-sys.path.insert(0, r"C:\Users\yinchenliu\Desktop\Python\python\Scripts\valuation_platform")
+# Resolve the project root from this file's location, so these scripts work
+# regardless of where the repo is checked out.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 PRO_CACHE = Path(__file__).parent / ".cache_abbv_extraction_pro.pkl"
 LITE_CACHE = Path(__file__).parent / ".cache_abbv_extraction.pkl"

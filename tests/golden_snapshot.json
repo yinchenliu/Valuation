@@ -1,0 +1,732 @@
+{
+  "ABBV": {
+    "adjusted_income": {
+      "2021": {
+        "ebit": 20194.0,
+        "effective_tax_rate": 0.114467,
+        "net_income": 11140.0,
+        "revenue": 56197.0
+      },
+      "2022": {
+        "ebit": 23027.0,
+        "effective_tax_rate": 0.104441,
+        "net_income": 13994.0,
+        "revenue": 58054.0
+      },
+      "2023": {
+        "ebit": 17531.0,
+        "effective_tax_rate": 0.233548,
+        "net_income": 4519.0,
+        "revenue": 54318.0
+      },
+      "2024": {
+        "ebit": 18285.0,
+        "effective_tax_rate": -0.062686,
+        "net_income": 9663.0,
+        "revenue": 56334.0
+      },
+      "2025": {
+        "ebit": 28679.0,
+        "effective_tax_rate": 0.172542,
+        "net_income": 11337.0,
+        "revenue": 61160.0
+      }
+    },
+    "assumptions": {
+      "capex_pct_revenue": 0.120125,
+      "da_pct_revenue": 0.147909,
+      "nwc_pct_revenue": 0.011948,
+      "operating_margin": 0.374448,
+      "projection_years": 5.0,
+      "revenue_growth_rates": [
+        0.017525,
+        0.017525,
+        0.017525,
+        0.017525,
+        0.017525
+      ],
+      "tax_rate": 0.112463,
+      "terminal_growth_rate": 0.025
+    },
+    "capm": {
+      "beta": 1.205332,
+      "cost_of_equity": 0.106293,
+      "equity_risk_premium": 0.055,
+      "erp_is_fallback": false,
+      "erp_source": "Damodaran implied US ERP (annual review)",
+      "r_squared": 0.84023,
+      "risk_free_rate": 0.04
+    },
+    "dcf": {
+      "diluted_shares": 1773.0,
+      "enterprise_value": 313179.896402,
+      "equity_value": 250940.896402,
+      "implied_share_price": 141.534629,
+      "net_debt": 62239.0,
+      "pv_fcffs": 86461.090685,
+      "pv_terminal_value": 226718.805716,
+      "terminal_value": 352817.835912,
+      "upside_downside": -5.643581
+    },
+    "historical_fcff": [
+      {
+        "fcff": 22233.645469,
+        "year": 2021
+      },
+      {
+        "fcff": 25451.095866,
+        "year": 2022
+      },
+      {
+        "fcff": 22543.588874,
+        "year": 2023
+      },
+      {
+        "fcff": 123.0,
+        "year": 2024
+      },
+      {
+        "fcff": 14768.835559,
+        "year": 2025
+      }
+    ],
+    "non_recurring_count": 43,
+    "projected_fcffs": [
+      {
+        "ebit": 23302.560743,
+        "fcff": 21667.398352,
+        "nopat": 20681.892029,
+        "revenue": 62231.832008,
+        "year": 2026
+      },
+      {
+        "ebit": 23710.939266,
+        "fcff": 22047.120574,
+        "nopat": 21044.343204,
+        "revenue": 63322.447925,
+        "year": 2027
+      },
+      {
+        "ebit": 24126.474643,
+        "fcff": 22433.497446,
+        "nopat": 21413.146354,
+        "revenue": 64432.176939,
+        "year": 2028
+      },
+      {
+        "ebit": 24549.292298,
+        "fcff": 22826.645592,
+        "nopat": 21788.412797,
+        "revenue": 65561.354008,
+        "year": 2029
+      },
+      {
+        "ebit": 24979.519853,
+        "fcff": 23226.683679,
+        "nopat": 22170.255803,
+        "revenue": 66710.319962,
+        "year": 2030
+      }
+    ],
+    "ticker": "ABBV",
+    "wacc": {
+      "cost_of_debt": 0.042862,
+      "cost_of_equity": 0.106293,
+      "debt_weight": 0.20242,
+      "equity_weight": 0.79758,
+      "tax_rate": 0.112463,
+      "wacc": 0.092478
+    },
+    "years": [
+      2021,
+      2022,
+      2023,
+      2024,
+      2025
+    ]
+  },
+  "ABBV_flashlite": {
+    "adjusted_income": {
+      "2021": {
+        "ebit": 19194.0,
+        "effective_tax_rate": 0.124031,
+        "net_income": 10170.0,
+        "revenue": 56197.0
+      },
+      "2022": {
+        "ebit": 21574.0,
+        "effective_tax_rate": 0.11554,
+        "net_income": 12493.0,
+        "revenue": 58054.0
+      },
+      "2023": {
+        "ebit": 16331.0,
+        "effective_tax_rate": 0.291985,
+        "net_income": 3339.0,
+        "revenue": 54318.0
+      },
+      "2024": {
+        "ebit": 15399009130.0,
+        "effective_tax_rate": -0.0,
+        "net_income": 17199004300.0,
+        "revenue": 56334.0
+      },
+      "2025": {
+        "ebit": 23381.0,
+        "effective_tax_rate": 0.301609,
+        "net_income": 6032.0,
+        "revenue": 61160.0
+      }
+    },
+    "assumptions": {
+      "capex_pct_revenue": 0.015484,
+      "da_pct_revenue": 0.096725,
+      "nwc_pct_revenue": 0.003994,
+      "operating_margin": 54670.670568,
+      "projection_years": 5.0,
+      "revenue_growth_rates": [
+        0.017525,
+        0.017525,
+        0.017525,
+        0.017525,
+        0.017525
+      ],
+      "tax_rate": 0.166633,
+      "terminal_growth_rate": 0.025
+    },
+    "capm": {
+      "beta": 1.205332,
+      "cost_of_equity": 0.106293,
+      "equity_risk_premium": 0.055,
+      "erp_is_fallback": false,
+      "erp_source": "Damodaran implied US ERP (annual review)",
+      "r_squared": 0.84023,
+      "risk_free_rate": 0.04
+    },
+    "dcf": {
+      "diluted_shares": 1773.0,
+      "enterprise_value": 41268168433.45299,
+      "equity_value": 41268106194.45299,
+      "implied_share_price": 23275863.617853,
+      "net_debt": 62239.0,
+      "pv_fcffs": 11327972141.206875,
+      "pv_terminal_value": 29940196292.246117,
+      "terminal_value": 46492538487.709076,
+      "upside_downside": 15517142.411902
+    },
+    "historical_fcff": [
+      {
+        "fcff": 24112.472868,
+        "year": 2021
+      },
+      {
+        "fcff": 26220.346195,
+        "year": 2022
+      },
+      {
+        "fcff": 23636.625954,
+        "year": 2023
+      },
+      {
+        "fcff": 20640.0,
+        "year": 2024
+      },
+      {
+        "fcff": 19836.444136,
+        "year": 2025
+      }
+    ],
+    "non_recurring_count": 26,
+    "projected_fcffs": [
+      {
+        "ebit": 3402255986.526477,
+        "fcff": 2835332749.873477,
+        "nopat": 2835327942.605393,
+        "revenue": 62231.832008,
+        "year": 2026
+      },
+      {
+        "ebit": 3461880690.018536,
+        "fcff": 2885022095.761035,
+        "nopat": 2885017204.245342,
+        "revenue": 63322.447925,
+        "year": 2027
+      },
+      {
+        "ebit": 3522550319.371728,
+        "fcff": 2935582249.879072,
+        "nopat": 2935577272.639325,
+        "revenue": 64432.176939,
+        "year": 2028
+      },
+      {
+        "ebit": 3584283186.963161,
+        "fcff": 2987028473.184653,
+        "nopat": 2987023408.718535,
+        "revenue": 65561.354008,
+        "year": 2029
+      },
+      {
+        "ebit": 3647097926.095251,
+        "fcff": 3039376294.083869,
+        "nopat": 3039371140.862734,
+        "revenue": 66710.319962,
+        "year": 2030
+      }
+    ],
+    "ticker": "ABBV",
+    "wacc": {
+      "cost_of_debt": 0.042862,
+      "cost_of_equity": 0.106293,
+      "debt_weight": 0.20242,
+      "equity_weight": 0.79758,
+      "tax_rate": 0.166633,
+      "wacc": 0.092008
+    },
+    "years": [
+      2021,
+      2022,
+      2023,
+      2024,
+      2025
+    ]
+  },
+  "ABBV_pro": {
+    "adjusted_income": {
+      "2021": {
+        "ebit": 20194.0,
+        "effective_tax_rate": 0.114467,
+        "net_income": 11140.0,
+        "revenue": 56197.0
+      },
+      "2022": {
+        "ebit": 23027.0,
+        "effective_tax_rate": 0.104441,
+        "net_income": 13994.0,
+        "revenue": 58054.0
+      },
+      "2023": {
+        "ebit": 17531.0,
+        "effective_tax_rate": 0.233548,
+        "net_income": 4519.0,
+        "revenue": 54318.0
+      },
+      "2024": {
+        "ebit": 18003.0,
+        "effective_tax_rate": -0.064692,
+        "net_income": 9381.0,
+        "revenue": 56334.0
+      },
+      "2025": {
+        "ebit": 21279.0,
+        "effective_tax_rate": 0.375179,
+        "net_income": 3937.0,
+        "revenue": 61160.0
+      }
+    },
+    "assumptions": {
+      "capex_pct_revenue": 0.120125,
+      "da_pct_revenue": 0.147909,
+      "nwc_pct_revenue": 0.011948,
+      "operating_margin": 0.349248,
+      "projection_years": 5.0,
+      "revenue_growth_rates": [
+        0.017525,
+        0.017525,
+        0.017525,
+        0.017525,
+        0.017525
+      ],
+      "tax_rate": 0.152589,
+      "terminal_growth_rate": 0.025
+    },
+    "capm": {
+      "beta": 1.205332,
+      "cost_of_equity": 0.106293,
+      "equity_risk_premium": 0.055,
+      "erp_is_fallback": false,
+      "erp_source": "Damodaran implied US ERP (annual review)",
+      "r_squared": 0.84023,
+      "risk_free_rate": 0.04
+    },
+    "dcf": {
+      "diluted_shares": 1773.0,
+      "enterprise_value": 281905.299843,
+      "equity_value": 219666.299843,
+      "implied_share_price": 123.895262,
+      "net_debt": 62239.0,
+      "pv_fcffs": 77497.508822,
+      "pv_terminal_value": 204407.791021,
+      "terminal_value": 317591.116261,
+      "upside_downside": -17.403159
+    },
+    "historical_fcff": [
+      {
+        "fcff": 22233.645469,
+        "year": 2021
+      },
+      {
+        "fcff": 25451.095866,
+        "year": 2022
+      },
+      {
+        "fcff": 22543.588874,
+        "year": 2023
+      },
+      {
+        "fcff": 123.0,
+        "year": 2024
+      },
+      {
+        "fcff": 14182.608475,
+        "year": 2025
+      }
+    ],
+    "non_recurring_count": 40,
+    "projected_fcffs": [
+      {
+        "ebit": 21734.318929,
+        "fcff": 19403.413463,
+        "nopat": 18417.907139,
+        "revenue": 62231.832008,
+        "year": 2026
+      },
+      {
+        "ebit": 22115.213937,
+        "fcff": 19743.459238,
+        "nopat": 18740.681868,
+        "revenue": 63322.447925,
+        "year": 2027
+      },
+      {
+        "ebit": 22502.784149,
+        "fcff": 20089.464332,
+        "nopat": 19069.113239,
+        "revenue": 64432.176939,
+        "year": 2028
+      },
+      {
+        "ebit": 22897.146547,
+        "fcff": 20441.533182,
+        "nopat": 19403.300387,
+        "revenue": 65561.354008,
+        "year": 2029
+      },
+      {
+        "ebit": 23298.420167,
+        "fcff": 20799.772057,
+        "nopat": 19743.34418,
+        "revenue": 66710.319962,
+        "year": 2030
+      }
+    ],
+    "ticker": "ABBV",
+    "wacc": {
+      "cost_of_debt": 0.042862,
+      "cost_of_equity": 0.106293,
+      "debt_weight": 0.20242,
+      "equity_weight": 0.79758,
+      "tax_rate": 0.152589,
+      "wacc": 0.09213
+    },
+    "years": [
+      2021,
+      2022,
+      2023,
+      2024,
+      2025
+    ]
+  },
+  "LHX": {
+    "adjusted_income": {
+      "2021": {
+        "ebit": 2096.0,
+        "effective_tax_rate": 0.194004,
+        "net_income": 1828.0,
+        "revenue": 17814.0
+      },
+      "2022": {
+        "ebit": 2114.0,
+        "effective_tax_rate": 0.093805,
+        "net_income": 2048.0,
+        "revenue": 17062.0
+      },
+      "2023": {
+        "ebit": 2140.0,
+        "effective_tax_rate": 0.011886,
+        "net_income": 1912.0,
+        "revenue": 19419.0
+      },
+      "2024": {
+        "ebit": 2359.0,
+        "effective_tax_rate": 0.035535,
+        "net_income": 2307.0,
+        "revenue": 21325.0
+      },
+      "2025": {
+        "ebit": 2317.0,
+        "effective_tax_rate": 0.148114,
+        "net_income": 1875.0,
+        "revenue": 21865.0
+      }
+    },
+    "assumptions": {
+      "capex_pct_revenue": 0.019123,
+      "da_pct_revenue": 0.057146,
+      "nwc_pct_revenue": 0.007697,
+      "operating_margin": 0.11367,
+      "projection_years": 5.0,
+      "revenue_growth_rates": [
+        0.086192,
+        0.086192,
+        0.086192,
+        0.086192,
+        0.086192
+      ],
+      "tax_rate": 0.096669,
+      "terminal_growth_rate": 0.025
+    },
+    "capm": {
+      "beta": 1.205332,
+      "cost_of_equity": 0.106293,
+      "equity_risk_premium": 0.055,
+      "erp_is_fallback": false,
+      "erp_source": "Damodaran implied US ERP (annual review)",
+      "r_squared": 0.84023,
+      "risk_free_rate": 0.04
+    },
+    "dcf": {
+      "diluted_shares": 188.4,
+      "enterprise_value": 58034.842183,
+      "equity_value": 48660.842183,
+      "implied_share_price": 258.284725,
+      "net_debt": 9374.0,
+      "pv_fcffs": 14328.480512,
+      "pv_terminal_value": 43706.361671,
+      "terminal_value": 67726.159822,
+      "upside_downside": 72.189817
+    },
+    "historical_fcff": [
+      {
+        "fcff": 2558.589065,
+        "year": 2021
+      },
+      {
+        "fcff": 2158.828319,
+        "year": 2022
+      },
+      {
+        "fcff": 2183.545736,
+        "year": 2023
+      },
+      {
+        "fcff": 2802.013796,
+        "year": 2024
+      },
+      {
+        "fcff": 3190.575647,
+        "year": 2025
+      }
+    ],
+    "non_recurring_count": 23,
+    "projected_fcffs": [
+      {
+        "ebit": 2699.626844,
+        "fcff": 3158.883994,
+        "nopat": 2438.65675,
+        "revenue": 23749.583425,
+        "year": 2026
+      },
+      {
+        "ebit": 2932.312506,
+        "fcff": 3431.15385,
+        "nopat": 2648.848933,
+        "revenue": 25796.602463,
+        "year": 2027
+      },
+      {
+        "ebit": 3185.053761,
+        "fcff": 3726.891132,
+        "nopat": 2877.157957,
+        "revenue": 28020.057731,
+        "year": 2028
+      },
+      {
+        "ebit": 3459.579237,
+        "fcff": 4048.11854,
+        "nopat": 3125.145343,
+        "revenue": 30435.156581,
+        "year": 2029
+      },
+      {
+        "ebit": 3757.766554,
+        "fcff": 4397.033111,
+        "nopat": 3394.507205,
+        "revenue": 33058.417117,
+        "year": 2030
+      }
+    ],
+    "ticker": "LHX",
+    "wacc": {
+      "cost_of_debt": 0.057167,
+      "cost_of_equity": 0.106293,
+      "debt_weight": 0.269824,
+      "equity_weight": 0.730176,
+      "tax_rate": 0.096669,
+      "wacc": 0.091547
+    },
+    "years": [
+      2021,
+      2022,
+      2023,
+      2024,
+      2025
+    ]
+  },
+  "LLY": {
+    "adjusted_income": {
+      "2021": {
+        "ebit": 7441.7,
+        "effective_tax_rate": 0.086018,
+        "net_income": 6096.9,
+        "revenue": 28318.4
+      },
+      "2022": {
+        "ebit": 7969.6,
+        "effective_tax_rate": 0.072844,
+        "net_income": 7153.1,
+        "revenue": 28541.4
+      },
+      "2023": {
+        "ebit": 10257.7,
+        "effective_tax_rate": 0.109452,
+        "net_income": 10692.9,
+        "revenue": 34124.1
+      },
+      "2024": {
+        "ebit": 16395.8,
+        "effective_tax_rate": 0.127507,
+        "net_income": 14305.4,
+        "revenue": 45042.7
+      },
+      "2025": {
+        "ebit": 29125.0,
+        "effective_tax_rate": 0.138721,
+        "net_income": 24034.0,
+        "revenue": 65179.0
+      }
+    },
+    "assumptions": {
+      "capex_pct_revenue": 0.133964,
+      "da_pct_revenue": 0.044522,
+      "nwc_pct_revenue": 0.059403,
+      "operating_margin": 0.330694,
+      "projection_years": 5.0,
+      "revenue_growth_rates": [
+        0.316874,
+        0.316874,
+        0.316874,
+        0.316874,
+        0.316874
+      ],
+      "tax_rate": 0.106908,
+      "terminal_growth_rate": 0.025
+    },
+    "capm": {
+      "beta": 1.205332,
+      "cost_of_equity": 0.106293,
+      "equity_risk_premium": 0.055,
+      "erp_is_fallback": false,
+      "erp_source": "Damodaran implied US ERP (annual review)",
+      "r_squared": 0.84023,
+      "risk_free_rate": 0.04
+    },
+    "dcf": {
+      "diluted_shares": 899.3,
+      "enterprise_value": 515094.95574,
+      "equity_value": 479964.95574,
+      "implied_share_price": 533.709503,
+      "net_debt": 35130.0,
+      "pv_fcffs": 88502.408644,
+      "pv_terminal_value": 426592.547096,
+      "terminal_value": 642431.021803,
+      "upside_downside": 255.806335
+    },
+    "historical_fcff": [
+      {
+        "fcff": 5698.071097,
+        "year": 2021
+      },
+      {
+        "fcff": 4907.844876,
+        "year": 2022
+      },
+      {
+        "fcff": -2719.282682,
+        "year": 2023
+      },
+      {
+        "fcff": 4441.168263,
+        "year": 2024
+      },
+      {
+        "fcff": 6734.84501,
+        "year": 2025
+      }
+    ],
+    "non_recurring_count": 12,
+    "projected_fcffs": [
+      {
+        "ebit": 28384.265923,
+        "fcff": 12574.030839,
+        "nopat": 25349.752887,
+        "revenue": 85832.514073,
+        "year": 2026
+      },
+      {
+        "ebit": 37378.494674,
+        "fcff": 16558.411128,
+        "nopat": 33382.424115,
+        "revenue": 113030.584577,
+        "year": 2027
+      },
+      {
+        "ebit": 49222.758406,
+        "fcff": 21805.336937,
+        "nopat": 43960.437989,
+        "revenue": 148847.009642,
+        "year": 2028
+      },
+      {
+        "ebit": 64820.158388,
+        "fcff": 28714.875796,
+        "nopat": 57890.346774,
+        "revenue": 196012.719586,
+        "year": 2029
+      },
+      {
+        "ebit": 85359.964975,
+        "fcff": 37813.866136,
+        "nopat": 76234.277976,
+        "revenue": 258124.004855,
+        "year": 2030
+      }
+    ],
+    "ticker": "LLY",
+    "wacc": {
+      "cost_of_debt": 0.021057,
+      "cost_of_equity": 0.106293,
+      "debt_weight": 0.239591,
+      "equity_weight": 0.760409,
+      "tax_rate": 0.106908,
+      "wacc": 0.085332
+    },
+    "years": [
+      2021,
+      2022,
+      2023,
+      2024,
+      2025
+    ]
+  }
+}

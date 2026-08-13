@@ -78,9 +78,13 @@ Provider = Literal["claude", "gemini"]
 # gemini-3-flash-preview
 # gemini-3.1-pro-preview
 _DEFAULT_MODELS: dict[str, str] = {
-    "claude": "claude-sonnet-4-6",
+    "claude": "claude-sonnet-5",
     "gemini": "gemini-3.1-pro-preview",
 }
+
+# Multi-year extractions produce large JSON payloads. This was 8096, well under
+# what a 5-year statement set needs, while the Gemini path allowed 65536.
+_CLAUDE_MAX_TOKENS = 32000
 
 
 # ===========================================================================
@@ -240,6 +244,7 @@ _NRI_SYSTEM_PROMPT = textwrap.dedent(f"""\
 def _validate_extracted_data(
     llm_years: list[dict],
     fail_pct: float = 0.5,
+    warn_pct: float = 0.1,
 ) -> list[str]:
     """Arithmetic reconciliation of LLM-extracted I/S data.
 
@@ -297,7 +302,10 @@ def _validate_extracted_data(
                     f"(diff={diff:+,.0f}). Derivation: {formula} = {derived:,.0f}. "
                     f"Fix the component fields so they reconcile to your stated {label}."
                 )
-            elif diff_pct > 0.5:
+            elif diff_pct > warn_pct:
+                # Previously compared against the literal 0.5, which equals the
+                # default fail threshold checked just above — so this branch was
+                # unreachable and WARN never printed.
                 status = "WARN"
             else:
                 status = "OK"
@@ -349,8 +357,18 @@ def _call_claude(
     pdf_bytes: bytes | None = None,
 ) -> tuple[str, int, int]:
     """Call Anthropic Claude. Returns (response_text, input_tokens, output_tokens)."""
-    import anthropic
-    client = anthropic.Anthropic(api_key=api_key)
+    import llm_client
+
+    # Routes to the first-party API or to Claude on Vertex AI depending on the
+    # environment. max_retries covers 429/5xx with backoff — the Gemini path has
+    # always had a 5-attempt retry loop, while this side had none, so a single
+    # overload killed a run.
+    if llm_client.resolve_provider() == "vertex":
+        client = llm_client.build_client(max_retries=4)
+    else:
+        import anthropic
+
+        client = anthropic.Anthropic(api_key=api_key, max_retries=4)
 
     content: list[dict] = []
     if pdf_bytes:
@@ -361,16 +379,34 @@ def _call_claude(
                 "media_type": "application/pdf",
                 "data": base64.standard_b64encode(pdf_bytes).decode("utf-8"),
             },
+            # The same PDF is sent for Pass 1, Pass 2, and every repair retry.
+            # Caching it turns those re-sends into cache reads.
+            "cache_control": {"type": "ephemeral"},
         })
     content.append({"type": "text", "text": user_prompt})
 
-    response = client.messages.create(
+    # Streaming because multi-year extractions can run long at this max_tokens;
+    # a non-streaming request that size risks an HTTP timeout.
+    with client.messages.stream(
         model=model,
-        max_tokens=8096,
+        max_tokens=_CLAUDE_MAX_TOKENS,
         system=system_prompt,
         messages=[{"role": "user", "content": content}],
-    )
-    text = response.content[0].text
+    ) as stream:
+        response = stream.get_final_message()
+
+    if response.stop_reason == "refusal":
+        raise RuntimeError("Claude declined to process this filing (stop_reason=refusal).")
+
+    # Take the first text block rather than blind-indexing content[0]: with
+    # thinking or tool blocks present, block 0 is not necessarily text.
+    text = next((b.text for b in response.content if getattr(b, "type", None) == "text"), "")
+    if not text:
+        raise RuntimeError(f"Claude returned no text content (stop_reason={response.stop_reason}).")
+
+    if response.stop_reason == "max_tokens":
+        print(f"  [WARN] Claude response hit max_tokens ({_CLAUDE_MAX_TOKENS}) — may be truncated")
+
     return text, response.usage.input_tokens, response.usage.output_tokens
 
 
@@ -703,6 +739,7 @@ def _run_financials_pass(
             )
             raw2, _, _ = _call_llm(
                 _FINANCIALS_SYSTEM_PROMPT, fix_prompt, provider, model, api_key,
+                pdf_bytes=pdf_bytes,
             )
             json_str = _extract_json(raw2)
             continue
@@ -729,11 +766,16 @@ def _run_financials_pass(
             "  operating_income = gross_profit - sga - rd_expense - other_operating_expense\n"
             "  net_income = operating_income + interest_income - interest_expense "
             "+ other_non_operating - tax_expense\n\n"
-            "Use ONLY numbers from the original filing. Return ONLY the corrected JSON.\n\n"
+            "Re-read the attached filing and use ONLY numbers from it. "
+            "Return ONLY the corrected JSON.\n\n"
             + json_str
         )
+        # Re-attach the PDF. Without it the model was asked to reconcile figures
+        # against a filing it could no longer see, so all it could do was reshuffle
+        # the numbers it had already produced.
         raw2, in2, out2 = _call_llm(
             _FINANCIALS_SYSTEM_PROMPT, fix_prompt, provider, model, api_key,
+            pdf_bytes=pdf_bytes,
         )
         if in2 or out2:
             print(f"  [Pass 1] Retry tokens — input: {in2:,}  output: {out2:,}")
@@ -789,6 +831,7 @@ def _run_nri_pass(
         )
         raw2, _, _ = _call_llm(
             _NRI_SYSTEM_PROMPT, fix_prompt, provider, model, api_key,
+            pdf_bytes=pdf_bytes,
         )
         try:
             nri = _parse_nri_response(_extract_json(raw2))
@@ -826,9 +869,20 @@ def _resolve_provider(
     resolved_model = model or _DEFAULT_MODELS[provider]
 
     if provider == "claude":
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY is not set. Add it to .env or system env.")
+        import llm_client
+
+        # On Vertex AI there is no Anthropic key at all — auth is Google
+        # credentials — so only require the key on the first-party path.
+        if llm_client.resolve_provider() == "vertex":
+            api_key = ""
+        else:
+            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+            if not api_key:
+                raise ValueError(
+                    "ANTHROPIC_API_KEY is not set. Add it to .env, or set "
+                    "CLAUDE_PROVIDER=vertex with CLAUDE_VERTEX_PROJECT_ID to use "
+                    "Claude on Google Cloud."
+                )
     else:
         api_key = os.environ.get("GEMINI_API_KEY", "")
         if not api_key:
@@ -1000,9 +1054,18 @@ def extract_multi_year(
             if y not in all_cashflow or y == fiscal_year:
                 all_cashflow[y] = stmt
 
-        # Dedupe NRIs by (year, amount, direction)
+        # Dedupe NRIs across overlapping comparative years. The key includes
+        # line_item and a normalised description: keying on (year, amount,
+        # direction) alone collapsed two genuinely different items that happened
+        # to round to the same amount in the same year.
         for item in nri:
-            key = (item.year, item.amount, item.direction)
+            key = (
+                item.year,
+                round(item.amount, 2),
+                item.direction,
+                item.line_item.strip().lower(),
+                " ".join(item.description.lower().split())[:80],
+            )
             if key not in nri_keys:
                 all_nri.append(item)
                 nri_keys.add(key)

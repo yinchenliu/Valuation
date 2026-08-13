@@ -21,6 +21,10 @@ Usage:
     # Rerun from cache (skips LLM extraction)
     python cli.py 10K_filings -t ABBV -p gemini --cache-dir ./cache
 
+    # Agentic orchestration, driven by Gemini instead of Claude
+    python cli.py 10K_filings -t ABBV --cache-dir ./cache --agentic \\
+        --agent-provider gemini
+
     # With overrides
     python cli.py 10K.pdf -t AAPL --terminal-growth 0.03 --beta 1.1
 """
@@ -37,16 +41,11 @@ from pathlib import Path
 # Ensure project root is on sys.path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from analysis.capm import run_capm
-from analysis.dcf import run_dcf
+import config
+import pipeline
 from analysis.fcff import calculate_fcff_historical
-from analysis.normalizer import normalize_financials
-from analysis.projector import derive_assumptions, project_fcffs
-from analysis.wacc import calculate_wacc
-from ingestion.claude_extractor import extract_financials, extract_multi_year
-from ingestion.price_fetcher import fetch_price_data
 from models.financial_statements import FinancialStatements, NonRecurringItem
-from models.valuation import ProjectionAssumptions
+from models.valuation import DerivedAssumptions, ProjectionAssumptions
 
 W = 70  # output width
 TOTAL_STEPS = 10
@@ -95,9 +94,34 @@ def parse_args() -> argparse.Namespace:
     g.add_argument("--cache-dir", default=None, help="Directory for pickle cache")
     g.add_argument("--no-cache", action="store_true", help="Force re-extraction")
 
+    # Orchestration
+    g = p.add_argument_group("orchestration")
+    g.add_argument(
+        "--agentic", action="store_true",
+        help="Let an LLM sequence the valuation via tool calls instead of running "
+             "the fixed 8-step pipeline",
+    )
+    g.add_argument(
+        "--agent-provider", default=None, choices=["claude", "gemini"],
+        help="Model family driving the agentic loop (default: AGENT_PROVIDER, "
+             "else claude). Claude needs ANTHROPIC_API_KEY or Vertex credentials; "
+             "gemini needs GEMINI_API_KEY",
+    )
+    g.add_argument(
+        "--agent-model", default=None,
+        help="Model ID driving the agentic loop (default: per-provider, see "
+             "agent/loop.py DEFAULT_MODELS)",
+    )
+    g.add_argument(
+        "--agent-effort", default="high", choices=["low", "medium", "high", "xhigh", "max"],
+        help="Reasoning effort for the agentic loop (default: high)",
+    )
+    g.add_argument("--max-iterations", type=int, default=30,
+                   help="Cap on agent loop turns (default: 30)")
+
     # Valuation overrides (all decimals)
     g = p.add_argument_group("valuation overrides (decimals)")
-    g.add_argument("--projection-years", type=int, default=5)
+    g.add_argument("--projection-years", type=int, default=config.DEFAULT_PROJECTION_YEARS)
     g.add_argument("--terminal-growth", type=float, default=None)
     g.add_argument("--revenue-growth", default=None,
                     help="Comma-separated per-year rates (e.g. 0.08,0.07,0.06)")
@@ -110,8 +134,9 @@ def parse_args() -> argparse.Namespace:
     g.add_argument("--equity-risk-premium", type=float, default=None)
     g.add_argument("--beta", type=float, default=None)
     g.add_argument("--cost-of-debt", type=float, default=None)
-    g.add_argument("--lookback-years", type=int, default=5)
-    g.add_argument("--frequency", default="monthly", choices=["daily", "monthly"])
+    g.add_argument("--lookback-years", type=int, default=config.DEFAULT_BETA_LOOKBACK_YEARS)
+    g.add_argument("--frequency", default=config.DEFAULT_RETURN_FREQUENCY,
+                   choices=["daily", "monthly"])
 
     args = p.parse_args()
     if args.ticker:
@@ -217,7 +242,10 @@ def build_overrides(args: argparse.Namespace) -> ProjectionAssumptions:
         rev_rates = [float(x.strip()) for x in args.revenue_growth.split(",")]
     return ProjectionAssumptions(
         projection_years=args.projection_years,
-        terminal_growth_rate=args.terminal_growth if args.terminal_growth is not None else 0.025,
+        terminal_growth_rate=(
+            args.terminal_growth if args.terminal_growth is not None
+            else config.DEFAULT_TERMINAL_GROWTH_RATE
+        ),
         revenue_growth_rates=rev_rates,
         operating_margin=args.operating_margin,
         tax_rate=args.tax_rate,
@@ -494,7 +522,7 @@ def print_historical_fcff(financials: FinancialStatements) -> None:
 # Print: Assumptions
 # ---------------------------------------------------------------------------
 
-def print_assumptions(assumptions: dict, overrides: ProjectionAssumptions) -> None:
+def print_assumptions(assumptions: DerivedAssumptions, overrides: ProjectionAssumptions) -> None:
     _section("PROJECTION ASSUMPTIONS (from adjusted financials)")
 
     def _tag(field_name: str) -> str:
@@ -593,6 +621,63 @@ def print_dcf_result(dcf) -> None:
 # Main pipeline
 # ---------------------------------------------------------------------------
 
+def _print_final_summary(run: pipeline.ValuationRun, args: argparse.Namespace) -> None:
+    _section("FINAL VALUATION SUMMARY")
+    dcf_result = run.dcf
+    print(f"  Ticker:             {args.ticker}")
+    print(f"  Company:            {args.company_name}")
+    print(f"  Current Price:      ${run.price_data.current_price:>11.2f}")
+    print(f"  Implied Price:      ${dcf_result.implied_share_price:>11.2f}")
+
+    direction = "UPSIDE" if dcf_result.upside_downside >= 0 else "DOWNSIDE"
+    print(f"  Valuation:          {direction} of {dcf_result.upside_downside:>+10.1f}%")
+    print(f"  {'=' * 42}")
+
+
+def _run_agentic(run: pipeline.ValuationRun, args: argparse.Namespace) -> None:
+    """Hand sequencing to the agent instead of running the fixed pipeline."""
+    from agent.loop import resolve_model, run_agentic_valuation
+    from agent.transcript import print_transcript
+
+    import llm_client
+
+    provider = llm_client.resolve_agent_provider(args.agent_provider)
+
+    _section("AGENTIC ORCHESTRATION")
+    print(f"  Extraction is done; {provider.upper()} now decides which analysis tools to call.")
+    print(f"  Backend: {llm_client.describe_agent_backend(provider)}")
+    print(f"  Model: {resolve_model(provider, args.agent_model)}"
+          f"  |  effort: {args.agent_effort}")
+    print(f"  Max iterations: {args.max_iterations}\n")
+
+    result = run_agentic_valuation(
+        run,
+        overrides=build_overrides(args),
+        provider=provider,
+        model=args.agent_model,
+        effort=args.agent_effort,
+        max_iterations=args.max_iterations,
+        verbose=True,
+    )
+
+    print_transcript(run)
+
+    if run.dcf is not None:
+        print_dcf_result(run.dcf)
+        _print_final_summary(run, args)
+    else:
+        _section("NO VALUATION PRODUCED")
+        print("  The agent stopped without completing a DCF. Transcript above shows how far it got.")
+
+    if result.narrative:
+        _section("ANALYST NOTES")
+        for line in result.narrative.splitlines():
+            print(f"  {line}")
+
+    print(f"\n  Tokens: {result.input_tokens:,} in / {result.output_tokens:,} out"
+          f"  |  cache read: {result.cache_read_tokens:,}")
+
+
 def main() -> None:
     global _t0
     _t0 = time.time()
@@ -603,56 +688,34 @@ def main() -> None:
     except ValueError as exc:
         raise SystemExit(f"ERROR: {exc}") from exc
 
+    run = pipeline.ValuationRun(
+        ticker=args.ticker,
+        company_name=args.company_name,
+        filings=filings,
+    )
+
     # ===== STAGE 1: EXTRACTION (LLM) ========================================
     cache = _cache_path(args)
     if cache and cache.exists() and not args.no_cache:
         _step(1, "Loading cached extraction")
         _section(f"LOADING CACHED EXTRACTION: {cache.name}")
-        financials, adjustments = _load_cache(cache)
+        run.raw_financials, run.non_recurring = _load_cache(cache)
     else:
         _step(1, f"Extracting financials via {args.provider.upper()} — {len(filings)} PDF(s)")
         _section(f"EXTRACTING via {args.provider.upper()} "
                  f"({len(filings)} PDF{'s' if len(filings) > 1 else ''})")
-
-        single = len(filings) == 1 and filings[0][0] == 0
-        if single:
-            financials, adjustments = extract_financials(
-                pdf_path=filings[0][1],
-                ticker=args.ticker,
-                company_name=args.company_name,
-                provider=args.provider,
-                model=args.model,
-                debug=True,
-            )
-        else:
-            # Filter out year=0 entries, fall back to single if needed
-            valid = [(y, p) for y, p in filings if y > 0]
-            if not valid:
-                financials, adjustments = extract_financials(
-                    pdf_path=filings[0][1],
-                    ticker=args.ticker,
-                    company_name=args.company_name,
-                    provider=args.provider,
-                    model=args.model,
-                    debug=True,
-                )
-            else:
-                financials, adjustments = extract_multi_year(
-                    filings=valid,
-                    ticker=args.ticker,
-                    company_name=args.company_name,
-                    provider=args.provider,
-                    model=args.model,
-                    debug=True,
-                )
-
+        pipeline.step_extract(run, provider=args.provider, model=args.model, debug=True)
         if cache:
-            _save_cache(cache, financials, adjustments)
+            _save_cache(cache, run.raw_financials, run.non_recurring)
             print(f"  Cached to {cache.name}")
 
-    years = financials.years
+    financials = run.raw_financials
+    adjustments = run.non_recurring
     print(f"  Ticker: {financials.ticker}  |  Company: {financials.company_name}")
-    print(f"  Years extracted: {years}")
+    print(f"  Years extracted: {financials.years}")
+
+    if args.agentic:
+        return _run_agentic(run, args)
 
     # ===== STAGE 2: EXTRACTED F/S (Pass 1 output) ===========================
     _step(2, "Displaying extracted financial statements")
@@ -664,7 +727,7 @@ def main() -> None:
 
     # ===== STAGE 4: NORMALIZE (GAAP -> Non-GAAP) ============================
     _step(4, "Normalizing financials (GAAP -> Non-GAAP)")
-    adjusted = normalize_financials(financials, adjustments)
+    adjusted = pipeline.step_normalize(run)
     print_normalization(financials, adjusted)
 
     # ===== STAGE 5: HISTORICAL FCFF =========================================
@@ -674,18 +737,18 @@ def main() -> None:
     # ===== STAGE 6: DERIVE ASSUMPTIONS ======================================
     _step(6, "Deriving projection assumptions")
     overrides = build_overrides(args)
-    assumptions = derive_assumptions(adjusted, overrides)
+    assumptions = pipeline.step_derive_assumptions(run, overrides)
     print_assumptions(assumptions, overrides)
 
     # ===== STAGE 7: CAPM ====================================================
     _step(7, "Fetching market data & running CAPM")
-    price_data = fetch_price_data(
-        args.ticker,
-        lookback_years=args.lookback_years,
-        frequency=args.frequency,
+    price_data = pipeline.step_fetch_market_data(
+        run, args.lookback_years, args.frequency
     )
-    capm_result = run_capm(
-        price_data,
+    if run.shares_source.startswith("yfinance"):
+        print(f"\n  Diluted shares from yfinance: {run.diluted_shares:,.0f}M (not in extracted F/S)")
+    capm_result = pipeline.step_capm(
+        run,
         risk_free_rate=overrides.risk_free_rate,
         equity_risk_premium=overrides.equity_risk_premium,
         beta_override=overrides.beta_override,
@@ -694,55 +757,26 @@ def main() -> None:
 
     # ===== STAGE 8: WACC ====================================================
     _step(8, "Calculating WACC")
-    latest_is = adjusted.get_income_statement(adjusted.latest_year)
-    latest_bs = adjusted.get_balance_sheet(adjusted.latest_year)
-
-    shares = latest_is.diluted_shares_outstanding if latest_is else 0
-    if shares == 0:
-        import yfinance as yf
-        info = yf.Ticker(args.ticker).info
-        shares = info.get("sharesOutstanding", 0) / 1e6
-        print(f"\n  Diluted shares from yfinance: {shares:,.0f}M (not in extracted F/S)")
-
-    market_cap = price_data.current_price * shares
+    latest_bs = run.financials.get_balance_sheet(run.financials.latest_year)
+    market_cap = price_data.current_price * run.diluted_shares
     total_debt = latest_bs.total_debt if latest_bs else 0
-
-    wacc_result = calculate_wacc(
-        capm_result=capm_result,
-        income_statement=latest_is,
-        balance_sheet=latest_bs,
-        market_cap=market_cap,
-        cost_of_debt_override=overrides.cost_of_debt_override,
-        tax_rate_override=assumptions["tax_rate"],
+    wacc_result = pipeline.step_wacc(
+        run, cost_of_debt_override=overrides.cost_of_debt_override
     )
     print_wacc(wacc_result, market_cap, total_debt)
 
     # ===== STAGE 9: PROJECT FCFFs ===========================================
     _step(9, "Projecting future FCFFs")
-    projected = project_fcffs(adjusted, assumptions)
+    projected = pipeline.step_project(run)
     print_projected_fcffs(projected)
 
     # ===== STAGE 10: DCF ====================================================
     _step(10, "Running DCF valuation")
-    dcf_result = run_dcf(
-        projected_fcffs=projected,
-        wacc_result=wacc_result,
-        financials=adjusted,
-        terminal_growth_rate=assumptions["terminal_growth_rate"],
-        current_price=price_data.current_price,
-        diluted_shares=shares,
-    )
+    dcf_result = pipeline.step_dcf(run)
     print_dcf_result(dcf_result)
+
     # ===== FINAL SUMMARY ========================================================
-    _section("FINAL VALUATION SUMMARY")
-    print(f"  Ticker:             {args.ticker}")
-    print(f"  Company:            {args.company_name}")
-    print(f"  Current Price:      ${price_data.current_price:>11.2f}")
-    print(f"  Implied Price:      ${dcf_result.implied_share_price:>11.2f}")
-    
-    direction = "UPSIDE" if dcf_result.upside_downside >= 0 else "DOWNSIDE"
-    print(f"  Valuation:          {direction} of {dcf_result.upside_downside:>+10.1f}%")
-    print(f"  {'=' * 42}")
+    _print_final_summary(run, args)
     # Done
     elapsed = time.time() - _t0
     m, s = divmod(int(elapsed), 60)

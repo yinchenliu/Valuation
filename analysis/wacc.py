@@ -14,6 +14,7 @@ Where:
 from __future__ import annotations
 
 import config
+from analysis.rates import clamp_tax_rate
 from models.financial_statements import BalanceSheet, IncomeStatement
 from models.valuation import CAPMResult, WACCResult
 
@@ -67,8 +68,7 @@ def calculate_wacc(
     cost_of_debt = calculate_cost_of_debt(income_statement, balance_sheet, cost_of_debt_override)
 
     tax_rate = tax_rate_override if tax_rate_override is not None else income_statement.effective_tax_rate
-    # Clamp tax rate to reasonable range
-    tax_rate = max(0.0, min(tax_rate, 0.50))
+    tax_rate = clamp_tax_rate(tax_rate)
 
     equity_value = market_cap
     debt_value = balance_sheet.total_debt
