@@ -59,6 +59,8 @@ from __future__ import annotations
 import json
 import re
 import textwrap
+import threading
+import time
 from pathlib import Path
 from typing import Literal
 
@@ -79,7 +81,7 @@ Provider = Literal["claude", "gemini"]
 # gemini-3.1-pro-preview
 _DEFAULT_MODELS: dict[str, str] = {
     "claude": "claude-sonnet-4-6",
-    "gemini": "gemini-3.1-pro-preview",
+    "gemini": "gemini-3.5-flash",
 }
 
 
@@ -107,7 +109,7 @@ _FINANCIALS_SCHEMA = {
             "interest_income": "float — interest / investment income. POSITIVE.",
             "other_non_operating": "float — net other income/expense below operating line (signed)",
             "tax_expense": "float — income tax provision. POSITIVE.",
-            "net_income": "float — net income attributable to common shareholders",
+            "net_income": "float — CONSOLIDATED net income (the TOTAL). Use the 'Consolidated net income' line BEFORE deducting any amount attributable to noncontrolling / minority interests. This equals operating_income + interest_income - interest_expense + other_non_operating - tax_expense, and is the SAME figure the Cash Flow Statement begins with. Do NOT use 'net income attributable to [Company]'.",
             "diluted_shares": "float — diluted weighted-avg shares (same units as F/S)",
             "cfo": "float — net cash provided by operating activities",
             "capex": "float — SUM of 'Purchases of PP&E' PLUS 'Acquisitions and intangible asset purchases' from investing section. Do NOT include securities. POSITIVE.",
@@ -158,6 +160,10 @@ _FINANCIALS_SYSTEM_PROMPT = textwrap.dedent(f"""\
     - For "sga": combine Sales & Marketing + General & Administrative if separate.
     - For "interest_expense": gross interest on debt (positive). Go to footnotes
       for the breakout if only net interest is on the I/S.
+    - For "net_income": use CONSOLIDATED net income — the total, BEFORE the
+      noncontrolling / minority interest deduction. This is the same line the
+      Cash Flow Statement starts from. Do NOT use "net income attributable to
+      [Company]" (that figure is net of noncontrolling interest).
     - For "cfo": use the total "Net cash provided by operating activities".
     - For "capex": SUM of 'Purchases of PP&E' PLUS 'Acquisitions/intangible asset
       purchases' from investing section. Do NOT include securities. Absolute value.
@@ -338,14 +344,59 @@ def _extract_json(raw: str) -> str:
 # Provider-specific API calls
 # ---------------------------------------------------------------------------
 
+class _Heartbeat:
+    """A background timer that prints a live status line every `interval` seconds.
+
+    Unlike printing on each streamed chunk, this ticks on its own thread, so the
+    elapsed clock keeps advancing even during the long wait before the FIRST
+    chunk arrives (Gemini reads the whole PDF before emitting a token). A frozen
+    clock therefore means the process is genuinely stuck, not merely slow.
+    """
+
+    def __init__(self, label: str = "stream", interval: float = 1.0) -> None:
+        self._label = label
+        self._interval = interval
+        self._t0 = time.time()
+        self._chars = 0
+        self._tokens = 0
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def start(self) -> "_Heartbeat":
+        self._thread.start()
+        return self
+
+    def update(self, chars: int, tokens: int = 0) -> None:
+        self._chars = chars
+        self._tokens = tokens
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            elapsed = time.time() - self._t0
+            tok = f"  {self._tokens:>7,} tok" if self._tokens else ""
+            print(f"\r    [{self._label}] {elapsed:5.0f}s  {self._chars:>8,} chars{tok}",
+                  end="", flush=True)
+            self._stop.wait(self._interval)
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._thread.join(timeout=2.0)
+        print()  # end the heartbeat line with a newline
+
+
 def _call_claude(
     system_prompt: str,
     user_prompt: str,
     model: str,
     api_key: str,
     pdf_bytes: bytes | None = None,
+    stream: bool = False,
 ) -> tuple[str, int, int]:
-    """Call Anthropic Claude. Returns (response_text, input_tokens, output_tokens)."""
+    """Call Anthropic Claude. Returns (response_text, input_tokens, output_tokens).
+
+    When stream=True, tokens are consumed incrementally and a live heartbeat
+    is printed so a slow call can be distinguished from a stuck one.
+    """
     import anthropic
     client = anthropic.Anthropic(api_key=api_key)
 
@@ -361,14 +412,62 @@ def _call_claude(
         })
     content.append({"type": "text", "text": user_prompt})
 
+    messages = [{"role": "user", "content": content}]
+
+    if stream:
+        parts: list[str] = []
+        hb = _Heartbeat("stream").start()
+        try:
+            with client.messages.stream(
+                model=model, max_tokens=8096, system=system_prompt, messages=messages,
+            ) as s:
+                for txt in s.text_stream:
+                    parts.append(txt)
+                    hb.update(sum(len(p) for p in parts))
+                final = s.get_final_message()
+        finally:
+            hb.stop()
+        text = "".join(parts) or (final.content[0].text if final.content else "")
+        return text, final.usage.input_tokens, final.usage.output_tokens
+
     response = client.messages.create(
         model=model,
         max_tokens=8096,
         system=system_prompt,
-        messages=[{"role": "user", "content": content}],
+        messages=messages,
     )
     text = response.content[0].text
     return text, response.usage.input_tokens, response.usage.output_tokens
+
+
+def _gemini_stream(client, model, contents, config) -> tuple[str, int, int, str | None]:
+    """Stream a Gemini response, printing a live heartbeat line.
+
+    Returns (text, input_tokens, output_tokens, finish_reason). A background
+    heartbeat prints elapsed time continuously, so the clock advances even
+    during the long wait before the first chunk (Gemini reads the whole PDF
+    before emitting a token). A frozen clock means genuinely stuck, not slow.
+    """
+    parts: list[str] = []
+    in_tok = out_tok = 0
+    finish_reason = None
+    hb = _Heartbeat("stream").start()
+    try:
+        for chunk in client.models.generate_content_stream(
+            model=model, contents=contents, config=config,
+        ):
+            if getattr(chunk, "text", None):
+                parts.append(chunk.text)
+            um = getattr(chunk, "usage_metadata", None)
+            if um:
+                in_tok = getattr(um, "prompt_token_count", 0) or in_tok
+                out_tok = getattr(um, "candidates_token_count", 0) or out_tok
+            if getattr(chunk, "candidates", None):
+                finish_reason = str(chunk.candidates[0].finish_reason)
+            hb.update(sum(len(p) for p in parts), out_tok)
+    finally:
+        hb.stop()
+    return "".join(parts), in_tok, out_tok, finish_reason
 
 
 def _call_gemini(
@@ -378,11 +477,13 @@ def _call_gemini(
     api_key: str,
     pdf_bytes: bytes | None = None,
     max_retries: int = 5,
+    stream: bool = False,
 ) -> tuple[str, int, int]:
     """Call Google Gemini. Returns (response_text, input_tokens, output_tokens).
 
     Retries automatically on 429 (rate limit) and 503 (overloaded) errors
-    with exponential backoff.
+    with exponential backoff. When stream=True, prints a live heartbeat so a
+    slow call can be told apart from a stuck one.
     """
     import time
     import re
@@ -396,24 +497,29 @@ def _call_gemini(
         contents.append(types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"))
     contents.append(user_prompt)
 
+    config = types.GenerateContentConfig(
+        system_instruction=system_prompt,
+        max_output_tokens=65536,
+        temperature=0.0,
+        response_mime_type="application/json",
+    )
+
     for attempt in range(1, max_retries + 1):
         try:
-            response = client.models.generate_content(
-                model=model,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_prompt,
-                    max_output_tokens=65536,
-                    temperature=0.0,
-                    response_mime_type="application/json",
-                ),
-            )
-            finish_reason = None
-            if response.candidates:
-                finish_reason = str(response.candidates[0].finish_reason)
-            text = response.text or ""
-            in_tok = getattr(response.usage_metadata, "prompt_token_count", 0) or 0
-            out_tok = getattr(response.usage_metadata, "candidates_token_count", 0) or 0
+            if stream:
+                text, in_tok, out_tok, finish_reason = _gemini_stream(
+                    client, model, contents, config,
+                )
+            else:
+                response = client.models.generate_content(
+                    model=model, contents=contents, config=config,
+                )
+                finish_reason = None
+                if response.candidates:
+                    finish_reason = str(response.candidates[0].finish_reason)
+                text = response.text or ""
+                in_tok = getattr(response.usage_metadata, "prompt_token_count", 0) or 0
+                out_tok = getattr(response.usage_metadata, "candidates_token_count", 0) or 0
             if finish_reason and finish_reason not in ("FinishReason.STOP", "STOP", "1"):
                 print(f"  [WARN] Gemini finish_reason={finish_reason} — response may be truncated")
             return text, in_tok, out_tok
@@ -439,11 +545,14 @@ def _call_llm(
     model: str,
     api_key: str,
     pdf_bytes: bytes | None = None,
+    stream: bool = False,
 ) -> tuple[str, int, int]:
     """Route to the correct provider API."""
     if provider == "claude":
-        return _call_claude(system_prompt, user_prompt, model, api_key, pdf_bytes=pdf_bytes)
-    return _call_gemini(system_prompt, user_prompt, model, api_key, pdf_bytes=pdf_bytes)
+        return _call_claude(system_prompt, user_prompt, model, api_key,
+                            pdf_bytes=pdf_bytes, stream=stream)
+    return _call_gemini(system_prompt, user_prompt, model, api_key,
+                        pdf_bytes=pdf_bytes, stream=stream)
 
 
 # ---------------------------------------------------------------------------
@@ -667,7 +776,7 @@ def _run_financials_pass(
 
     raw, in_tok, out_tok = _call_llm(
         _FINANCIALS_SYSTEM_PROMPT, user_prompt, provider, model, api_key,
-        pdf_bytes=pdf_bytes,
+        pdf_bytes=pdf_bytes, stream=debug,
     )
     if in_tok or out_tok:
         print(f"  [Pass 1] Tokens — input: {in_tok:,}  output: {out_tok:,}")
@@ -765,7 +874,7 @@ def _run_nri_pass(
 
     raw, in_tok, out_tok = _call_llm(
         _NRI_SYSTEM_PROMPT, user_prompt, provider, model, api_key,
-        pdf_bytes=pdf_bytes,
+        pdf_bytes=pdf_bytes, stream=debug,
     )
     if in_tok or out_tok:
         print(f"  [Pass 2] Tokens — input: {in_tok:,}  output: {out_tok:,}")

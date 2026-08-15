@@ -5,8 +5,7 @@ Usage:
     python cli.py path/to/10K.pdf -t GOOGL -n "Alphabet Inc."
 
     # Multi-PDF (year-prefixed)
-    python cli.py 2023:10K_2023.pdf 2024:10K_2024.pdf 2025:10K_2025.pdf \\
-        -t LLY -n "Eli Lilly" -p gemini --cache-dir ./cache
+    python3 cli.py 2023:10K_2023.pdf 2024:10K_2024.pdf 2025:10K_2025.pdf 2026:10K_2026 -t WMT -n "WALMART" -p gemini --cache-dir ./cache
 
     # Rerun from cache (skips LLM extraction)
     python cli.py 2023:10K_2023.pdf 2024:10K_2024.pdf 2025:10K_2025.pdf \\
