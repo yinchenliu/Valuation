@@ -7,6 +7,7 @@ Beta is estimated by regressing stock returns on market returns.
 
 from __future__ import annotations
 
+import numpy as np
 from scipy import stats
 
 from ingestion.price_fetcher import PriceData
@@ -28,6 +29,18 @@ def calculate_beta(price_data: PriceData) -> tuple[float, float, float]:
     return slope, r_value ** 2, std_err
 
 
+def annualized_market_return(price_data: PriceData) -> float:
+    """Geometric annualized S&P 500 return from historical periodic returns."""
+    returns = np.asarray(price_data.market_returns, dtype=float)
+    if returns.size == 0:
+        raise ValueError("No market returns available to estimate market return")
+    gross = float(np.prod(1.0 + returns))
+    if gross <= 0:
+        # Compounding wiped out; fall back to arithmetic annualization
+        return float(np.mean(returns)) * price_data.periods_per_year
+    return gross ** (price_data.periods_per_year / returns.size) - 1.0
+
+
 def run_capm(
     price_data: PriceData,
     risk_free_rate: float | None = None,
@@ -39,14 +52,25 @@ def run_capm(
     Args:
         price_data: Historical return data from price_fetcher.
         risk_free_rate: Annual risk-free rate (e.g., 0.04 for 4%). Uses default if None.
-        equity_risk_premium: Market risk premium (e.g., 0.055 for 5.5%). Uses default if None.
+        equity_risk_premium: Market risk premium (e.g., 0.055 for 5.5%). If None,
+            it is computed as the historical annualized S&P 500 return minus the
+            risk-free rate.
         beta_override: If provided, skips regression and uses this beta directly.
 
     Returns:
         CAPMResult with beta, cost of equity, and regression diagnostics.
     """
     rf = risk_free_rate if risk_free_rate is not None else config.DEFAULT_RISK_FREE_RATE
-    erp = equity_risk_premium if equity_risk_premium is not None else config.DEFAULT_EQUITY_RISK_PREMIUM
+
+    if equity_risk_premium is not None:
+        erp = equity_risk_premium
+    else:
+        market_return = annualized_market_return(price_data)
+        erp = market_return - rf
+        print(
+            f"  ERP from history: S&P 500 annualized return {market_return:.2%} "
+            f"- risk-free {rf:.2%} = {erp:.2%}"
+        )
 
     if beta_override is not None:
         beta = beta_override

@@ -1,15 +1,25 @@
 """Local CLI for DCF valuation — runs the full pipeline with detailed output.
 
 Usage:
+    # Folder of 10-K PDFs (RECOMMENDED) — years auto-discovered from filenames.
+    # Any filename prefix works, as long as each name contains its fiscal year:
+    #   10K_filings/AbbVie Inc._10-K_2023-12-31_English.pdf
+    #   10K_filings/AbbVie Inc._10-K_2024-12-31_English.pdf
+    #   10K_filings/AbbVie Inc._10-K_2025-12-31_English.pdf
+    python cli.py 10K_filings -t ABBV -n "AbbVie Inc." --cache-dir ./cache
+
+    # Ticker folder (ticker inferred from the folder name, e.g. uploads/LLY)
+    python cli.py path/to/LLY
+
     # Single 10-K (all years auto-discovered)
     python cli.py path/to/10K.pdf -t GOOGL -n "Alphabet Inc."
 
-    # Multi-PDF (year-prefixed)
-    python3 cli.py 2023:10K_2023.pdf 2024:10K_2024.pdf 2025:10K_2025.pdf 2026:10K_2026 -t WMT -n "WALMART" -p gemini --cache-dir ./cache
+    # Multi-PDF (explicit year-prefixed, still supported)
+    python cli.py 2023:10K_2023.pdf 2024:10K_2024.pdf 2025:10K_2025.pdf \\
+        -t LLY -n "Eli Lilly" -p gemini --cache-dir ./cache
 
     # Rerun from cache (skips LLM extraction)
-    python cli.py 2023:10K_2023.pdf 2024:10K_2024.pdf 2025:10K_2025.pdf \\
-        -t LLY -p gemini --cache-dir ./cache
+    python cli.py 10K_filings -t ABBV -p gemini --cache-dir ./cache
 
     # With overrides
     python cli.py 10K.pdf -t AAPL --terminal-growth 0.03 --beta 1.1
@@ -63,9 +73,19 @@ def parse_args() -> argparse.Namespace:
         epilog=__doc__,
     )
 
-    p.add_argument("pdfs", nargs="+",
-                    help="PDF path(s). Use YEAR:PATH for multi-file (e.g. 2023:10K.pdf)")
-    p.add_argument("-t", "--ticker", required=True, help="Stock ticker")
+    p.add_argument(
+        "pdfs",
+        nargs="+",
+        help=(
+            "A folder of 10-K PDFs (years inferred from filenames), a ticker "
+            "folder, PDF path(s), or YEAR:PATH entries "
+            "(e.g. 10K_filings/, LLY/, 10K.pdf, or 2023:10K.pdf)"
+        ),
+    )
+    p.add_argument(
+        "-t", "--ticker", default=None,
+        help="Stock ticker; defaults to the folder name in directory mode",
+    )
     p.add_argument("-n", "--company-name", default="", help="Company name")
 
     # Extraction
@@ -93,17 +113,96 @@ def parse_args() -> argparse.Namespace:
     g.add_argument("--lookback-years", type=int, default=5)
     g.add_argument("--frequency", default="monthly", choices=["daily", "monthly"])
 
-    return p.parse_args()
+    args = p.parse_args()
+    if args.ticker:
+        args.ticker = args.ticker.upper()
+    elif len(args.pdfs) == 1 and Path(args.pdfs[0]).is_dir():
+        args.ticker = Path(args.pdfs[0]).resolve().name.upper()
+    else:
+        p.error("-t/--ticker is required unless the single input is a ticker folder")
+    return args
 
 
-def parse_pdf_args(pdf_strings: list[str]) -> list[tuple[int, str]]:
-    """Parse 'YEAR:path' or bare 'path' into [(year, path), ...].
+def _discover_filings(directory: Path, ticker: str) -> list[tuple[int, str]]:
+    """Discover 10-K PDFs in a directory, inferring fiscal year from each filename.
+
+    The prefix does not matter — the ticker, the full company name, or anything
+    else may lead the filename. Each PDF only needs to contain a 4-digit fiscal
+    year, ideally as part of a filing date. Examples that all work:
+
+        ABBV_10K_2024.pdf
+        ABBV_10-K_2024-12-31.pdf
+        AbbVie Inc._10-K_2024-12-31_English.pdf
+        Eli Lilly and Company_10-K_2024-12-31_English_237118761_1.pdf
+
+    The year is taken from a date/year token following a '10-K'/'10K' marker
+    when present, otherwise from the first 4-digit year found in the name.
+    """
+    # Prefer a year that follows the 10-K marker; fall back to any year token.
+    marker_pattern = re.compile(r"10[-_ ]?K[^0-9]*((?:19|20)\d{2})", re.IGNORECASE)
+    year_pattern = re.compile(r"(?:19|20)\d{2}")
+
+    filings_by_year: dict[int, Path] = {}
+    skipped: list[str] = []
+
+    for path in sorted(directory.iterdir(), key=lambda item: item.name.lower()):
+        if not path.is_file() or path.suffix.lower() != ".pdf":
+            continue
+
+        marker = marker_pattern.search(path.name)
+        if marker:
+            fiscal_year = int(marker.group(1))
+        else:
+            year_match = year_pattern.search(path.name)
+            if not year_match:
+                skipped.append(path.name)
+                continue
+            fiscal_year = int(year_match.group(0))
+
+        if fiscal_year in filings_by_year:
+            other = filings_by_year[fiscal_year].name
+            raise ValueError(
+                f"Multiple 10-K PDFs resolve to fiscal year {fiscal_year}: "
+                f"{other!r} and {path.name!r}"
+            )
+        filings_by_year[fiscal_year] = path.resolve()
+
+    if skipped:
+        names = ", ".join(repr(name) for name in skipped)
+        raise ValueError(
+            f"Could not infer a fiscal year from PDF filename(s): {names}. "
+            f"Include a 4-digit year in the filename, e.g. "
+            f"'{ticker}_10-K_2024-12-31.pdf' or '{ticker}_10K_2024.pdf'."
+        )
+    if not filings_by_year:
+        raise ValueError(
+            f"No 10-K PDFs found in {directory}. Add PDF filings whose names "
+            f"contain a fiscal year, e.g. '{ticker}_10-K_2024-12-31.pdf'."
+        )
+
+    return [
+        (year, str(filings_by_year[year]))
+        for year in sorted(filings_by_year)
+    ]
+
+
+def parse_pdf_args(
+    pdf_strings: list[str], ticker: str | None = None
+) -> list[tuple[int, str]]:
+    """Resolve a ticker folder, 'YEAR:path', or bare PDF path.
 
     A bare path (no year prefix) returns [(0, path)] — year=0 signals
     'extract all years automatically'.
     """
+    if len(pdf_strings) == 1 and Path(pdf_strings[0]).is_dir():
+        directory = Path(pdf_strings[0])
+        resolved_ticker = (ticker or directory.resolve().name).upper()
+        return _discover_filings(directory, resolved_ticker)
+
     filings: list[tuple[int, str]] = []
     for s in pdf_strings:
+        if Path(s).is_dir():
+            raise ValueError("A ticker folder must be the only PDF input")
         m = re.match(r"^(\d{4}):(.+)$", s)
         if m:
             filings.append((int(m.group(1)), m.group(2)))
@@ -126,7 +225,7 @@ def build_overrides(args: argparse.Namespace) -> ProjectionAssumptions:
         da_pct_revenue=args.da_pct,
         nwc_pct_revenue=args.nwc_pct,
         risk_free_rate=args.risk_free_rate,
-        equity_risk_premium=args.equity_risk_premium if args.equity_risk_premium is not None else 0.055,
+        equity_risk_premium=args.equity_risk_premium,
         cost_of_debt_override=args.cost_of_debt,
         beta_override=args.beta,
         beta_lookback_years=args.lookback_years,
@@ -499,7 +598,10 @@ def main() -> None:
     _t0 = time.time()
 
     args = parse_args()
-    filings = parse_pdf_args(args.pdfs)
+    try:
+        filings = parse_pdf_args(args.pdfs, args.ticker)
+    except ValueError as exc:
+        raise SystemExit(f"ERROR: {exc}") from exc
 
     # ===== STAGE 1: EXTRACTION (LLM) ========================================
     cache = _cache_path(args)

@@ -169,7 +169,7 @@ class ProjectionAssumptions:
 
     # WACC overrides
     risk_free_rate: float | None = None  # None = fetch from market
-    equity_risk_premium: float = 0.055  # 5.5% default
+    equity_risk_premium: float | None = None  # None = historical S&P 500 return - risk-free rate
     cost_of_debt_override: float | None = None
     beta_override: float | None = None
 
