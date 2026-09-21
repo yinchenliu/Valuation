@@ -4,21 +4,47 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `81816be`, 2026-09-21**, on branch `build/phase-1-2`. Six work units have
-been accepted: `P1-suite`, `P2-hygiene`, `P1b-arith`, `P1c-flow`, `P4-normalizer` and
-`P4b-normalizer-verify`. Every one was reviewed or verified, and none was accepted on
-its own report. The journal is [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
+**Measured at `0e4649f`, 2026-09-21**, on branch `build/phase-1-2`. Seven work units have
+been accepted: `P1-suite`, `P2-hygiene`, `P1b-arith`, `P1c-flow`, `P4-normalizer`,
+`P4b-normalizer-verify` and `P2b-provider`. Every one was reviewed or verified, and none
+was accepted on its own report. The journal is
+[.agent/journal/INDEX.md](.agent/journal/INDEX.md).
 
 ---
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `81816be` |
+| Gate | Command | Result at `0e4649f` |
 |---|---|---|
 | Tests | `.venv/Scripts/python.exe -m pytest -q` | **106 tests. 105 pass, 1 red on purpose**, 3.5 s |
 | **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **105 passed**, 0 failed |
 | Lint | `.venv/Scripts/python.exe -m ruff check .` | **5 errors**, every one `BLE001` |
-| Types | `.venv/Scripts/python.exe -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **33 errors in 4 files**, 18 files checked |
+| Types | `.venv/Scripts/python.exe -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **18 errors in 4 files**, 18 files checked |
+
+**A fourth gate is now available, and it is stricter than the other three.**
+
+```
+.venv/Scripts/python.exe -c "from starlette.testclient import TestClient; import app; \
+  print(TestClient(app.app, raise_server_exceptions=False).get('/').status_code)"
+```
+
+→ **500**. `GET /` and `GET /assumptions` still fail; `POST /valuation` returns 200.
+See section 1b. **`import app` succeeding is no longer the strongest check available.**
+
+### Type errors fell 33 → 18, and not by annotating anything
+
+| Commit | Errors | What removed them |
+|---|---|---|
+| `bc19431` | 33 | — |
+| `0e4649f` | 22 | `response.content[0].text` — it died on every real extraction |
+| `0e4649f` | **18** | two `TemplateResponse` calls — they returned 500 on every page |
+
+Both drops came from fixing defects the checker had been reporting all along. By file
+now: `api/routes_valuation.py` 8, `ingestion/claude_extractor.py` 5,
+`api/routes_upload.py` 4, `analysis/projector.py` 4.
+
+**Treat a type error here as a defect report until proven otherwise.** Twice now the
+checker named a live outage and the note beside it called the error a nicety.
 
 **Use the `--ignore-glob` form as the gate.** It excludes every deliberately red test by
 pattern, so it keeps working as more are written. An earlier revision of this file named
@@ -38,6 +64,31 @@ against statement-only data aborts as a pytest `INTERNALERROR`.
 `ingestion/claude_extractor.py:795`, `tests/test_e2e_all_googl.py:106`. They are
 backlog item 8 and phase 5 owns them. **They are deliberately left visible.**
 Suppressing them would delete the record of a defect instead of fixing it.
+
+## 1b. The web application has never served its front page here
+
+`starlette` 1.6.0 requires `TemplateResponse(request, name, context)`. This repository
+used the removed `(name, context)` form at all four call sites, which passes a `str`
+where a `Request` belongs.
+
+```
+the removed form  ->  TypeError: cannot use 'tuple' as a dict key
+the current form  ->  rendered OK, status 200
+```
+
+`api/routes_upload.py`'s call is **unchanged since `bc19431`**, so `app.py` — one of the
+two entry points this product ships — has never served a page in this environment.
+
+| Route | At `0e4649f` | Owner |
+|---|---|---|
+| `POST /valuation` | **200**, with the provider/model/transport block | fixed by `P2b-provider` |
+| `GET /` | **500** | `P5-web-routes` |
+| `GET /assumptions` | **500** | `P5-web-routes` |
+
+**Why it showed as a blank 500 and not a message.** The failing calls sit inside a
+blanket `except Exception` that renders the error onto a page — using the same broken
+call. The error page could not render either. That is the clearest argument in this
+repository for backlog item 8.
 
 ### The test gate runs, and one test is red on purpose
 
@@ -82,35 +133,38 @@ were uncovered at `796de9a` were the guess at the old `normalizer.py:50-51`, whi
    coverage does **not** include `if latest_bs else 0.0` at `analysis/dcf.py:80-81`, or
    any of the other conditional-expression defaults. **Coverage here is not evidence
    that every path is checked.**
-2. `ingestion/` and `api/` have **no tests at all.** That is where 51 of the 117
+2. `ingestion/` and `api/` have **no tests at all.** That is where 51 of the 116
    zero-default sites live, and where the extraction boundary sits.
 
-### Type errors, by kind
+### Type errors, by kind, at `0e4649f`
 
-| Kind | Count |
-|---|---|
-| `union-attr` | 16 |
-| `arg-type` | 11 |
-| `assignment` | 4 |
-| `typeddict-item`, `operator` | 2 |
+| Kind | At `bc19431` | Now |
+|---|---|---|
+| `union-attr` | 16 | **5** |
+| `arg-type` | 11 | **7** |
+| `assignment` | 4 | 4 |
+| `typeddict-item`, `operator` | 2 | 2 |
+| **total** | **33** | **18** |
 
-By file: `ingestion/claude_extractor.py`, `api/routes_valuation.py`,
-`api/routes_upload.py`, `analysis/projector.py`. **The error set is identical to
-`bc19431`** — verified by the code reviewer against a worktree at that commit, with
-line numbers normalised. The file count fell from 19 to 18 only because
-`models/company.py` was deleted.
+**The 18 are a strict subset of the 33.** Verified by the code reviewer with
+`comm -13` against a `git archive` export, line numbers stripped: nothing was added.
+The file count fell 19 → 18 only because `models/company.py` was deleted.
 
-**One of them is a live defect, not a typing nicety:**
+**At least three of the original 33 were live outages, not typing niceties.** Two are
+now fixed — the extraction crash and two of the four broken template calls. One is
+still open:
 
 ```
-api/routes_valuation.py:190: error: Argument "balance_sheet" to "calculate_wacc"
+api/routes_valuation.py: Argument "balance_sheet" to "calculate_wacc"
   has incompatible type "BalanceSheet | None"; expected "BalanceSheet"
 ```
 
 `calculate_wacc` raises `AttributeError` on `None.total_debt` deep inside the
-valuation, and `run_valuation`'s blanket `except Exception` renders that as an error
-string on the results page. The user sees a stack-trace message where a named input
-error belongs. Rule 3.
+valuation, and the blanket `except Exception` renders that as a string on the results
+page. Rule 3.
+
+**The remaining 4 in `api/routes_upload.py` are the last broken template call.** They
+are backlog item 27, not noise.
 
 ---
 
@@ -164,12 +218,22 @@ unreachable from this network. Every row below was **executed**, not read:
 | the whole path works through the SDK, not only raw HTTP | `AnthropicFoundry(azure_ad_token_provider=…)` |
 | `azure-identity` is **not** installed | `ModuleNotFoundError` |
 
-**Extraction still cannot run**, because `ingestion/claude_extractor.py:352` builds a
-plain `anthropic.Anthropic(api_key=…)` and `:830` refuses to start without
-`ANTHROPIC_API_KEY`. Backlog item 13 closes that gap.
+**Extraction runs, as of `0e4649f`.** `P2b-provider` closed backlog item 13: one default
+provider named once in `config.py`, Foundry as a transport, and an Entra token from
+`azure-identity` 1.25.3. No API key anywhere.
 
-**There are also no PDFs on this machine.** `10K_filings/` holds one stray `.DS_Store`.
-A real valuation needs a filing as well as a working client.
+**The value tracks the page, which is the only evidence that counts here.** Pages
+printing `4321`, `6174`, `2718` and `8765` each extracted to the figure printed on them.
+Through the route, two documents differing only in that every income and cash-flow line
+was doubled produced `$82.18` and `$166.86` per share, with the cost of capital pinned
+identical across both runs — exactly `2 × 82.18 + net_debt/shares`.
+
+**Those figures come from invented documents and are meaningless as valuations.** They
+are evidence about the pipeline, not about a company.
+
+**There are still no PDFs on this machine.** `10K_filings/` holds one stray `.DS_Store`.
+A real valuation needs a filing as well as a working client, and no run so far has used
+one.
 
 **PDF input is a beta feature on Microsoft Foundry.** It works today. Treat a future
 failure there as a platform change, not as a defect in this repository.
@@ -211,15 +275,17 @@ the headline.
 | 20 | `analysis/capm.py:87` — a **NaN** beta is returned, not raised | a NaN share price renders, because `nan <= g` is `False` and the one working guard does not fire | **open. The highest-cost defect now known.** Confirmed end to end |
 | 24 | a red test that goes green stays excluded by the gate | the gate stopped checking the thing the fix was made to guarantee | **closed at `81816be`** |
 | 25 | `analysis/normalizer.py:167-170` — an adjustment whose **year** matches no statement is silently discarded | a valuation labelled "normalised" whose figures are GAAP, with no signal | **new.** The item's year and the statements' years come from two separate model passes with nothing reconciling them |
-| 8 | Blanket `except Exception` at five sites | **more urgent since `38b903c`** — every stop we add lands in the catch at `api/routes_valuation.py:220` and renders as a bare string | open |
-| 1 | **116** silent zero-default sites (`models/` 60, `ingestion/` 49, `analysis/` 5, `api/` 2) | a wrong share price on a clean run | open |
+| 26 | `api/routes_valuation.py:152` branches on a character every path contains | latent; live only on the legacy no-year branch | **new, and corrected.** My first write-up of it was wrong |
+| 27 | `GET /` and `GET /assumptions` return **500** | the web half cannot be started by a user | **open.** `P5-web-routes` |
+| 8 | Blanket `except Exception` at five sites | **more urgent again.** It swallowed the web outage for the whole life of this repository, because the error page uses the same broken call | open |
+| 1 | **116** silent zero-default sites (`models/` 60, `ingestion/` 49, `analysis/` 5, `api/` 2) | **worse than recorded.** It does not produce zeros; it produces a signed, correctly-scaled figure that tracks the filing | open |
 | 2 | `analysis/dcf.py:80` — missing balance sheet gives **zero net debt** | equity value overstated by the whole debt balance | **open, and now proven by measurement.** A red test states the requirement |
 | 3 | `analysis/normalizer.py:46` — unknown line item **guesses** `other_operating_expense` | the adjustment lands on the wrong line | **closed at `38b903c`** |
 | 4 | No test suite at all | nothing detects any of the above | **closed.** 20 tests, `analysis/dcf.py` at 100% of statements |
 | 5 | `api/routes_valuation.py:25` — module-global extraction cache, `pop`ped on use | shared across users; a page refresh re-runs the LLM | open |
 | 6 | Five `x / 100 if x else None` conversions | a deliberate `0` from the user is read as "not supplied" | open |
 | 7 | `cli.py` and `api/` duplicate the pipeline | a fix must be made twice or it is made once | open |
-| 8 | Provider default differs between one-PDF and multi-PDF upload | **extraction cannot run on this machine at all** | open, and now urgent |
+| 13 | Provider default differed between one-PDF and multi-PDF upload | extraction could not run on this machine at all | **closed at `0e4649f`** |
 | 14 | `analysis/dcf.py:73` — empty `projected_fcffs` raises a bare `IndexError` | a stack trace where a named input error belongs | new |
 | 15 | `models/financial_statements.py:295` — `latest_year` returns `0` for an empty extraction | turns "no data" into "year zero" with no error | new |
 | 16 | Nine scripts carry a `sys.path.insert` to a path that does not exist on this machine | none of them runs as `python tests/<name>.py` | new |
