@@ -4,19 +4,19 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `38b903c`, 2026-09-20**, on branch `build/phase-1-2`. Five work units
-have been accepted: `P1-suite`, `P2-hygiene`, `P1b-arith`, `P1c-flow` and
-`P4-normalizer`. Every one was reviewed and approved. The journal is
-[.agent/journal/INDEX.md](.agent/journal/INDEX.md).
+**Measured at `81816be`, 2026-09-21**, on branch `build/phase-1-2`. Six work units have
+been accepted: `P1-suite`, `P2-hygiene`, `P1b-arith`, `P1c-flow`, `P4-normalizer` and
+`P4b-normalizer-verify`. Every one was reviewed or verified, and none was accepted on
+its own report. The journal is [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
 
 ---
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `38b903c` |
+| Gate | Command | Result at `81816be` |
 |---|---|---|
-| Tests | `.venv/Scripts/python.exe -m pytest -q` | **93 tests. 92 pass, 1 red on purpose**, 3.8 s |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **90 passed**, 0 failed |
+| Tests | `.venv/Scripts/python.exe -m pytest -q` | **106 tests. 105 pass, 1 red on purpose**, 3.5 s |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **105 passed**, 0 failed |
 | Lint | `.venv/Scripts/python.exe -m ruff check .` | **5 errors**, every one `BLE001` |
 | Types | `.venv/Scripts/python.exe -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **33 errors in 4 files**, 18 files checked |
 
@@ -24,15 +24,10 @@ have been accepted: `P1-suite`, `P2-hygiene`, `P1b-arith`, `P1c-flow` and
 pattern, so it keeps working as more are written. An earlier revision of this file named
 a single file by path; that form went stale the moment a second red test landed.
 
-### The gate is currently blind to two passing tests, and that is a defect
-
-`pytest -q` runs 93 and reports 92 passing. The gate runs 90. The missing two are the
-former red tests in `tests/unit/test_normalizer_rule3_red.py`, which **went green** when
-`P4-normalizer` fixed the defects they stated — and which the `--ignore-glob` still
-excludes, because they are still in a file matching the pattern.
-
-**A red test that goes green must leave the pattern**, or the gate stops checking the
-very thing the fix was made to guarantee. This is [backlog item 24](docs/9-reference/refactor-backlog.md).
+**When a red test goes green, move it out of the pattern in the same unit.** At
+`38b903c` two tests went green and stayed inside it, so the two tests proving a fix
+worked were the two the gate did not run. That was backlog item 24, closed at
+`81816be`, and the rule is now in `.claude/agents/tester.md` so it is not rediscovered.
 
 **Set `COVERAGE_FILE` before measuring coverage** if anything else may be running:
 two processes in one tree collide on the root `.coverage`, and a `--cov-branch` run
@@ -51,26 +46,18 @@ and no network.
 
 **One test fails deliberately.** `tests/unit/test_dcf_rule3_red.py` states that
 `run_dcf` must stop when the balance sheet is absent. That is backlog item 2, and it is
-still open.
-
-Two more were red at `796de9a` and are **now green**, because `P4-normalizer` fixed what
-they stated. They are still in a `*_rule3_red.py` file and therefore still invisible to
-the gate. See above.
-
-Every red test lives in a file matching `*_rule3_red.py`, which is what the gate's
-`--ignore-glob` keys on. **A red test outside that pattern breaks the gate**, so put
-every new one there — and **move it out again the day it goes green.**
+still open. `ls tests/unit/*_rule3_red.py` returns exactly that one line.
 
 **A failure other than that one is a real regression.**
 
-### `tests/`, measured at `796de9a`
+### `tests/`, measured at `81816be`
 
-| | At `bc19431` | At `796de9a` |
+| | At `bc19431` | At `81816be` |
 |---|---|---|
 | `.py` files | 10 | **19** |
-| `assert` statements | **0** | **263** |
+| `assert` statements | **0** | **334** |
 | scripts guarded by `if __name__ == "__main__":` | **0** | **9 of 9** |
-| tests collected | 0 | **93** |
+| tests collected | 0 | **106** |
 | paid API calls during collection | attempted | **none** |
 
 ### Coverage, measured at `38b903c`
@@ -161,11 +148,31 @@ version to choose `"ME"` over `"M"` for month-end resampling. That branch has no
 exercised against 3.0 on real data. Treat any resampling result as unverified until it
 is.
 
-**This machine reaches Anthropic through Microsoft Foundry, not the public API.**
-`ANTHROPIC_FOUNDRY_BASE_URL` and `CLAUDE_CODE_USE_FOUNDRY` are set in the environment;
-`ANTHROPIC_API_KEY` and `GEMINI_API_KEY` are not. The installed `anthropic` 1.7.0
-exports `AnthropicFoundry`. `ingestion/claude_extractor.py` does not use it yet, so
-**extraction cannot run on this machine today.** See backlog item 13.
+### The extraction path on this machine — measured, 2026-09-21
+
+**This machine reaches Anthropic through a Microsoft Foundry gateway, not the public
+API.** `ANTHROPIC_API_KEY` and `GEMINI_API_KEY` are unset and will stay unset; Gemini is
+unreachable from this network. Every row below was **executed**, not read:
+
+| Fact | Result |
+|---|---|
+| `ANTHROPIC_FOUNDRY_BASE_URL` is set; `AnthropicFoundry` reads it with no argument | its `__init__` |
+| the gateway accepts an Entra ID bearer token on `https://cognitiveservices.azure.com/.default` | **HTTP 200** |
+| `https://ai.azure.com/.default` is rejected, and the 401 names the right audience | **HTTP 401** |
+| `claude-opus-5` and `claude-haiku-4-5` are served | **HTTP 200** |
+| **native PDF ingestion works through the gateway** | a one-line PDF; the model returned the printed figure |
+| the whole path works through the SDK, not only raw HTTP | `AnthropicFoundry(azure_ad_token_provider=…)` |
+| `azure-identity` is **not** installed | `ModuleNotFoundError` |
+
+**Extraction still cannot run**, because `ingestion/claude_extractor.py:352` builds a
+plain `anthropic.Anthropic(api_key=…)` and `:830` refuses to start without
+`ANTHROPIC_API_KEY`. Backlog item 13 closes that gap.
+
+**There are also no PDFs on this machine.** `10K_filings/` holds one stray `.DS_Store`.
+A real valuation needs a filing as well as a working client.
+
+**PDF input is a beta feature on Microsoft Foundry.** It works today. Treat a future
+failure there as a platform change, not as a defect in this repository.
 
 ---
 
@@ -202,7 +209,8 @@ the headline.
 |---|---|---|---|
 | 19 | `analysis/normalizer.py:68` — one sign rule applied to two kinds of line | earnings moved by **2×** the item, in the wrong direction, on ordinary input | **closed at `38b903c`** |
 | 20 | `analysis/capm.py:87` — a **NaN** beta is returned, not raised | a NaN share price renders, because `nan <= g` is `False` and the one working guard does not fire | **open. The highest-cost defect now known.** Confirmed end to end |
-| 24 | a red test that goes green stays excluded by the gate | the gate stops checking the thing the fix was made to guarantee | **new, live now.** 2 passing tests are outside the gate |
+| 24 | a red test that goes green stays excluded by the gate | the gate stopped checking the thing the fix was made to guarantee | **closed at `81816be`** |
+| 25 | `analysis/normalizer.py:167-170` — an adjustment whose **year** matches no statement is silently discarded | a valuation labelled "normalised" whose figures are GAAP, with no signal | **new.** The item's year and the statements' years come from two separate model passes with nothing reconciling them |
 | 8 | Blanket `except Exception` at five sites | **more urgent since `38b903c`** — every stop we add lands in the catch at `api/routes_valuation.py:220` and renders as a bare string | open |
 | 1 | **116** silent zero-default sites (`models/` 60, `ingestion/` 49, `analysis/` 5, `api/` 2) | a wrong share price on a clean run | open |
 | 2 | `analysis/dcf.py:80` — missing balance sheet gives **zero net debt** | equity value overstated by the whole debt balance | **open, and now proven by measurement.** A red test states the requirement |
@@ -237,10 +245,11 @@ Things that have already misled a reader of this repository.
    nothing at all. "It ran" is not evidence. Name an input that came from a filing.
 3. **`cli.py` and the web app can disagree.** They build assumptions by separate code
    paths. A figure verified in one is not verified in the other.
-4. **Three tests are red on purpose.** `pytest -q` reports `3 failed, 90 passed` and
-   that is the expected state. Do not fix one by weakening it; fix the defect it
-   states. The gate form that excludes them is
-   `pytest -q --ignore-glob="*_rule3_red.py"`.
+4. **One test is red on purpose.** `pytest -q` reports `1 failed, 105 passed` and that
+   is the expected state. Do not fix it by weakening it; fix backlog item 2. The gate
+   form that excludes it is `pytest -q --ignore-glob="*_rule3_red.py"`.
+5. **A green test inside `*_rule3_red.py` is invisible to the gate.** That happened
+   once, at `38b903c`. Move a test out of the pattern the day it goes green.
 6. **A tester's `fail` is a verdict about the code, not about its own work.** All four
    units so far returned `fail` or `partial` in their own entries and all four were
    approved by review. Read the verdict line at the top of an entry before reading the

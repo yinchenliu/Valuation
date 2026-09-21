@@ -1,7 +1,7 @@
 # Refactor backlog
 
-Every known defect, with its evidence and what it costs. **Re-measured at `38b903c`,
-2026-09-20.** Items 3, 4, 19 and 21 are closed and item 12 mostly is. Items 14 to 24
+Every known defect, with its evidence and what it costs. **Re-measured at `81816be`,
+2026-09-21.** Items 3, 4, 19, 21 and 24 are closed and item 12 mostly is. Items 14 to 25
 are new — and **every one of 19 to 24 was found by running the code, not by reading
 it.** That is the single strongest argument for the test suite that found them.
 
@@ -54,7 +54,8 @@ rather than lying.
 | 21 | An unrecognised `direction` silently reverses | **silent** | `analysis/normalizer.py` | **closed at `38b903c`** |
 | 22 | Zero debt balance gives a 0% cost of debt | **silent** | `analysis/wacc.py` | open |
 | 23 | `analysis/fcff.py` holds no `raise` at all | **silent** | `analysis/fcff.py` | open |
-| 24 | A red test that goes green stays outside the gate | — | `tests/` | **new, live now** |
+| 24 | A red test that goes green stays outside the gate | — | `tests/` | **closed at `81816be`** |
+| 25 | An adjustment whose year matches no statement is discarded | **silent** | `analysis/normalizer.py` | **new** |
 
 ---
 
@@ -389,6 +390,32 @@ not broken for the reason stated.
 upload tries Gemini and fails; a two-PDF upload tries Claude and fails for a different
 reason.
 
+### The working path, proven by execution 2026-09-21
+
+Every row was run, not read. This is what the fix must reproduce.
+
+| Step | Result |
+|---|---|
+| `az login` is active | the user signed in |
+| token for `https://cognitiveservices.azure.com/.default` | issued |
+| token for `https://ai.azure.com/.default` | issued, then **rejected** by the gateway |
+| the gateway's own 401 names the right audience | `"Ensure 'az login' is active and the token audience is https://cognitiveservices.azure.com."` |
+| `AnthropicFoundry(azure_ad_token_provider=…)` with **no** `api_key` and **no** `resource` | picks `base_url` up from `ANTHROPIC_FOUNDRY_BASE_URL` |
+| `claude-opus-5` and `claude-haiku-4-5` | both served, HTTP 200 |
+| a base64 `document` block holding a one-line PDF | the model returned the figure printed on the page |
+
+**That 401 message is the fastest diagnosis available for a wrong scope.** Record it
+where someone will find it, rather than leaving it to be rediscovered.
+
+**`azure-identity` is not installed.** It is the only supported way to produce a
+refreshing Entra token; `get_bearer_token_provider(DefaultAzureCredential(), SCOPE)` is
+the call. **Do not shell out to `az` from library code** — a subprocess is untestable
+and breaks wherever the CLI is absent.
+
+**PDF input is a beta feature on Microsoft Foundry**, per Anthropic's platform
+availability table. It works today. A future failure there is a platform change, not a
+defect in this repository.
+
 **Fix.** One default provider, named once in `config.py`. Make `provider` explicit at
 the route and the CLI boundary. Add Foundry as a **transport**, selected by the
 presence of a base URL, not as a third provider — the model is still Claude. Then show
@@ -472,9 +499,41 @@ Items 19 to 23 were found by units `P1b-arith` and `P1c-flow`, and confirmed
 independently by their reviewers. **None was found by reading.** Each needed a test to
 call the function with inputs nobody had tried.
 
-## 24. A red test that goes green stays outside the gate · **live now**
+## 25. An adjustment whose year matches no statement is silently discarded · **silent**
 
-**Fact.** Measured at `38b903c`:
+**Fact.** `analysis/normalizer.py:167-170`. `normalize_financials` groups the
+non-recurring items by year, then walks the **income statements** and applies whatever
+that year's bucket holds. An item whose year is in no statement is never looked at.
+Measured by the tester:
+
+```
+statement years : [2023, 2024]   item year : 2019
+RAISED          : nothing
+  2023: sga 200.0 -> 200.0   2024: sga 200.0 -> 200.0
+```
+
+The item was well formed — recognised label, legal direction, real amount.
+
+**What it costs.** A valuation labelled *normalised* whose figures are still GAAP, with
+no signal anywhere. It is the same class as item 3, one line above it in the same
+function, which `P4-normalizer` has just closed.
+
+**It is not hypothetical.** The item's year and the statements' years come from **two
+separate model passes** — `ingestion/claude_extractor.py:259` and `:553` — with nothing
+reconciling them. `extract_multi_year` merges statements year by year while accumulating
+every NRI, so a mismatch is routine rather than exotic.
+
+**Fix.** Raise, naming the item's year and the years that do exist. Needs its own unit
+and a red test.
+
+**Why no test exists yet.** A test asserting the drop would be asserting the fallback,
+which [5-testing/strategy.md](../5-testing/strategy.md) section 2 forbids. And the red
+test would have had to live in the file `P4b-normalizer-verify` was sent to delete. The
+tester reported it instead, which is what its contract prescribes.
+
+## 24. A red test that goes green stays outside the gate · **CLOSED at `81816be`**
+
+**Was.** At `38b903c`:
 
 ```
 pytest -q                                  ->  93 tests, 92 pass, 1 red
@@ -482,19 +541,20 @@ pytest -q --ignore-glob="*_rule3_red.py"   ->  90 passed
 pytest -q tests/unit/test_normalizer_rule3_red.py  ->  2 passed
 ```
 
-The gate runs 90 of the 92 passing tests. The missing two are the former red tests for
-items 3 and 21. They went green when `P4-normalizer` fixed what they stated, and they
-are still in a file matching the pattern the gate excludes.
+The gate ran 90 of the 92 passing tests. The missing two were the former red tests for
+items 3 and 21, which went green when `P4-normalizer` fixed what they stated and stayed
+inside the pattern the gate excludes. **So the two tests proving the fix worked were the
+two the gate did not run.** That is the shape of defect this repository exists to avoid:
+a clean report about something nobody checked.
 
-**What it costs.** The two tests that prove the fix works are the two the gate does not
-run. A later change could break the stop they lock and every gate would stay green.
-This is the shape of defect this repository exists to avoid: a clean report about
-something nobody checked.
+**Now.** They live in `tests/unit/test_normalizer_stops.py`, each additionally asserting
+the year. `ls tests/unit/*_rule3_red.py` returns one line, `test_dcf_rule3_red.py`,
+which states item 2 and is correctly still red. The gate reports **105 passed**.
 
-**Fix.** When a red test goes green, move it into the module's normal test file. The
-pattern `*_rule3_red.py` means "states a requirement the code does not meet", not
-"tests a stop". **Add this to the tester's contract**, so the next unit does it without
-being told.
+**The rule is now in the tester's contract** —
+[.claude/agents/tester.md](../../.claude/agents/tester.md), "A red test lives in
+`*_rule3_red.py`, and it moves out the day it goes green" — so the next unit does it
+without being told.
 
 ## 19. One sign rule applied to two kinds of line · **CLOSED at `38b903c`**
 
@@ -661,11 +721,11 @@ statements covered.
 3. ~~**Items 19, 3 and 21**~~ — **done at `38b903c`**, in one unit, because all three
    sat in the same 34-line function. Item 19 went first in the whole list because it
    was the only silent defect here that fired on ordinary, complete input.
-4. **Item 24** — move the two now-green tests out of the `*_rule3_red.py` pattern, so
-   the gate runs them. Small, and it must happen before anything else lands, or the
-   gate keeps reporting green about a stop it does not check.
-5. **Item 13, with Foundry.** **Extraction cannot run on the build machine at all**
-   until it lands, so nothing after this can be exercised against a real filing.
+4. ~~**Item 24**~~ — **done at `81816be`.**
+5. **Item 13, with Foundry. Next.** **Extraction cannot run on the build machine at
+   all** until it lands, so nothing after this can be exercised against a real filing.
+   The whole path is now proven by execution — see the item — so its criteria are
+   measurable rather than aspirational.
 6. **Item 20**, with item 14 alongside — both are `analysis/dcf.py:24` failing to stop,
    for different reasons. **Item 20 needs a check that is not a comparison**, because
    every comparison against NaN is `False`.
