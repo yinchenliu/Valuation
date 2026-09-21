@@ -57,6 +57,7 @@ rather than lying.
 | 24 | A red test that goes green stays outside the gate | — | `tests/` | **closed at `81816be`** |
 | 25 | An adjustment whose year matches no statement is discarded | **silent** | `analysis/normalizer.py` | **new** |
 | 26 | The `files` branch tests for a character every path contains | stopping, **latent** | `api/routes_valuation.py` | **new.** Live only on the legacy no-year branch |
+| 27 | `GET /` and `GET /assumptions` return **500** | stopping | `api/` | **new.** The web half cannot be started by a user |
 
 ---
 
@@ -522,6 +523,35 @@ version in `requirements-dev.txt` is the cheaper half and has no such cost.
 Items 19 to 23 were found by units `P1b-arith` and `P1c-flow`, and confirmed
 independently by their reviewers. **None was found by reading.** Each needed a test to
 call the function with inputs nobody had tried.
+
+## 27. `GET /` and `GET /assumptions` return 500 · stopping
+
+**Fact.** `starlette` 1.6.0 requires `TemplateResponse(request, name, context)`. Two
+call sites still use the removed `(name, context)` form:
+
+| Site | State |
+|---|---|
+| `api/routes_upload.py:42` | **broken.** Unchanged since `bc19431` |
+| `api/routes_valuation.py:114` (`assumptions.html`) | **broken** |
+| the two `valuation_result.html` calls | fixed by `P2b-provider` |
+
+Measured at `0e4649f`:
+
+```
+TestClient(app.app, raise_server_exceptions=False).get('/')  ->  500
+```
+
+**What it costs.** `app.py` is one of the two entry points this product ships, and a
+user cannot reach its first page. The command in `docs/0-start.md` starts a server that
+serves nothing.
+
+**Why nobody noticed.** The failing calls sit inside item 8's blanket catch, which
+renders the error onto a page — through the same broken call. So the error page could
+not render either, and the failure surfaced as a bare 500 with no message. mypy had been
+reporting all four as `arg-type` errors since `bc19431`; they were ranked below a
+different error from the same output.
+
+**Fix.** Two lines. Unit `P5-web-routes`.
 
 ## 26. A Windows upload path is parsed as a fiscal year · stopping
 
