@@ -6,13 +6,19 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+import config
 from analysis.capm import run_capm
 from analysis.dcf import run_dcf
 from analysis.normalizer import normalize_financials
 from analysis.projector import derive_assumptions, project_fcffs
 from analysis.wacc import calculate_wacc
 from config import BASE_DIR
-from ingestion.claude_extractor import extract_financials, extract_multi_year
+from ingestion.claude_extractor import (
+    Provider,
+    extract_financials,
+    extract_multi_year,
+    resolve_provider,
+)
 from ingestion.price_fetcher import fetch_price_data
 from models.financial_statements import FinancialStatements
 from models.valuation import ProjectionAssumptions
@@ -42,19 +48,28 @@ def _extract_from_files(
     ticker: str,
     company_name: str,
 ) -> tuple[FinancialStatements, list]:
-    """Run extraction for single or multi-file uploads."""
+    """Run extraction for single or multi-file uploads.
+
+    `provider` is passed explicitly on every branch. It used to be omitted, and the
+    two public defaults differed, so the number of PDFs a user uploaded decided
+    which model read them. One constant, named once, now decides it.
+    """
+    # Annotated, so the Literal survives the assignment. An unannotated local
+    # widens to `str` and mypy can no longer check it against Provider.
+    provider: Provider = config.DEFAULT_EXTRACTION_PROVIDER
+
     if len(filings) == 1:
         _, pdf_path = filings[0]
-        return extract_financials(pdf_path, ticker, company_name)
+        return extract_financials(pdf_path, ticker, company_name, provider=provider)
 
     # For multi-file, filter out entries with year=0 (couldn't guess year)
     valid = [(y, p) for y, p in filings if y > 0]
     if not valid:
         # Fallback: use the first file as a single extraction
         _, pdf_path = filings[0]
-        return extract_financials(pdf_path, ticker, company_name)
+        return extract_financials(pdf_path, ticker, company_name, provider=provider)
 
-    return extract_multi_year(valid, ticker, company_name)
+    return extract_multi_year(valid, ticker, company_name, provider=provider)
 
 
 @router.get("/assumptions", response_class=HTMLResponse)
@@ -206,8 +221,29 @@ async def run_valuation(
             diluted_shares=shares,
         )
 
-        return templates.TemplateResponse("valuation_result.html", {
-            "request": request,
+        # Rule 6: which model read the filing, over which transport, on whose
+        # credential, is an assumption about every figure on this page. It is read
+        # back here rather than carried from the extraction because the extraction
+        # may have happened on the earlier /assumptions request and been cached.
+        # resolve_provider touches only the environment — no token, no network call.
+        #
+        # KNOWN LIMITATION (P2b-provider review round 1, finding F3). This is a
+        # re-derivation, not a record: it names who WOULD read a filing now, not who
+        # read this one. If the environment moved between the extraction and this
+        # render — a Foundry variable set or unset — the label disagrees with the
+        # event it describes, and rule 4 asks that a figure be traceable to its real
+        # inputs. Fixing it means carrying the ProviderResolution alongside the
+        # financials in _extraction_cache (`:31`, written at `:102` in
+        # assumptions_page, read at `:148-154` here), which is backlog item 5 and
+        # outside this unit's Files in scope.
+        extraction = resolve_provider(config.DEFAULT_EXTRACTION_PROVIDER, None)
+
+        # starlette 1.6.0 removed the deprecated TemplateResponse(name, context)
+        # form; the signature is (request, name, context). Under the old call the
+        # context dict bound to `name` and jinja raised "cannot use 'tuple' as a
+        # dict key", so this route answered HTTP 500 on every request and the
+        # labels below were never seen by a reader.
+        return templates.TemplateResponse(request, "valuation_result.html", {
             "ticker": ticker,
             "company_name": company_name,
             "dcf": dcf_result,
@@ -215,11 +251,12 @@ async def run_valuation(
             "wacc": wacc_result,
             "assumptions": assumptions,
             "current_price": price_data.current_price,
+            "extraction": extraction,
         })
 
     except Exception as e:
-        return templates.TemplateResponse("valuation_result.html", {
-            "request": request,
+        # Same starlette 1.6.0 signature as the success branch above.
+        return templates.TemplateResponse(request, "valuation_result.html", {
             "ticker": ticker,
             "company_name": company_name,
             "error": str(e),
@@ -228,4 +265,5 @@ async def run_valuation(
             "wacc": None,
             "assumptions": None,
             "current_price": 0,
+            "extraction": None,
         })

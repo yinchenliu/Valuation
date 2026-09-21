@@ -109,6 +109,23 @@
         </table>
     </div>
 
+    <!-- Who read the filing. Rule 6: which model produced the extracted figures,
+         over which transport, on whose credential, is an assumption about every
+         number above. The same model over a company gateway and over the public
+         API must be distinguishable by the reader. Never a key or a token — the
+         credential is named by its source only. -->
+    {% if extraction %}
+    <div class="section">
+        <h2>Extraction — who read the filing</h2>
+        <table class="data-table">
+            <tr><td>Provider</td><td>{{ extraction.provider|upper }}</td></tr>
+            <tr><td>Model</td><td>{{ extraction.model }}</td></tr>
+            <tr><td>Transport</td><td>{{ extraction.transport_label }}</td></tr>
+            <tr><td>Credential source</td><td>{{ extraction.credential_source }}</td></tr>
+        </table>
+    </div>
+    {% endif %}
+
     <div class="actions">
         <a href="/" class="btn">New Valuation</a>
         <a href="/assumptions?ticker={{ ticker }}&company_name={{ company_name }}&is_path={{ dcf.projected_fcffs[0].year - assumptions.projection_years }}&bs_path=&cf_path="

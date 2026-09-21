@@ -119,8 +119,10 @@ The user chose these on 2026-09-20. They are not yours to revisit.
 - `config.py` — two constants.
 - `ingestion/claude_extractor.py` — the provider resolution, the Claude client
   construction, the two public defaults, and the existing print line at `:878`.
-- `api/routes_valuation.py` — **`_extract_from_files` and the result context only.**
-  Nothing else in this file.
+- `api/routes_valuation.py` — **`_extract_from_files`, the result context, and the two
+  `TemplateResponse` calls that render `valuation_result.html`.** Nothing else in this
+  file. (The third and fourth scope item were added in round 2; see the amendment at
+  the end of this file.)
 - `cli.py` — **the `--provider` default only.**
 - `templates/` — the result page only.
 - `docs/8-build/environment.md` — section 3 only.
@@ -195,3 +197,85 @@ came back and which did not.
 - **Item 8** — the blanket catches, including `:795` in your file.
 - **Item 10** — the D&A subtraction in the parser.
 - **Item 20** — the NaN beta.
+
+---
+
+# Round 2 — orchestrator amendment, 2026-09-21
+
+Review `.agent/journal/2026-09-21T0130-code_reviewer-p2b-provider.md` returned
+`changes_requested` with one `major`. **Answer every finding by its number in your
+entry.** You may dispute one; a dispute needs a citation.
+
+## The assignment was wrong, and that is mine to fix
+
+Your entry said criterion 4 was unreachable because `/` and `/assumptions` are the route
+to the result page. **The reviewer disproved that by execution.** `POST /valuation` is
+its own route, and `api/routes_valuation.py:148-154` holds a cache-miss branch that runs
+the whole pipeline. On a scratch copy with **only** the two `valuation_result.html`
+calls repaired:
+
+```
+GET  /          -> 500   (still broken, genuinely out of scope)
+POST /valuation -> 200,  with the full Provider/Model/Transport/Credential block
+```
+
+**Those two calls are now in scope.** The other two — `api/routes_upload.py:42` and
+`api/routes_valuation.py:114` — stay out, and unit `P5-web-routes` takes them.
+
+The reviewer also spotted that `P5-web-routes` lists `depends_on: [P2b-provider]`, so it
+cannot supply this unit's evidence. Correct, and that is why the scope moved here
+instead.
+
+## What to do
+
+**F1 · `major` · criterion 4.** Repair the two `valuation_result.html`
+`TemplateResponse` calls to the `starlette` 1.6.0 signature, `(request, name, context)`.
+Then prove criterion 4 the way the reviewer did: `POST /valuation` returns **200** and
+the body carries the resolved provider, model and transport. Paste the status line and
+the rendered block.
+
+Leave `GET /` and `GET /assumptions` broken. They are `P5-web-routes`.
+
+**F2 · `minor`, and treat it as higher than that.** `ingestion/claude_extractor.py:987`
+uses `urlsplit(base_url).netloc`, which **carries userinfo**. The reviewer demonstrated
+that a base URL of `https://user:supersecret@gw.example.net/x` produces the label
+`Microsoft Foundry gateway (user:supersecret@gw.example.net)` — printed to stdout and
+rendered into the result page.
+
+**That is a credential printed in the output**, which is exactly what criterion 10
+exists to prevent. The fix is one word: `.hostname`. Add a case to your scratch proof
+showing a userinfo URL no longer leaks.
+
+**F3 · `minor`.** The page's label is re-derived from the environment at render time
+rather than recorded from the extraction that produced the figures. So the page can
+report a transport that did not run — an environment change between extraction and
+render is enough. [Rule 4](../../docs/2-rules/rules.md) asks that a number be traceable
+to its inputs, and the transport is part of that trace.
+
+Record the resolution **at the extraction** and carry it to the page. If that cannot be
+done inside this unit's scope, say exactly which file would need to change and stop;
+that is an escalation, not a widening.
+
+**F4 · `note`.** The module-level `_ENTRA_TOKEN_PROVIDER` global. It breaks no rule.
+Answer it in one line — keep it, or say why you are changing it. Do not redesign.
+
+## Revised done-criteria
+
+Criterion 4 replaces the original. Everything else stands.
+
+| # | Criterion | Expected | How it is measured |
+|---|---|---|---|
+| 4 | the three labels appear in a response the route returned | **`POST /valuation` → 200**, all three in the body | `starlette.testclient.TestClient`; paste the status and the block |
+| 11 | a userinfo base URL leaks nothing | the label shows the host only | your scratch proof |
+| 12 | the type gate still improves, and adds nothing | < 33, and `comm -13` against the baseline set is empty | the reviewer's method, in its entry |
+
+## What has not changed
+
+The reviewer confirmed by execution, on the tree you left: criterion 2 reproduces with
+its own numbers (`6174` and `2718` printed, `6174.0` and `2718.0` extracted); the mypy
+set is a strict subset with nothing added; the suite is `1 failed, 105 passed` on both
+trees; lint is 5 `BLE001` on both; the census is `116 → 116`; and the missing-credential
+stop names both remedies before any network call.
+
+**Your unasked change to `_call_claude` was judged right** — it stops rather than falls
+back, and criterion 2 could not have passed without it. Keep it.

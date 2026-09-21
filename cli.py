@@ -37,6 +37,7 @@ from pathlib import Path
 # Ensure project root is on sys.path
 sys.path.insert(0, str(Path(__file__).parent))
 
+import config
 from analysis.capm import run_capm
 from analysis.dcf import run_dcf
 from analysis.fcff import calculate_fcff_historical
@@ -90,7 +91,14 @@ def parse_args() -> argparse.Namespace:
 
     # Extraction
     g = p.add_argument_group("extraction")
-    g.add_argument("-p", "--provider", default="gemini", choices=["claude", "gemini"])
+    # The default is config.DEFAULT_EXTRACTION_PROVIDER and not a literal, so the CLI
+    # and the web app cannot drift apart on which model reads a filing.
+    g.add_argument(
+        "-p", "--provider",
+        default=config.DEFAULT_EXTRACTION_PROVIDER,
+        choices=["claude", "gemini"],
+        help=f"LLM provider (default: {config.DEFAULT_EXTRACTION_PROVIDER})",
+    )
     g.add_argument("-m", "--model", default=None, help="Override LLM model ID")
     g.add_argument("--cache-dir", default=None, help="Directory for pickle cache")
     g.add_argument("--no-cache", action="store_true", help="Force re-extraction")

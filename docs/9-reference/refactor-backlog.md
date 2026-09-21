@@ -56,6 +56,7 @@ rather than lying.
 | 23 | `analysis/fcff.py` holds no `raise` at all | **silent** | `analysis/fcff.py` | open |
 | 24 | A red test that goes green stays outside the gate | — | `tests/` | **closed at `81816be`** |
 | 25 | An adjustment whose year matches no statement is discarded | **silent** | `analysis/normalizer.py` | **new** |
+| 26 | The `files` branch tests for a character every path contains | stopping, **latent** | `api/routes_valuation.py` | **new.** Live only on the legacy no-year branch |
 
 ---
 
@@ -91,6 +92,28 @@ count.**
 meaning "this is zero". Because every dataclass money field defaults to `0.0`, an
 extraction that returned **nothing at all** flows through all eight pipeline steps and
 renders a share price. Nothing anywhere reports that no data arrived.
+
+### It is worse than "it produces zeros" · measured 2026-09-21
+
+That description, written at `bc19431`, understated it. Measured independently by the
+programmer and the reviewer of `P2b-provider`, on one-line PDFs printing a single
+figure:
+
+| The page printed | `other_operating_activities` came back as |
+|---|---|
+| `4321` | **`-4321.0`** |
+| `6174` | **`-6174.0`** |
+| `2718` | **`-2718.0`** |
+
+`ingestion/claude_extractor.py:637` computes a residual,
+`cfo - net_income - da - sbc - delta_wc`, over inputs that each defaulted to `0.0`.
+
+**So item 1 does not merely produce zeros. It produces a signed, correctly-scaled
+figure that tracks the filing and that a reader cannot distinguish from a
+measurement.** A zero at least looks like an absence. This does not.
+
+It is also the clearest possible answer to `STATUS.md` trap 3: the run produced a
+number that moved with the document, and the number was still an artefact.
 
 **Fix.** Make the money fields required, or introduce a sentinel that arithmetic
 refuses. Then convert the `.get(k, 0)` calls in the parser into a validation pass that
@@ -499,6 +522,53 @@ version in `requirements-dev.txt` is the cheaper half and has no such cost.
 Items 19 to 23 were found by units `P1b-arith` and `P1c-flow`, and confirmed
 independently by their reviewers. **None was found by reading.** Each needed a test to
 call the function with inputs nobody had tried.
+
+## 26. A Windows upload path is parsed as a fiscal year · stopping
+
+**Fact.** `api/routes_valuation.py:152`:
+
+```python
+filings = _parse_files_param(files) if ":" in files else [(0, files)]
+```
+
+The `":"` test is meant to detect the `year:path` encoding used for a multi-file
+upload. `_parse_files_param` at `:34-43` then does:
+
+```python
+year_str, _, path = entry.partition(":")
+result.append((int(year_str), path))
+```
+
+**Correction, 2026-09-21.** An earlier revision of this item — written by the
+orchestrator from a reading of `:152` alone — said "every saved upload path on this
+platform contains a colon", and told a story in which refreshing a working valuation
+breaks. **That was wrong**, and the reviewer of `P2b-provider` round 2 disproved it by
+execution. The upload flow at `api/routes_upload.py:60-62` always builds the parameter
+as `f"{year or 0}:{path}"`, and `str.partition` splits on the **first** colon only:
+
+```
+'2024:C:\Users\x\goog.pdf'  ->  [(2024, 'C:\\Users\\x\\goog.pdf')]   OK
+'0:C:\Users\x\goog.pdf'     ->  [(0,    'C:\\Users\\x\\goog.pdf')]   OK
+'C:\Users\x\goog.pdf'       ->  ValueError: invalid literal for int() with base 10: 'C'
+```
+
+So the year prefix absorbs the drive-letter colon, and the upload flow is safe. The
+reviewer's own criterion-4 runs went through `_parse_files_param` on a cache miss with a
+Windows absolute path and returned 200.
+
+**What it actually costs.** The defect fires only when `files` arrives with **no** year
+prefix — the legacy `file_path` branch at `api/routes_valuation.py:91-92`, or any caller
+that builds the parameter by hand. It is latent, not live, which is why it is ranked
+below the silent defects rather than with them.
+
+**It stays recorded** because the guard is wrong in principle: `":" in files` tests for
+a character that a path on this platform always contains, so the branch is right today
+only by the accident that something else always adds a colon first. A future change that
+drops the prefix turns it live with no other edit.
+
+**Fix.** Decide the branch on something a path cannot contain, or pass the filings as
+structured data rather than as one delimited string. **Do not "fix" it by testing for a
+drive letter** — that repairs one platform and leaves the design wrong.
 
 ## 25. An adjustment whose year matches no statement is silently discarded · **silent**
 
