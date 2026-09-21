@@ -442,12 +442,146 @@ version in `requirements-dev.txt` is the cheaper half and has no such cost.
 
 ---
 
+# Found by the test units, 2026-09-20
+
+Items 19 to 23 were found by units `P1b-arith` and `P1c-flow`, and confirmed
+independently by their reviewers. **None was found by reading.** Each needed a test to
+call the function with inputs nobody had tried.
+
+## 19. One sign rule applied to two kinds of line · **silent** · **highest cost known**
+
+**Fact.** Two lines of the income statement move earnings in opposite directions:
+
+| Line | How it reaches earnings |
+|---|---|
+| `other_operating_expense`, `sga`, `cost_of_revenue`, … | **subtracted** — `ebit` |
+| `other_non_operating` | **added** — `models/financial_statements.py:91` |
+
+`analysis/normalizer.py:68` applies one rule to both:
+
+```python
+delta = -item.amount if item.direction == "add_back" else item.amount
+```
+
+`_LABEL_TO_FIELD` routes three labels to `other_non_operating`
+(`analysis/normalizer.py:38-40`), so an adjustment on a non-operating line moves
+**both** directions the wrong way.
+
+**Measured** by the reviewer, on revenue 1000 / SG&A 200 / `other_non_operating` 80 /
+`tax_expense` 100, removing a one-time gain of 50:
+
+| | `other_non_operating` | EBT | Effective tax rate |
+|---|---|---|---|
+| Correct clean base | 30.0 | 430.0 | 23.26% |
+| What the code produces | **130.0** | **530.0** | **18.87%** |
+
+**What it costs.** The error is `+100` on a `50` item — twice the amount, in the wrong
+direction. It understates the effective tax rate by 4.4 points, which
+`analysis/projector.py:63-64` averages into the projected tax rate, which **overstates
+NOPAT by 5.7% in every projected year** (324.53 against 306.98 on an EBIT of 400).
+
+**This fires on ordinary, correct input.** Every other silent defect in this backlog
+needs a missing value. This one needs only a filing that reports a gain on an asset
+sale — which is the exact case `NonRecurringItem`'s own docstring names as
+`gain_loss_asset_sale`.
+
+**The repository already disagrees with itself in writing.**
+`models/financial_statements.py:31-37` declares the correct intent:
+
+```python
+@property
+def adjusted_impact(self) -> float:
+    """add_back -> positive (removes expense -> improves EBIT)
+       remove   -> negative (removes gain   -> reduces EBIT)"""
+    return self.amount if self.direction == "add_back" else -self.amount
+```
+
+That is the effect on **earnings**. `normalizer.py:68` computes the delta on the
+**field**, and the two are equal only when the field reduces earnings.
+
+**Fix, and it is not a judgement.** The delta on a field is
+`adjusted_impact × field_sign`, where `field_sign` is `-1` for a field that reduces
+earnings and `+1` for one that raises them. Only `other_non_operating` is `+1` today.
+[Rule 2](../2-rules/rules.md) permits this: **a lookup table that maps a key to a
+number is allowed.** It is looking up *behaviour* that is forbidden.
+
+## 20. A NaN beta is returned, not raised · **silent**
+
+**Fact.** `analysis/capm.py:87` calls `calculate_beta`, which calls
+`scipy.stats.linregress`. On an empty series that returns `nan` for the slope and
+**raises nothing**. Measured directly:
+
+```
+linregress([], []) -> slope=nan  rvalue=nan  stderr=nan
+```
+
+The guard at `analysis/capm.py:42-43` does catch an empty series, but only on the path
+that derives the equity risk premium from history. **Supplying an ERP skips it**, and
+both the web form and the CLI let a user do that.
+
+**What it costs.** `nan` reaches the cost of equity, then WACC, then
+`analysis/dcf.py:24`:
+
+```python
+if wacc <= terminal_growth_rate:
+    raise ValueError(...)
+```
+
+**`nan <= 0.025` is `False`.** Every comparison against NaN is false, so the one
+correct stop in the whole of `analysis/` does not fire. A complete `DCFResult` renders
+with `implied_share_price = nan`.
+
+Chain confirmed end to end by the reviewer: `capm.py:72` → `:87` → `:32` →
+`models/valuation.py:16` → `analysis/wacc.py:66` → `models/valuation.py:34-38` →
+`analysis/dcf.py:24` → `:74,75` → `models/valuation.py:138`. Reached from both
+`api/routes_valuation.py:167-172` and `cli.py:687-692`.
+
+**Fix.** Stop in `calculate_beta` when the series is empty or too short, naming the
+input. Then add a NaN check that does not rely on a comparison — `math.isnan` — at the
+point WACC is built, because **a guard written as `<=` cannot catch this.**
+
+## 21. An unrecognised `direction` silently reverses the adjustment · **silent**
+
+**Fact.** `analysis/normalizer.py:68` tests `item.direction == "add_back"`. Every other
+string — `"Add_Back"`, `"addback"`, a typo, an empty string — takes the `else` branch
+and is treated as `remove`.
+
+**What it costs.** The adjustment moves the opposite way from the one intended, with no
+signal. The value arrives from the model, so the set of possible spellings is not
+closed. [Rule 3](../2-rules/rules.md).
+
+**Fix.** Raise on any value that is neither `"add_back"` nor `"remove"`, naming the
+value and the year. A red test already states this:
+`tests/unit/test_normalizer_rule3_red.py`.
+
+## 22. Zero debt balance gives a 0% cost of debt · **silent**
+
+**Fact.** `analysis/wacc.py:37-38` — `if total_debt == 0: return 0.0`.
+
+**What it costs.** A filing that reports an interest expense but from which no debt
+balance was extracted is missing data, not a debt-free company. The zero is read as a
+measurement. The weight is also zero in that case, so today it does not move WACC — but
+it will the moment the weights come from anywhere else.
+
+## 23. `analysis/fcff.py` holds no `raise` at all · **silent**
+
+**Fact.** Measured by the tester: an entirely empty `IncomeStatement` and
+`CashFlowStatement` return a well-formed `HistoricalFCFF` with `fcff = 0.0`.
+
+**What it costs.** Free cash flow of exactly zero is a meaningful figure for a real
+company. It is indistinguishable here from "nothing was extracted". This is item 1
+wearing a different face, and it is named separately because `fcff.py` is the one
+`analysis/` module with no stop of any kind.
+
+---
+
 ## Suggested order
 
 Dependencies, not severity. **The order matters more than the ranking**, because
 fixing a silent defect with no test in place produces an unverifiable claim.
 
-**Steps 1 and 2 are done.** Re-measured at `d1854fb`.
+**Steps 1 and 2 are done.** Re-measured at `796de9a`, with `analysis/` at 192 of 194
+statements covered.
 
 1. ~~**Item 4**~~ — **done.** `pytest` runs 20 tests with no key. `analysis/dcf.py` is
    at 100% of statements; the other five modules are at 0%.
@@ -455,16 +589,33 @@ fixing a silent defect with no test in place produces an unverifiable claim.
    of this step: one default provider makes the provider a named assumption, and
    [rule 6](../2-rules/rules.md) then requires it to be visible in the output. It ships
    with its labelling, not before it.
-3. **Item 13, with Foundry.** Promoted to the front. **Extraction cannot run on the
-   build machine at all** until it lands, so nothing downstream can be exercised against
-   a real filing.
-4. **Item 2**, with items 14 and 15 alongside — they are the same failure walking
-   through three files. Item 2's red test goes green here.
-5. **Item 7** — unify the pipeline, so each later fix is made once.
-6. **Item 3**, then **item 6**. The remaining high-cost silent defects.
-7. **Item 8**, then **item 11**. Typed failures, which item 1 depends on.
-8. **Item 1** — the large one. Last, with the suite in place.
-9. **Items 9, 10, 5, 16, 17, 18.**
+3. **Items 19, 3 and 21 together** — all three are in `analysis/normalizer.py`, all
+   three are about the same 34-line function, and two of the three already have a red
+   test waiting. **Item 19 is first in the whole list** because it is the only silent
+   defect here that fires on ordinary, complete input. Every other one needs something
+   to be missing.
+4. **Item 13, with Foundry.** **Extraction cannot run on the build machine at all**
+   until it lands, so nothing after this can be exercised against a real filing.
+5. **Item 20**, with item 14 alongside — both are `analysis/dcf.py:24` failing to stop,
+   for different reasons. Item 20 needs a check that is not a comparison.
+6. **Item 2**, with item 15 alongside — the same failure walking through two files.
+   Item 2's red test goes green here.
+7. **Item 7** — unify the pipeline, so each later fix is made once.
+8. **Item 6**, then **item 22**, then **item 23**.
+9. **Item 8**, then **item 11**. Typed failures, which item 1 depends on.
+10. **Item 1** — the large one. Last, with the suite in place.
+11. **Items 9, 10, 5, 16, 17, 18.**
+
+**Two deviations from the stated rule, both named rather than hidden.**
+
+- **Step 4 sits ahead of step 7.** The rule says unify before fixing, so each fix is
+  made once. Item 13 is a stopping defect on the only machine available, and the cost
+  of waiting is that no unit after it can be checked against a real extraction. A fix
+  applied twice is cheaper than a build nobody can run.
+- **Step 3 sits ahead of everything, including the test-first rule.** It does not
+  breach it: `analysis/normalizer.py` is at 93% of statements with 39 assertions
+  against it, and the two lines not covered are the ones the fix will delete. The tests
+  are already in place. That is exactly the position the rule was written to produce.
 
 **Step 3 moved ahead of step 5, and that is a deviation worth naming.** The rule is
 that unification comes before behaviour fixes, so each fix is made once. Item 13 is a

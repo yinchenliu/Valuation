@@ -4,20 +4,29 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `d1854fb`, 2026-09-20**, on branch `build/phase-1-2`. Two work units
-have been accepted: `P1-suite` and `P2-hygiene`. Both were reviewed and approved. The
-journal is [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
+**Measured at `796de9a`, 2026-09-20**, on branch `build/phase-1-2`. Four work units
+have been accepted: `P1-suite`, `P2-hygiene`, `P1b-arith` and `P1c-flow`. Every one was
+reviewed and approved. The journal is
+[.agent/journal/INDEX.md](.agent/journal/INDEX.md).
 
 ---
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `d1854fb` |
+| Gate | Command | Result at `796de9a` |
 |---|---|---|
-| Tests | `.venv/Scripts/python.exe -m pytest -q` | **20 tests. 19 pass, 1 red on purpose**, 0.26 s |
-| Tests, phase-1 form | `... -m pytest -q --ignore=tests/unit/test_dcf_rule3_red.py` | **19 passed**, 0.12 s |
+| Tests | `.venv/Scripts/python.exe -m pytest -q` | **93 tests. 90 pass, 3 red on purpose**, 4.1 s |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **90 passed**, 0 failed |
 | Lint | `.venv/Scripts/python.exe -m ruff check .` | **5 errors**, every one `BLE001` |
 | Types | `.venv/Scripts/python.exe -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **33 errors in 4 files**, 18 files checked |
+
+**Use the `--ignore-glob` form as the gate.** It excludes every deliberately red test by
+pattern, so it keeps working as more are written. An earlier revision of this file named
+a single file by path; that form went stale the moment a second red test landed.
+
+**Set `COVERAGE_FILE` before measuring coverage** if anything else may be running:
+two processes in one tree collide on the root `.coverage`, and a `--cov-branch` run
+against statement-only data aborts as a pytest `INTERNALERROR`.
 
 **The lint gate is one rule away from clean.** All 5 remaining errors are blanket
 `except Exception`: `api/routes_valuation.py:96` and `:220`, `cli.py:758`,
@@ -25,48 +34,61 @@ journal is [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
 backlog item 8 and phase 5 owns them. **They are deliberately left visible.**
 Suppressing them would delete the record of a defect instead of fixing it.
 
-### The test gate runs, and one test is red on purpose
+### The test gate runs, and three tests are red on purpose
 
 `pytest` no longer makes a paid API call during collection. It needs no key, no PDF
-and no network, and it finishes in under a third of a second.
+and no network.
 
-**`tests/unit/test_dcf_rule3_red.py` fails deliberately.** It states the requirement
-that `run_dcf` must stop when the balance sheet is absent. The code defaults to zero
-net debt instead, so the test is red. It goes green when backlog item 2 lands, and
-**it is kept, not deleted.** Until then, the phase-1 gate is the `--ignore` form above,
-and the `--ignore` is removed the day item 2 is fixed.
+**Three tests fail deliberately.** Each states a requirement the code does not meet.
+Each goes green when its defect is fixed, and **each is kept, not deleted.**
 
-Nothing else fails. A second red test means a real regression.
+| File | States |
+|---|---|
+| `tests/unit/test_dcf_rule3_red.py` | `run_dcf` must stop when the balance sheet is absent — backlog item 2 |
+| `tests/unit/test_normalizer_rule3_red.py`, 2 tests | an unrecognised line item and an unrecognised direction must stop — backlog items 3 and 19 |
 
-### `tests/`, measured at `d1854fb`
+Every red test lives in a file matching `*_rule3_red.py`, which is what the gate's
+`--ignore-glob` keys on. **A red test outside that pattern breaks the gate**, so put
+every new one there.
 
-| | At `bc19431` | At `d1854fb` |
+**A failure outside those three is a real regression.**
+
+### `tests/`, measured at `796de9a`
+
+| | At `bc19431` | At `796de9a` |
 |---|---|---|
-| `.py` files | 10 | **13** |
-| `assert` statements | **0** | **40** |
-| files guarded by `if __name__ == "__main__":` | **0** | **9 of 9 scripts** |
-| tests collected | 0 | **20** |
+| `.py` files | 10 | **19** |
+| `assert` statements | **0** | **263** |
+| scripts guarded by `if __name__ == "__main__":` | **0** | **9 of 9** |
+| tests collected | 0 | **93** |
 | paid API calls during collection | attempted | **none** |
 
-### Coverage of `analysis/`, measured
+### Coverage, measured at `796de9a`
 
 ```
-analysis/dcf.py          24 statements    0 missed   100%
-analysis/capm.py         30               30           0%
-analysis/fcff.py         19               19           0%
-analysis/normalizer.py   28               28           0%
-analysis/projector.py    68               68           0%
-analysis/wacc.py         25               25           0%
-TOTAL                   194              170          12%
+analysis/capm.py         30 statements    0 missed   100%
+analysis/dcf.py          24               0          100%
+analysis/fcff.py         19               0          100%
+analysis/normalizer.py   28               2           93%
+analysis/projector.py    68               0          100%
+analysis/wacc.py         25               0          100%
+analysis/ TOTAL         194               2           99%
+
+models/financial_statements.py  151      14           91%
+models/valuation.py              95       3           97%
 ```
 
-**This is the honest headline.** One module of six has any test. 170 statements are
-touched by nothing, and a function no test calls cannot fail — so a coverage gap reads
-as a clean report, and the cleaner it reads the worse it is.
+**192 of 194 statements in `analysis/`, against 24 at `d1854fb`.** The two uncovered
+lines are the guess at `analysis/normalizer.py:50-51`, which only a red test reaches.
 
-Note also: coverage.py does not count a conditional *expression* as a branch, so 100%
-branch coverage on `dcf.py` does **not** include the `if latest_bs else 0.0` fallback
-at lines 80-81.
+**Two caveats a reader must not skip.**
+
+1. Coverage.py does not count a conditional *expression* as a branch. So 100% branch
+   coverage does **not** include `if latest_bs else 0.0` at `analysis/dcf.py:80-81`, or
+   any of the other conditional-expression defaults. **Coverage here is not evidence
+   that every path is checked.**
+2. `ingestion/` and `api/` have **no tests at all.** That is where 51 of the 117
+   zero-default sites live, and where the extraction boundary sits.
 
 ### Type errors, by kind
 
@@ -170,6 +192,8 @@ the headline.
 
 | # | Item | Cost | State |
 |---|---|---|---|
+| 19 | `analysis/normalizer.py:68` — **one sign rule applied to two kinds of line** | earnings move by **2×** the item, in the wrong direction, on ordinary input | **new, and the highest-cost defect known.** Confirmed twice |
+| 20 | `analysis/capm.py:87` — a **NaN** beta is returned, not raised | a NaN share price renders, because `nan <= g` is `False` and the one working guard does not fire | new. Confirmed end to end |
 | 1 | **117** silent zero-default sites (`models/` 60, `ingestion/` 49, `analysis/` 6, `api/` 2) | a wrong share price on a clean run | open |
 | 2 | `analysis/dcf.py:80` — missing balance sheet gives **zero net debt** | equity value overstated by the whole debt balance | **open, and now proven by measurement.** A red test states the requirement |
 | 3 | `analysis/normalizer.py:46` — unknown line item **guesses** `other_operating_expense` | the adjustment lands on the wrong line | open |
@@ -183,6 +207,9 @@ the headline.
 | 16 | Nine scripts carry a `sys.path.insert` to a path that does not exist on this machine | none of them runs as `python tests/<name>.py` | new |
 | 17 | `analysis/capm.py:14` imports from `ingestion/` | a layering break; `analysis/` must not depend on `ingestion/` | new |
 | 18 | The lint gate's rule set is unpinned | a ruff upgrade changes what the gate enforces, with no commit to point at | new |
+| 21 | `analysis/normalizer.py:68` — an unrecognised `direction` silently takes the `remove` branch | any spelling but `"add_back"` moves the adjustment the wrong way | new. Red test written |
+| 22 | `analysis/wacc.py:37` — zero debt balance gives a 0% cost of debt | missing data read as a measurement | new |
+| 23 | `analysis/fcff.py` holds **no `raise` at all** | wholly empty statements return a well-formed result with `fcff = 0.0` | new |
 
 ---
 
@@ -200,8 +227,18 @@ Things that have already misled a reader of this repository.
    nothing at all. "It ran" is not evidence. Name an input that came from a filing.
 3. **`cli.py` and the web app can disagree.** They build assumptions by separate code
    paths. A figure verified in one is not verified in the other.
-4. **One test is red on purpose.** `pytest -q` reports `1 failed, 19 passed` and that
-   is the expected state. Do not fix it by weakening the test; fix backlog item 2.
+4. **Three tests are red on purpose.** `pytest -q` reports `3 failed, 90 passed` and
+   that is the expected state. Do not fix one by weakening it; fix the defect it
+   states. The gate form that excludes them is
+   `pytest -q --ignore-glob="*_rule3_red.py"`.
+6. **A tester's `fail` is a verdict about the code, not about its own work.** All four
+   units so far returned `fail` or `partial` in their own entries and all four were
+   approved by review. Read the verdict line at the top of an entry before reading the
+   word alone.
+7. **99% coverage of `analysis/` does not mean every path is checked.** Coverage.py
+   does not count a conditional expression as a branch, and the conditional-expression
+   default is this repository's most common defect. `ingestion/` and `api/` have no
+   tests at all.
 5. **Backlog item 1's census grep excludes `tests/`.** The 117 figure counts
    `models/`, `analysis/`, `api/` and `ingestion/` only. The nine scripts hold 33 more
    hits of the same shape. They are dev scripts, not pipeline code, but `tests/` is not
