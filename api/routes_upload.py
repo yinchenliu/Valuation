@@ -39,7 +39,13 @@ def _guess_fiscal_year(filename: str) -> int | None:
 @router.get("/", response_class=HTMLResponse)
 async def upload_page(request: Request):
     """Render the file upload page."""
-    return templates.TemplateResponse("upload.html", {"request": request})
+    # starlette 1.6.0 removed the deprecated TemplateResponse(name, context) form;
+    # the signature is (request, name, context). Under the old call the context dict
+    # bound to `name`, so this route answered HTTP 500 on every request -- the front
+    # page of the web app, unreachable since the first commit this build measured.
+    # No context dict is passed because starlette does context.setdefault("request",
+    # request) itself, and no template reads anything else here.
+    return templates.TemplateResponse(request, "upload.html")
 
 
 @router.post("/upload")

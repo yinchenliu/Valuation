@@ -111,8 +111,10 @@ async def assumptions_page(
         except Exception as e:
             error = str(e)
 
-    return templates.TemplateResponse("assumptions.html", {
-        "request": request,
+    # Same starlette 1.6.0 signature as the two valuation_result.html calls below.
+    # "request" is no longer passed in the context: starlette does
+    # context.setdefault("request", request) itself, and no template reads it.
+    return templates.TemplateResponse(request, "assumptions.html", {
         "ticker": ticker,
         "company_name": company_name,
         "files": files or file_path,

@@ -57,7 +57,7 @@ rather than lying.
 | 24 | A red test that goes green stays outside the gate | — | `tests/` | **closed at `81816be`** |
 | 25 | An adjustment whose year matches no statement is discarded | **silent** | `analysis/normalizer.py` | **new** |
 | 26 | The `files` branch tests for a character every path contains | stopping, **latent** | `api/routes_valuation.py` | **new.** Live only on the legacy no-year branch |
-| 27 | `GET /` and `GET /assumptions` return **500** | stopping | `api/` | **new.** The web half cannot be started by a user |
+| 27 | `GET /` and `GET /assumptions` return **500** | stopping | `api/` | **closed at `d885d8d`+1** |
 
 ---
 
@@ -524,7 +524,7 @@ Items 19 to 23 were found by units `P1b-arith` and `P1c-flow`, and confirmed
 independently by their reviewers. **None was found by reading.** Each needed a test to
 call the function with inputs nobody had tried.
 
-## 27. `GET /` and `GET /assumptions` return 500 · stopping
+## 27. `GET /` and `GET /assumptions` return 500 · **CLOSED 2026-09-21**
 
 **Fact.** `starlette` 1.6.0 requires `TemplateResponse(request, name, context)`. Two
 call sites still use the removed `(name, context)` form:
@@ -551,7 +551,23 @@ not render either, and the failure surfaced as a bare 500 with no message. mypy 
 reporting all four as `arg-type` errors since `bc19431`; they were ranked below a
 different error from the same output.
 
-**Fix.** Two lines. Unit `P5-web-routes`.
+**Fixed.** Unit `P5-web-routes`, two lines. Measured before and after against a
+`git archive` export of the baseline, by the programmer and again by the reviewer:
+
+```
+BEFORE   GET / -> 500,   21 bytes (literally b'Internal Server Error')
+AFTER    GET / -> 200, 1648 bytes,  all six upload-form markers present
+         GET /assumptions -> 200, 5673 bytes
+```
+
+Types fell 18 → 14; `comm -13` against the baseline is empty and `comm -23` is exactly
+the four `arg-type` errors on the two changed lines.
+
+**The reviewer proved the "why nobody noticed" claim rather than repeating it.** It
+exercised the error branch of `assumptions_page`, which now returns 200 and renders
+`<div class="alert alert-error">[Errno 2] No such file…</div>`. Before the fix that
+branch rendered through the same broken call, so the handler meant to report the error
+could not report anything.
 
 ## 26. A Windows upload path is parsed as a fiscal year · stopping
 
