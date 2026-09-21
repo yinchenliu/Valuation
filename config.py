@@ -3,9 +3,11 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Project paths
+# These name locations; they do not create them. Importing a configuration
+# module must not touch the filesystem. The directory UPLOAD_DIR names is
+# created by api/routes_upload.py at the moment a file is actually written.
 BASE_DIR = Path(__file__).parent
 UPLOAD_DIR = BASE_DIR / "uploads"
-UPLOAD_DIR.mkdir(exist_ok=True)
 
 # Load .env from project root — values are merged into os.environ.
 # System env vars still work; .env just provides a convenient local override.

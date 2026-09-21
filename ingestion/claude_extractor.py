@@ -56,13 +56,12 @@ ENVIRONMENT VARIABLES
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 import textwrap
 from pathlib import Path
 from typing import Literal
-
-import base64
 
 from models.financial_statements import (
     BalanceSheet,
@@ -387,8 +386,9 @@ def _call_gemini(
     Retries automatically on 429 (rate limit) and 503 (overloaded) errors
     with exponential backoff.
     """
-    import time
     import re
+    import time
+
     from google import genai
     from google.genai import types
 
@@ -782,7 +782,7 @@ def _run_nri_pass(
         nri = _parse_nri_response(json_str)
     except (json.JSONDecodeError, KeyError) as exc:
         print(f"  [Pass 2 WARN] Failed to parse NRI response: {exc}")
-        print(f"  Retrying once...")
+        print("  Retrying once...")
         fix_prompt = (
             "The following JSON is malformed. Return ONLY the corrected JSON object "
             "with no markdown fences.\n\n" + json_str
@@ -793,7 +793,7 @@ def _run_nri_pass(
         try:
             nri = _parse_nri_response(_extract_json(raw2))
         except Exception:
-            print(f"  [Pass 2 WARN] NRI parsing failed after retry — returning empty list")
+            print("  [Pass 2 WARN] NRI parsing failed after retry — returning empty list")
             return []
 
     if nri:
@@ -803,7 +803,7 @@ def _run_nri_pass(
             print(f"    {item.year} {sign}{item.amount:,.0f}M on "
                   f"{item.line_item} — {item.description[:60]}")
     else:
-        print(f"  [Pass 2] No non-recurring items identified")
+        print("  [Pass 2] No non-recurring items identified")
 
     return nri
 
@@ -818,6 +818,7 @@ def _resolve_provider(
 ) -> tuple[str, str]:
     """Resolve model ID and API key for the given provider."""
     import os
+
     import config as _  # noqa: F401 — triggers dotenv load
 
     if provider not in ("claude", "gemini"):

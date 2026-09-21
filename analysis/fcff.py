@@ -17,7 +17,6 @@ PROJECTED (EBIT-based) — built from income statement assumptions:
 from __future__ import annotations
 
 from models.financial_statements import (
-    BalanceSheet,
     CashFlowStatement,
     IncomeStatement,
 )

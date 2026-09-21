@@ -1,0 +1,8 @@
+# Development gates. Installed into .venv alongside requirements.txt.
+# docs/8-build/environment.md owns what each one is for and how it is run.
+-r requirements.txt
+
+pytest
+pytest-cov
+ruff
+mypy

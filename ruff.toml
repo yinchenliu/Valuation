@@ -1,0 +1,26 @@
+# Ruff configuration.
+#
+# This file lives at the repository root and NOT in pyproject.toml on purpose:
+# a pyproject.toml would also become pytest's configuration anchor, and test
+# collection is owned elsewhere.
+#
+# It holds exactly two things, and deliberately nothing else.
+#
+# There is no `select` and no `ignore` list. The rule set is left at ruff's
+# built-in default, so the lint gate enforces exactly what ruff enforces out of
+# the box. In particular BLE001 stays an error: the four blind
+# `except Exception` handlers are backlog item 8, phase 5 owns them, and
+# suppressing them here would delete the record of a defect instead of fixing
+# it. See docs/9-reference/refactor-backlog.md.
+
+# Matches the Python this repository runs: 3.14.4 (STATUS.md section 3).
+target-version = "py314"
+
+[lint.per-file-ignores]
+# `pdf_files: list[UploadFile] = File(...)` in a parameter default is the
+# required FastAPI idiom for declaring a multipart upload — the call in the
+# default is how FastAPI is told to source the argument from the request body,
+# and it is evaluated once at import to build the route signature. It is not the
+# mutable-default defect B008 exists to catch, and B008 cannot tell the two
+# apart. Scoped to the route modules only.
+"api/*.py" = ["B008"]

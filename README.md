@@ -20,11 +20,15 @@ The LLM is strictly an extraction layer — it reads numbers from PDFs. All proj
 
 ### Installation
 
+This is a Windows project, so the interpreter lives under `Scripts`, not `bin`. Every
+command below uses the virtual environment path. **Never a bare `python`.**
+[docs/8-build/environment.md](docs/8-build/environment.md) owns the setup and the gates.
+
 ```bash
 git clone <repo-url>
 cd valuation_platform
 
-pip install -r requirements.txt
+.venv/Scripts/python.exe -m pip install -r requirements.txt
 ```
 
 Create a `.env` file in the project root:
@@ -39,7 +43,7 @@ GEMINI_API_KEY=your-gemini-api-key-here
 ### Run
 
 ```bash
-uvicorn app:app --reload
+.venv/Scripts/python.exe -m uvicorn app:app --reload
 ```
 
 Then open [http://localhost:8000](http://localhost:8000) in your browser.
@@ -60,14 +64,14 @@ Then pass only the folder. The ticker is inferred from the folder name and the
 fiscal year from the first four digits of each filing date:
 
 ```bash
-python cli.py 10K_filings/LLY
+.venv/Scripts/python.exe cli.py 10K_filings/LLY
 ```
 
 Both `10K` and `10-K` are accepted in filenames. The existing explicit form
 also remains available:
 
 ```bash
-python cli.py 2023:10K_2023.pdf 2024:10K_2024.pdf -t LLY
+.venv/Scripts/python.exe cli.py 2023:10K_2023.pdf 2024:10K_2024.pdf -t LLY
 ```
 
 ## Project Structure

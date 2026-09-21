@@ -10,10 +10,9 @@ from __future__ import annotations
 import numpy as np
 from scipy import stats
 
+import config
 from ingestion.price_fetcher import PriceData
 from models.valuation import CAPMResult
-
-import config
 
 
 def calculate_beta(price_data: PriceData) -> tuple[float, float, float]:
@@ -21,8 +20,16 @@ def calculate_beta(price_data: PriceData) -> tuple[float, float, float]:
 
     Returns:
         (beta, r_squared, std_error)
+
+    `stats.linregress` also returns two statistics this function discards:
+      - the intercept (Jensen's alpha — the part of the stock return the
+        market return does not explain);
+      - the p-value for the null hypothesis that the slope is zero, i.e. the
+        statistical significance of the estimated beta.
+    Neither reaches `CAPMResult`. A caller that needs one must widen this
+    signature; it cannot recover them from the return value.
     """
-    slope, intercept, r_value, p_value, std_err = stats.linregress(
+    slope, _intercept, r_value, _p_value, std_err = stats.linregress(
         price_data.market_returns,
         price_data.stock_returns,
     )

@@ -18,6 +18,10 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 def _save_upload(file: UploadFile, ticker: str) -> Path:
     """Save an uploaded file to the uploads directory."""
+    # Moved here from config.py, which used to run this at import time.
+    # The directory is created when a file actually arrives, not when a
+    # configuration module is imported.
+    UPLOAD_DIR.mkdir(exist_ok=True)
     ticker_dir = UPLOAD_DIR / ticker.upper()
     ticker_dir.mkdir(parents=True, exist_ok=True)
     dest = ticker_dir / file.filename

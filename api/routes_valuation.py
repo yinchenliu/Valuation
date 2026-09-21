@@ -13,8 +13,8 @@ from analysis.projector import derive_assumptions, project_fcffs
 from analysis.wacc import calculate_wacc
 from config import BASE_DIR
 from ingestion.claude_extractor import extract_financials, extract_multi_year
-from models.financial_statements import FinancialStatements
 from ingestion.price_fetcher import fetch_price_data
+from models.financial_statements import FinancialStatements
 from models.valuation import ProjectionAssumptions
 
 router = APIRouter()

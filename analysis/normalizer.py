@@ -8,7 +8,11 @@ from __future__ import annotations
 
 import dataclasses
 
-from models.financial_statements import FinancialStatements, IncomeStatement, NonRecurringItem
+from models.financial_statements import (
+    FinancialStatements,
+    IncomeStatement,
+    NonRecurringItem,
+)
 
 # Fallback: map human-readable labels to IS field names in case the LLM
 # returns a description instead of the exact field name.
