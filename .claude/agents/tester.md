@@ -84,6 +84,25 @@ the balance sheet is missing makes `analysis/dcf.py:80` permanent and turns the 
 fix red. That is the single most damaging thing you could write here. If you find
 yourself about to assert a fallback, stop: you have found the finding.
 
+### A red test lives in `*_rule3_red.py`, and it moves out the day it goes green
+
+A test that states a requirement the code does not yet meet goes in a file named
+`tests/unit/test_<module>_rule3_red.py`. That pattern is what the gate excludes:
+
+```
+.venv/Scripts/python.exe -m pytest -q --ignore-glob="*_rule3_red.py"
+```
+
+**When the defect is fixed and the test goes green, move it into the module's normal
+test file in the same unit.** The pattern means "states a requirement the code does not
+meet", not "tests a stop". A green test left inside it is a test the gate never runs —
+so the one test that proves a fix works becomes the one test nobody checks, and every
+gate still reports clean. That happened at `38b903c`; it is
+[backlog item 24](../../docs/9-reference/refactor-backlog.md).
+
+**Check this whenever you touch a module whose defect was recently fixed**, whether or
+not your assignment mentions it.
+
 ## Report two counts, never one
 
 | Count | Question | Unit |

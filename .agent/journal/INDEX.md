@@ -21,6 +21,7 @@ edits another's.
 | 2026-09-20 | P1c-flow | code_reviewer | `approved` — 5 notes. Confirmed the sign error and quantified it | [entry](2026-09-20T2215-code_reviewer-p1c-flow.md) |
 | 2026-09-20 | P4-normalizer | programmer | `ok` — 9 of 9 criteria. Backlog items 19, 3 and 21 fixed | [entry](2026-09-20T2300-programmer-p4-normalizer.md) |
 | 2026-09-20 | P4-normalizer | code_reviewer | `approved` — 1 minor, 2 notes. Re-derived all six signs two ways | [entry](2026-09-20T2330-code_reviewer-p4-normalizer.md) |
+| 2026-09-21 | P4b-normalizer-verify | tester | **`pass`** — the first `pass` in this repository. Closed the gate defect, found item 25 | [entry](2026-09-21T0000-tester-p4b-normalizer-verify.md) |
 
 `P1-suite` and `P2-hygiene` were accepted together at `d1854fb`, because they landed in
 one working tree in parallel and no commit separates them. `P1b-arith` and `P1c-flow`

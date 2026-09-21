@@ -18,6 +18,20 @@ docstring:
 Both directions are checked on the field *and* on the consequence (EBIT and the
 operating margin), because a sign error on the field that cancels downstream is
 invisible to a field-only assertion.
+
+The "the sign, one field and one direction at a time" section near the bottom
+states the same definition as an invariant on **pre-tax earnings**, which is the
+level at which it holds for every line:
+
+    removing a one-time **expense** (``add_back``) raises EBT by the amount;
+    removing a one-time **gain**    (``remove``)   lowers EBT by the amount;
+
+whichever line of the statement the item sat on. Every expected number there was
+computed from ``IncomeStatement``'s own definitions of ``ebit`` and ``ebt``
+(``models/financial_statements.py:66-91``) and written into the test before the
+engine was run. **No expectation in this file was taken from
+``analysis/normalizer.py``'s sign table, and none is a loop over it** — the table
+is the thing under test, so an expectation read from it would be checking itself.
 """
 
 from __future__ import annotations
@@ -79,6 +93,39 @@ def _item(
 
 def _financials(statements: list[IncomeStatement]) -> FinancialStatements:
     return FinancialStatements(ticker="TEST", income_statements=list(statements))
+
+
+# A statement with every one of the six adjustable lines non-zero, and both
+# below-the-operating-line items populated, so that a sign error on any single
+# field cannot hide inside a zero. Its arithmetic, from IncomeStatement's own
+# definitions (models/financial_statements.py:66-97):
+#
+#   total operating expenses = 400 + 200 + 120 + 80 + 60          = 860
+#   EBIT   = revenue - total operating expenses = 1000 - 860      = 140
+#   EBT    = EBIT - interest_expense + interest_income
+#            + other_non_operating = 140 - 30 + 10 + 90           = 210
+#   net income = EBT - tax_expense = 210 - 60                     = 150
+#
+_FULL_EBIT = 140.0
+_FULL_EBT = 210.0
+_FULL_NET_INCOME = 150.0
+
+
+def _full_statement(year: int = 2024) -> IncomeStatement:
+    """Revenue 1000; all six adjustable lines non-zero; EBIT 140, EBT 210."""
+    return IncomeStatement(
+        year=year,
+        revenue=1000.0,
+        cost_of_revenue=400.0,
+        sga=200.0,
+        rd_expense=120.0,
+        depreciation_amortization=80.0,
+        other_operating_expense=60.0,
+        interest_expense=30.0,
+        interest_income=10.0,
+        other_non_operating=90.0,
+        tax_expense=60.0,
+    )
 
 
 # --------------------------------------------------------------------------
@@ -208,19 +255,26 @@ def _money_fields(statement: IncomeStatement) -> dict[str, float]:
 def test_a_research_and_development_label_moves_rd_expense_and_nothing_else() -> None:
     """An item described as research and development belongs on `rd_expense`.
 
-    Hand arithmetic: `rd_expense` starts at 0, an add_back of 50 takes it to
-    `0 - 50 = -50`, and every other money field must be byte-identical to the
-    unadjusted statement. Checking "nothing else moved" is what turns a routing
-    test into a routing test — asserting only `rd_expense` would pass even if
-    the engine had also touched SG&A.
+    Hand arithmetic: `rd_expense` starts at 120 on `_full_statement()`, an
+    add_back of 50 takes it to `120 - 50 = 70`, and every other money field
+    must be byte-identical to the unadjusted statement. Checking "nothing else
+    moved" is what turns a routing test into a routing test — asserting only
+    `rd_expense` would pass even if the engine had also touched SG&A.
+
+    It runs on `_full_statement()` rather than `_base_statement()` because the
+    latter leaves `rd_expense` at 0, making the expected value `0 - 50 = -50`:
+    correct arithmetic on the fixture, but a negative research expense is a
+    figure no filing can print, and a test whose expected value cannot occur is
+    a worse guard than one whose can. Raised as a note by the reviewer of
+    `P1c-flow`; the routing claim under test is unchanged.
     """
-    before = _money_fields(_base_statement())
+    before = _money_fields(_full_statement())
     adjusted = apply_adjustments(
-        _base_statement(), [_item("Research and development", "add_back", 50.0)]
+        _full_statement(), [_item("Research and development", "add_back", 50.0)]
     )
     after = _money_fields(adjusted)
 
-    assert after["rd_expense"] == pytest.approx(-50.0)
+    assert after["rd_expense"] == pytest.approx(70.0)
     for name, value in before.items():
         if name != "rd_expense":
             assert after[name] == pytest.approx(value), f"{name} moved and must not"
@@ -377,3 +431,299 @@ def test_normalize_financials_leaves_the_other_statements_alone() -> None:
     assert result.balance_sheets[0].cash_and_equivalents == pytest.approx(250.0)
     assert len(result.cash_flow_statements) == 1
     assert result.cash_flow_statements[0].capital_expenditures == pytest.approx(-40.0)
+
+
+# --------------------------------------------------------------------------
+# The sign, one field and one direction at a time. Six fields x two
+# directions = twelve cases, written out.
+#
+# THE DEFINITION, and the only place these expectations come from:
+#
+#   A non-recurring item is a one-time amount sitting inside a reported line.
+#   Normalising strips it out to leave a clean, repeatable base.
+#
+#     * add_back - the item is a one-time **expense**. A clean base does not
+#       bear it, so clean pre-tax earnings are **higher** than reported, by
+#       exactly the amount.
+#     * remove   - the item is a one-time **gain**. A clean base does not
+#       enjoy it, so clean pre-tax earnings are **lower** than reported, by
+#       exactly the amount.
+#
+#   That is true of the *earnings*, whichever line of the statement the item
+#   sat on. Which way the *line itself* moves is a second, different question,
+#   and it follows from how that line enters earnings:
+#
+#     - the five operating lines are summed into total_operating_expenses and
+#       subtracted from revenue (models/financial_statements.py:66-77), so
+#       such a line must FALL for earnings to rise;
+#     - other_non_operating is **added** by ebt (:91), so it must RISE for
+#       earnings to rise.
+#
+#   Every number below was derived that way and written down before the engine
+#   was run. None of it was read from _FIELD_EARNINGS_SIGN, and there is
+#   deliberately no loop over that table here: the table is the thing under
+#   test, so an expectation taken from it would be checking itself.
+#
+# The fixture is _full_statement(): EBIT 140, EBT 210, net income 150. The
+# amount is 50.0 throughout, so in every one of the twelve cases
+#
+#     add_back -> EBT 210 + 50 = 260, net income 150 + 50 = 200
+#     remove   -> EBT 210 - 50 = 160, net income 150 - 50 = 100
+#
+# and EBIT moves with EBT on the five operating lines but **must not move at
+# all** on other_non_operating, which sits below the operating line.
+# --------------------------------------------------------------------------
+
+
+def test_sign_cost_of_revenue_add_back_raises_pre_tax_earnings() -> None:
+    """A one-time expense of 50 inside cost of revenue, added back.
+
+        cost_of_revenue : 400 - 50                           = 350
+        EBIT            : 1000 - (350 + 200 + 120 + 80 + 60) = 190
+        EBT             : 190 - 30 + 10 + 90                 = 260   (210 + 50)
+        net income      : 260 - 60                           = 200
+    """
+    adjusted = apply_adjustments(
+        _full_statement(), [_item("cost_of_revenue", "add_back", 50.0)]
+    )
+    assert adjusted.cost_of_revenue == pytest.approx(350.0)
+    assert adjusted.ebit == pytest.approx(190.0)
+    assert adjusted.ebt == pytest.approx(260.0)
+    assert adjusted.ebt - _FULL_EBT == pytest.approx(50.0)
+    assert adjusted.net_income == pytest.approx(200.0)
+
+
+def test_sign_cost_of_revenue_remove_lowers_pre_tax_earnings() -> None:
+    """A one-time gain of 50 sitting inside cost of revenue, removed.
+
+        cost_of_revenue : 400 + 50                           = 450
+        EBIT            : 1000 - (450 + 200 + 120 + 80 + 60) = 90
+        EBT             : 90 - 30 + 10 + 90                  = 160   (210 - 50)
+        net income      : 160 - 60                           = 100
+    """
+    adjusted = apply_adjustments(
+        _full_statement(), [_item("cost_of_revenue", "remove", 50.0)]
+    )
+    assert adjusted.cost_of_revenue == pytest.approx(450.0)
+    assert adjusted.ebit == pytest.approx(90.0)
+    assert adjusted.ebt == pytest.approx(160.0)
+    assert adjusted.ebt - _FULL_EBT == pytest.approx(-50.0)
+    assert adjusted.net_income == pytest.approx(100.0)
+
+
+def test_sign_sga_add_back_raises_pre_tax_earnings() -> None:
+    """A one-time expense of 50 inside SG&A, added back.
+
+        sga        : 200 - 50                             = 150
+        EBIT       : 1000 - (400 + 150 + 120 + 80 + 60)   = 190
+        EBT        : 190 - 30 + 10 + 90                   = 260   (210 + 50)
+        net income : 260 - 60                             = 200
+    """
+    adjusted = apply_adjustments(_full_statement(), [_item("sga", "add_back", 50.0)])
+    assert adjusted.sga == pytest.approx(150.0)
+    assert adjusted.ebit == pytest.approx(190.0)
+    assert adjusted.ebt == pytest.approx(260.0)
+    assert adjusted.ebt - _FULL_EBT == pytest.approx(50.0)
+    assert adjusted.net_income == pytest.approx(200.0)
+
+
+def test_sign_sga_remove_lowers_pre_tax_earnings() -> None:
+    """A one-time gain of 50 sitting inside SG&A, removed.
+
+        sga        : 200 + 50                             = 250
+        EBIT       : 1000 - (400 + 250 + 120 + 80 + 60)   = 90
+        EBT        : 90 - 30 + 10 + 90                    = 160   (210 - 50)
+        net income : 160 - 60                             = 100
+    """
+    adjusted = apply_adjustments(_full_statement(), [_item("sga", "remove", 50.0)])
+    assert adjusted.sga == pytest.approx(250.0)
+    assert adjusted.ebit == pytest.approx(90.0)
+    assert adjusted.ebt == pytest.approx(160.0)
+    assert adjusted.ebt - _FULL_EBT == pytest.approx(-50.0)
+    assert adjusted.net_income == pytest.approx(100.0)
+
+
+def test_sign_rd_expense_add_back_raises_pre_tax_earnings() -> None:
+    """A one-time expense of 50 inside R&D, added back.
+
+        rd_expense : 120 - 50                             = 70
+        EBIT       : 1000 - (400 + 200 + 70 + 80 + 60)    = 190
+        EBT        : 190 - 30 + 10 + 90                   = 260   (210 + 50)
+        net income : 260 - 60                             = 200
+    """
+    adjusted = apply_adjustments(
+        _full_statement(), [_item("rd_expense", "add_back", 50.0)]
+    )
+    assert adjusted.rd_expense == pytest.approx(70.0)
+    assert adjusted.ebit == pytest.approx(190.0)
+    assert adjusted.ebt == pytest.approx(260.0)
+    assert adjusted.ebt - _FULL_EBT == pytest.approx(50.0)
+    assert adjusted.net_income == pytest.approx(200.0)
+
+
+def test_sign_rd_expense_remove_lowers_pre_tax_earnings() -> None:
+    """A one-time gain of 50 sitting inside R&D, removed.
+
+        rd_expense : 120 + 50                             = 170
+        EBIT       : 1000 - (400 + 200 + 170 + 80 + 60)   = 90
+        EBT        : 90 - 30 + 10 + 90                    = 160   (210 - 50)
+        net income : 160 - 60                             = 100
+    """
+    adjusted = apply_adjustments(
+        _full_statement(), [_item("rd_expense", "remove", 50.0)]
+    )
+    assert adjusted.rd_expense == pytest.approx(170.0)
+    assert adjusted.ebit == pytest.approx(90.0)
+    assert adjusted.ebt == pytest.approx(160.0)
+    assert adjusted.ebt - _FULL_EBT == pytest.approx(-50.0)
+    assert adjusted.net_income == pytest.approx(100.0)
+
+
+def test_sign_depreciation_amortization_add_back_raises_pre_tax_earnings() -> None:
+    """A one-time expense of 50 inside D&A, added back.
+
+        depreciation_amortization : 80 - 50               = 30
+        EBIT       : 1000 - (400 + 200 + 120 + 30 + 60)   = 190
+        EBT        : 190 - 30 + 10 + 90                   = 260   (210 + 50)
+        net income : 260 - 60                             = 200
+    """
+    adjusted = apply_adjustments(
+        _full_statement(), [_item("depreciation_amortization", "add_back", 50.0)]
+    )
+    assert adjusted.depreciation_amortization == pytest.approx(30.0)
+    assert adjusted.ebit == pytest.approx(190.0)
+    assert adjusted.ebt == pytest.approx(260.0)
+    assert adjusted.ebt - _FULL_EBT == pytest.approx(50.0)
+    assert adjusted.net_income == pytest.approx(200.0)
+
+
+def test_sign_depreciation_amortization_remove_lowers_pre_tax_earnings() -> None:
+    """A one-time gain of 50 sitting inside D&A, removed.
+
+        depreciation_amortization : 80 + 50               = 130
+        EBIT       : 1000 - (400 + 200 + 120 + 130 + 60)  = 90
+        EBT        : 90 - 30 + 10 + 90                    = 160   (210 - 50)
+        net income : 160 - 60                             = 100
+    """
+    adjusted = apply_adjustments(
+        _full_statement(), [_item("depreciation_amortization", "remove", 50.0)]
+    )
+    assert adjusted.depreciation_amortization == pytest.approx(130.0)
+    assert adjusted.ebit == pytest.approx(90.0)
+    assert adjusted.ebt == pytest.approx(160.0)
+    assert adjusted.ebt - _FULL_EBT == pytest.approx(-50.0)
+    assert adjusted.net_income == pytest.approx(100.0)
+
+
+def test_sign_other_operating_expense_add_back_raises_pre_tax_earnings() -> None:
+    """A one-time expense of 50 inside other operating expense, added back.
+
+        other_operating_expense : 60 - 50                 = 10
+        EBIT       : 1000 - (400 + 200 + 120 + 80 + 10)   = 190
+        EBT        : 190 - 30 + 10 + 90                   = 260   (210 + 50)
+        net income : 260 - 60                             = 200
+    """
+    adjusted = apply_adjustments(
+        _full_statement(), [_item("other_operating_expense", "add_back", 50.0)]
+    )
+    assert adjusted.other_operating_expense == pytest.approx(10.0)
+    assert adjusted.ebit == pytest.approx(190.0)
+    assert adjusted.ebt == pytest.approx(260.0)
+    assert adjusted.ebt - _FULL_EBT == pytest.approx(50.0)
+    assert adjusted.net_income == pytest.approx(200.0)
+
+
+def test_sign_other_operating_expense_remove_lowers_pre_tax_earnings() -> None:
+    """A one-time gain of 50 sitting inside other operating expense, removed.
+
+        other_operating_expense : 60 + 50                 = 110
+        EBIT       : 1000 - (400 + 200 + 120 + 80 + 110)  = 90
+        EBT        : 90 - 30 + 10 + 90                    = 160   (210 - 50)
+        net income : 160 - 60                             = 100
+    """
+    adjusted = apply_adjustments(
+        _full_statement(), [_item("other_operating_expense", "remove", 50.0)]
+    )
+    assert adjusted.other_operating_expense == pytest.approx(110.0)
+    assert adjusted.ebit == pytest.approx(90.0)
+    assert adjusted.ebt == pytest.approx(160.0)
+    assert adjusted.ebt - _FULL_EBT == pytest.approx(-50.0)
+    assert adjusted.net_income == pytest.approx(100.0)
+
+
+def test_sign_other_non_operating_add_back_raises_pre_tax_earnings() -> None:
+    """A one-time expense of 50 inside other non-operating income, added back.
+
+    This is the case the whole unit exists for, and the one where the line and
+    the earnings move the **same** way. other_non_operating is a net income
+    line: ebt *adds* it (models/financial_statements.py:91). A one-time expense
+    buried in it depressed the reported figure by 50, so a clean base has that
+    figure 50 **higher**, not lower:
+
+        other_non_operating : 90 + 50                     = 140
+        EBIT                : unchanged                   = 140
+            (nothing operating moved - the item sits below the operating line)
+        EBT                 : 140 - 30 + 10 + 140         = 260   (210 + 50)
+        net income          : 260 - 60                    = 200
+
+    Applying the expense-line rule here instead would give other_non_operating
+    40 and EBT 160: a 100 error on a 50 item, reported nowhere.
+    """
+    adjusted = apply_adjustments(
+        _full_statement(), [_item("other_non_operating", "add_back", 50.0)]
+    )
+    assert adjusted.other_non_operating == pytest.approx(140.0)
+    assert adjusted.ebit == pytest.approx(_FULL_EBIT)
+    assert adjusted.ebt == pytest.approx(260.0)
+    assert adjusted.ebt - _FULL_EBT == pytest.approx(50.0)
+    assert adjusted.net_income == pytest.approx(200.0)
+
+
+def test_sign_other_non_operating_remove_lowers_pre_tax_earnings() -> None:
+    """A one-time gain of 50 inside other non-operating income, removed.
+
+    The gain inflated the reported non-operating line, so a clean base has it
+    50 **lower**, and pre-tax earnings fall by the amount:
+
+        other_non_operating : 90 - 50                     = 40
+        EBIT                : unchanged                   = 140
+        EBT                 : 140 - 30 + 10 + 40          = 160   (210 - 50)
+        net income          : 160 - 60                    = 100
+    """
+    adjusted = apply_adjustments(
+        _full_statement(), [_item("other_non_operating", "remove", 50.0)]
+    )
+    assert adjusted.other_non_operating == pytest.approx(40.0)
+    assert adjusted.ebit == pytest.approx(_FULL_EBIT)
+    assert adjusted.ebt == pytest.approx(160.0)
+    assert adjusted.ebt - _FULL_EBT == pytest.approx(-50.0)
+    assert adjusted.net_income == pytest.approx(100.0)
+
+
+def test_sign_a_non_operating_item_leaves_every_operating_line_untouched() -> None:
+    """The routing half of the non-operating case.
+
+    A below-the-line item must not touch a single operating line. The expected
+    values are simply _full_statement()'s own inputs, unchanged, plus the one
+    line the item sits on:
+
+        cost_of_revenue 400, sga 200, rd_expense 120,
+        depreciation_amortization 80, other_operating_expense 60,
+        interest_expense 30, interest_income 10, tax_expense 60,
+        other_non_operating 90 + 50 = 140
+
+    Without this, a sign error that moved an operating line by the right amount
+    in the right direction would still reach the right EBT.
+    """
+    adjusted = apply_adjustments(
+        _full_statement(), [_item("other non-operating", "add_back", 50.0)]
+    )
+    assert adjusted.cost_of_revenue == pytest.approx(400.0)
+    assert adjusted.sga == pytest.approx(200.0)
+    assert adjusted.rd_expense == pytest.approx(120.0)
+    assert adjusted.depreciation_amortization == pytest.approx(80.0)
+    assert adjusted.other_operating_expense == pytest.approx(60.0)
+    assert adjusted.interest_expense == pytest.approx(30.0)
+    assert adjusted.interest_income == pytest.approx(10.0)
+    assert adjusted.tax_expense == pytest.approx(60.0)
+    assert adjusted.other_non_operating == pytest.approx(140.0)
