@@ -4,20 +4,20 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `622262b`, 2026-09-21**, on branch `build/phase-1-2`. Eight work units
+**Measured at `742f447`, 2026-09-21**, on branch `build/phase-1-2`. Nine work units
 have been accepted: `P1-suite`, `P2-hygiene`, `P1b-arith`, `P1c-flow`, `P4-normalizer`,
-`P4b-normalizer-verify`, `P2b-provider` and `P5-web-routes`. Every one was reviewed or
-verified, and none was accepted on its own report. The journal is
+`P4b-normalizer-verify`, `P2b-provider`, `P5-web-routes` and `P5b-route-tests`. Every
+one was reviewed or verified, and none was accepted on its own report. The journal is
 [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
 
 ---
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `622262b` |
+| Gate | Command | Result at `742f447` |
 |---|---|---|
-| Tests | `.venv/Scripts/python.exe -m pytest -q` | **106 tests. 105 pass, 1 red on purpose**, 3.5 s |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **105 passed**, 0 failed |
+| Tests | `.venv/Scripts/python.exe -m pytest -q` | **121 tests. 120 pass, 1 red on purpose**, 3.9 s |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **120 passed**, 0 failed |
 | Lint | `.venv/Scripts/python.exe -m ruff check .` | **5 errors**, every one `BLE001` |
 | Types | `.venv/Scripts/python.exe -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **14 errors in 4 files**, 18 files checked |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
@@ -110,17 +110,17 @@ still open. `ls tests/unit/*_rule3_red.py` returns exactly that one line.
 
 **A failure other than that one is a real regression.**
 
-### `tests/`, measured at `81816be`
+### `tests/`, measured at `742f447`
 
-| | At `bc19431` | At `81816be` |
+| | At `bc19431` | At `742f447` |
 |---|---|---|
-| `.py` files | 10 | **19** |
-| `assert` statements | **0** | **334** |
+| `.py` files | 10 | **20** |
+| `assert` statements | **0** | **442** |
 | scripts guarded by `if __name__ == "__main__":` | **0** | **9 of 9** |
-| tests collected | 0 | **106** |
+| tests collected | 0 | **121** |
 | paid API calls during collection | attempted | **none** |
 
-### Coverage, measured at `38b903c`
+### Coverage, measured at `742f447`
 
 ```
 analysis/capm.py         30 statements    0 missed   100%
@@ -130,7 +130,17 @@ analysis/normalizer.py   36               0          100%
 analysis/projector.py    68               0          100%
 analysis/wacc.py         25               0          100%
 analysis/ TOTAL         202               0          100%
+
+api/routes_upload.py     33               0          100%
+api/routes_valuation.py  93               8           91%
+api/ TOTAL              126               8           94%
 ```
+
+**`api/` went from 0 of 126 statements to 118 of 126 at `742f447`.** Before
+`P5b-route-tests`, coverage.py reported `Module app was never imported`. The eight
+uncovered arcs are each a fallback or a recorded backlog item the tester **refused to
+pin**: the cache-hit branch (item 5), the yfinance share-count fallback (rule 5), and
+the legacy `file_path` branch (item 26). Pinning one would lock the defect.
 
 **202 of 202 statements in `analysis/`, against 24 at `d1854fb`.** The two lines that
 were uncovered at `796de9a` were the guess at the old `normalizer.py:50-51`, which
@@ -142,8 +152,9 @@ were uncovered at `796de9a` were the guess at the old `normalizer.py:50-51`, whi
    coverage does **not** include `if latest_bs else 0.0` at `analysis/dcf.py:80-81`, or
    any of the other conditional-expression defaults. **Coverage here is not evidence
    that every path is checked.**
-2. `ingestion/` and `api/` have **no tests at all.** That is where 51 of the 116
-   zero-default sites live, and where the extraction boundary sits.
+2. **`ingestion/` still has no tests at all.** That is where 49 of the 116
+   zero-default sites live, and where the extraction boundary sits. `api/` was in the
+   same position until `742f447`.
 
 ### Type errors, by kind and by file, at `622262b`
 
@@ -305,7 +316,8 @@ the headline. Re-ranked at `622262b`.
 | 26 | `api/routes_valuation.py:152` branches on a character every path contains | **latent.** Live only on the legacy no-year branch. My first write-up of this was wrong and was corrected by review |
 | 17 | `analysis/capm.py:14` imports from `ingestion/` | a layering break |
 | 18 | The lint gate's rule set is unpinned | a ruff upgrade changes what the gate enforces, with no commit to point at |
-| 28 | `api/routes_upload.py:27` — `str | None` used as a path segment | not yet written up. The last type error in that file |
+| 28 | `api/routes_upload.py:27` — `str \| None` used as a path segment | the last type error in that file |
+| 29 | `POST /valuation` with no `files` runs an extraction on the empty string | **rule 3, and never counted.** HTTP 200, the extractor receives `''`, and the word `files` appears nowhere on the page |
 
 ### Closed
 
@@ -320,7 +332,7 @@ the headline. Re-ranked at `622262b`.
 | 24 | A red test that went green stayed outside the gate | `81816be` |
 | 27 | `GET /` and `GET /assumptions` returned 500 | `622262b` |
 
-**Eight closed, twenty open.** Items 19 to 28 did not exist when this build started —
+**Eight closed, twenty-one open.** Items 19 to 28 did not exist when this build started —
 **every one of them was found by running the code**, not by reading it.
 
 ---
@@ -339,7 +351,7 @@ Things that have already misled a reader of this repository.
    nothing at all. "It ran" is not evidence. Name an input that came from a filing.
 3. **`cli.py` and the web app can disagree.** They build assumptions by separate code
    paths. A figure verified in one is not verified in the other.
-4. **One test is red on purpose.** `pytest -q` reports `1 failed, 105 passed` and that
+4. **One test is red on purpose.** `pytest -q` reports `1 failed, 120 passed` and that
    is the expected state. Do not fix it by weakening it; fix backlog item 2. The gate
    form that excludes it is `pytest -q --ignore-glob="*_rule3_red.py"`.
 5. **A green test inside `*_rule3_red.py` is invisible to the gate.** That happened

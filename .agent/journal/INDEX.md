@@ -40,5 +40,12 @@ one working tree in parallel and no commit separates them. `P1b-arith` and `P1c-
 were accepted together for the same reason.
 
 **A `fail` from a tester is a verdict about the code it tested, not about its own
-deliverable.** All four units were approved by review. Read the verdict line at the top
-of each entry before reading the word alone.
+deliverable.** Three units reported `fail` and all three were approved by review; two
+reported `pass`. Read the verdict line at the top of an entry before reading the word
+alone.
+
+**Nine units, and not one was accepted on its own report.** Every programmer run went to
+a reviewer that re-ran the measurements rather than reading them. Three times a reviewer
+overturned a claim: it disproved a programmer's reason for stopping, it disproved a
+different programmer's finding, and it confirmed two errors in the orchestrator's own
+documents.
