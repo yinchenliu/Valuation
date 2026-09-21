@@ -24,31 +24,62 @@ The agent contract, the docs tree, and the environment.
 | 3 | the write guard is correct | `.venv/Scripts/python.exe .claude/check_guard.py` → 48/48 |
 | 4 | every defect found in review is recorded with `file:line` evidence | `refactor-backlog.md`, 13 items |
 
-## Phase 1 — make the suite runnable
+## Phase 1 — make the suite runnable · **done `d1854fb`**
 
-**Prerequisite for every later phase.** Backlog item 4.
+**Prerequisite for every later phase.** Backlog item 4. Unit `P1-suite`.
+
+| # | Criterion | Expected | Result at `d1854fb` |
+|---|---|---|---|
+| 1 | `pytest` collects without an API key | 0 errors | **pass** — 20 tests collected, 0 errors |
+| 2 | the existing scripts still run by hand | unchanged output | **pass, re-measured.** The criterion's literal command was already broken at `bc19431` — backlog item 16. Use `-m tests.<name>` |
+| 3 | first real tests exist for `analysis/dcf.py` | ≥ 6 assertions, each with a stated source | **pass** — 35 assertions execute `dcf.py`, each sourced in the journal entry |
+| 4 | the `WACC <= g` raise is locked | 1 test, asserting type **and** message | **pass** — 3 tests, including the `wacc == g` boundary |
+
+**Constraint held.** Every expected value came from hand arithmetic or a closed-form
+identity, and the reviewer re-derived 11 of 38 rather than accepting the claim. Two
+assertions are falsifiable against an off-by-one in the discounting exponent, which is
+the property a suite copied from the code's own output cannot have.
+
+**The gate carries an `--ignore` until backlog item 2 lands:**
+`pytest -q --ignore=tests/unit/test_dcf_rule3_red.py` → `19 passed`. That one test is
+red on purpose. **Remove the `--ignore` the day item 2 is fixed**, not before.
+
+**What phase 1 did not finish.** Five of six `analysis/` modules have **0%** coverage.
+Closing that is phase 1b, in the order
+[5-testing/strategy.md](../5-testing/strategy.md) section 6 gives.
+
+## Phase 2 — hygiene · **done `d1854fb`**, except criterion 4
+
+Backlog item 12. Unit `P2-hygiene`.
+
+| # | Criterion | Expected | Result at `d1854fb` |
+|---|---|---|---|
+| 1 | `ruff check .` clean, or every remaining error justified | 0 | **pass with justification** — 45 → 5, every one `BLE001`, deferred to phase 5 and deliberately left visible |
+| 2 | `.gitignore` covers the cache dirs; the inert `CLAUDE.md` line resolved | — | **pass** |
+| 3 | dead code removed | `models/company.py`, the unused import | **pass** — no importers, verified |
+| 4 | one provider default, in one place | identical across both functions and the CLI | **deferred to phase 2b**, see below |
+
+**Criterion 4 was deliberately moved out.** Resolving the provider to one default makes
+the provider a named assumption, and [rule 6](../2-rules/rules.md) then requires it to
+be visible in the output — which is phase 7 criterion 2. Splitting them would leave a
+rule 6 break standing between two units, and a rule break cannot be downgraded to a
+note. They ship together.
+
+## Phase 2b — one provider, one transport, both labelled
+
+Backlog item 13, plus phase 7 criterion 2. **Promoted ahead of phase 3**, because
+extraction cannot run on the build machine at all until it lands.
 
 | # | Criterion | Expected | Measured by |
 |---|---|---|---|
-| 1 | `pytest` collects without an API key | 0 errors | `pytest -q --collect-only` |
-| 2 | the existing scripts still run by hand | unchanged output | run one |
-| 3 | first real tests exist for `analysis/dcf.py` | ≥ 6 assertions, each with a stated source | `pytest -q` |
-| 4 | the `WACC <= g` raise is locked | 1 test, asserting type **and** message | `pytest -q -k terminal` |
+| 1 | one default provider, named once | 1 definition | `grep -rn "DEFAULT_EXTRACTION_PROVIDER"` |
+| 2 | the route passes `provider` explicitly in every branch | 0 implicit calls | `grep -n "extract_financials\|extract_multi_year" api/ cli.py` |
+| 3 | a Foundry endpoint is used when one is configured | a real extraction completes | run one filing end to end |
+| 4 | the resolved provider, model **and transport** appear in the output | all three shown | manual run, web and CLI |
 
-**Constraint.** Every expected value names where it came from —
-[5-testing/strategy.md](../5-testing/strategy.md). An assertion sourced from the code's
-own output does not count.
-
-## Phase 2 — hygiene
-
-Backlog items 12 and 13. Cheap, and it makes every later diff readable.
-
-| # | Criterion | Expected | Measured by |
-|---|---|---|---|
-| 1 | `ruff check .` clean, or every remaining error justified in the entry | 0 | `ruff check .` |
-| 2 | `.gitignore` covers the cache dirs; the inert `CLAUDE.md` line resolved | — | `git status` clean after a gate run |
-| 3 | dead code removed | `models/company.py`, the unused import | `grep` shows no importers |
-| 4 | one provider default, in one place | identical across both functions and the CLI | `grep -n 'provider: Provider = '` |
+**Foundry is a transport, not a third provider.** The model is still Claude. A figure
+read through a company gateway and one read through the public API must be
+distinguishable by the reader, which is why criterion 4 names three things and not two.
 
 ## Phase 3 — unify the pipeline
 

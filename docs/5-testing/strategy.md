@@ -97,26 +97,42 @@ A unit test must not need an API key, a PDF, or the internet.
 A test that needs a key is not a test, it is a script. The distinction is not pedantry:
 a suite that costs money to run is a suite nobody runs.
 
-## 4. What `tests/` holds today, and why it is not a suite
+## 4. What `tests/` holds
 
-Measured at `bc19431`:
+Re-measured at `d1854fb`:
 
-| Measurement | Value |
-|---|---|
-| files | 10 |
-| `assert` statements | **0** |
-| files guarded by `if __name__ == "__main__":` | **0** |
-| `pytest -q` | 3 collection errors, 0 tests |
+| Measurement | `bc19431` | `d1854fb` |
+|---|---|---|
+| `.py` files | 10 | **13** |
+| `assert` statements | **0** | **40** |
+| scripts guarded by `if __name__ == "__main__":` | **0** | **9 of 9** |
+| tests collected | 0 | **20** |
+| `pytest -q` | 3 collection errors | 19 pass, 1 red on purpose, 0.26 s |
 
-Because nothing is guarded, every file runs its whole pipeline — LLM call, network
-fetch, DCF — at **import**. `pytest` therefore makes paid API calls during collection
-and fails before running a test.
+The nine scripts now wrap their module body in `def main()` behind a guard, so
+`pytest` no longer runs an LLM call, a network fetch or a DCF at import. **They were
+kept, not deleted** — `tests/compare_models.py` compares provider output and
+`tests/test_e2e_*.py` exercise real filings end to end.
 
-**These are scripts, and they are useful.** `tests/compare_models.py` compares provider
-output; `tests/test_e2e_*.py` exercise real filings end to end. Keep them. Move them
-where `pytest` does not collect them, or guard them behind `__main__`.
+**They are still not evidence of correctness**, and no report may cite them as such.
 
-**They are not evidence of correctness**, and no report may cite them as such.
+**Two things to know before you run one.**
+
+1. Every script carries a `sys.path.insert` to a path belonging to a different Windows
+   user, so `python tests/<name>.py` fails with `ModuleNotFoundError`. Use
+   `.venv/Scripts/python.exe -m tests.<name>` until
+   [backlog item 16](../9-reference/refactor-backlog.md) lands.
+2. `tests/unit/test_dcf_rule3_red.py` **fails on purpose.** It states the requirement
+   that `run_dcf` must stop when the balance sheet is absent. It goes green when
+   backlog item 2 is fixed, and **it is kept, not deleted**. The phase-1 gate is
+   `pytest -q --ignore=tests/unit/test_dcf_rule3_red.py` → `19 passed` until then.
+   A second red test means a real regression.
+
+### Where the gap is now
+
+`analysis/dcf.py` is at 100% of statements. **The other five modules are at 0%** — 170
+statements that no test touches. Section 6 below gives the order to take them in, and
+that order is now the shortest path to a suite that means something.
 
 ## 5. Two counts, never one
 
