@@ -4,47 +4,48 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `0e4649f`, 2026-09-21**, on branch `build/phase-1-2`. Seven work units have
-been accepted: `P1-suite`, `P2-hygiene`, `P1b-arith`, `P1c-flow`, `P4-normalizer`,
-`P4b-normalizer-verify` and `P2b-provider`. Every one was reviewed or verified, and none
-was accepted on its own report. The journal is
+**Measured at `622262b`, 2026-09-21**, on branch `build/phase-1-2`. Eight work units
+have been accepted: `P1-suite`, `P2-hygiene`, `P1b-arith`, `P1c-flow`, `P4-normalizer`,
+`P4b-normalizer-verify`, `P2b-provider` and `P5-web-routes`. Every one was reviewed or
+verified, and none was accepted on its own report. The journal is
 [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
 
 ---
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `0e4649f` |
+| Gate | Command | Result at `622262b` |
 |---|---|---|
 | Tests | `.venv/Scripts/python.exe -m pytest -q` | **106 tests. 105 pass, 1 red on purpose**, 3.5 s |
 | **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **105 passed**, 0 failed |
 | Lint | `.venv/Scripts/python.exe -m ruff check .` | **5 errors**, every one `BLE001` |
-| Types | `.venv/Scripts/python.exe -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **18 errors in 4 files**, 18 files checked |
+| Types | `.venv/Scripts/python.exe -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **14 errors in 4 files**, 18 files checked |
+| **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
 
-**A fourth gate is now available, and it is stricter than the other three.**
+**There is a fourth gate now, and it is stricter than `import app` ever was.**
 
 ```
 .venv/Scripts/python.exe -c "from starlette.testclient import TestClient; import app; \
   print(TestClient(app.app, raise_server_exceptions=False).get('/').status_code)"
 ```
 
-→ **500**. `GET /` and `GET /assumptions` still fail; `POST /valuation` returns 200.
-See section 1b. **`import app` succeeding is no longer the strongest check available.**
+→ **200**, as of `622262b`. `import app` passed throughout the outage described in
+section 1b, from `bc19431` to `d885d8d`. **It was never the strongest check available
+and it should not be used as one.**
 
-### Type errors fell 33 → 18, and not by annotating anything
+### Type errors fell 33 → 14, and not one by annotating anything
 
 | Commit | Errors | What removed them |
 |---|---|---|
 | `bc19431` | 33 | — |
 | `0e4649f` | 22 | `response.content[0].text` — it died on every real extraction |
-| `0e4649f` | **18** | two `TemplateResponse` calls — they returned 500 on every page |
+| `0e4649f` | 18 | two `TemplateResponse` calls — 500 on every page |
+| `622262b` | **14** | the other two `TemplateResponse` calls |
 
-Both drops came from fixing defects the checker had been reporting all along. By file
-now: `api/routes_valuation.py` 8, `ingestion/claude_extractor.py` 5,
-`api/routes_upload.py` 4, `analysis/projector.py` 4.
-
-**Treat a type error here as a defect report until proven otherwise.** Twice now the
-checker named a live outage and the note beside it called the error a nicety.
+Every drop came from fixing a defect the checker had been reporting all along, and each
+was a live outage. **Treat a type error here as a defect report until proven
+otherwise.** Three times now the checker named one while the prose beside it called the
+error a nicety.
 
 **Use the `--ignore-glob` form as the gate.** It excludes every deliberately red test by
 pattern, so it keeps working as more are written. An earlier revision of this file named
@@ -65,7 +66,7 @@ against statement-only data aborts as a pytest `INTERNALERROR`.
 backlog item 8 and phase 5 owns them. **They are deliberately left visible.**
 Suppressing them would delete the record of a defect instead of fixing it.
 
-## 1b. The web application has never served its front page here
+## 1b. The web application served no page at all until `622262b`
 
 `starlette` 1.6.0 requires `TemplateResponse(request, name, context)`. This repository
 used the removed `(name, context)` form at all four call sites, which passes a `str`
@@ -76,19 +77,27 @@ the removed form  ->  TypeError: cannot use 'tuple' as a dict key
 the current form  ->  rendered OK, status 200
 ```
 
-`api/routes_upload.py`'s call is **unchanged since `bc19431`**, so `app.py` — one of the
-two entry points this product ships — has never served a page in this environment.
+`api/routes_upload.py`'s call was **unchanged from `bc19431` to `d885d8d`**, so `app.py`
+— one of the two entry points this product ships — had never served a page in this
+environment until `622262b`.
 
-| Route | At `0e4649f` | Owner |
+| Route | `bc19431` … `0e4649f` | At `622262b` |
 |---|---|---|
-| `POST /valuation` | **200**, with the provider/model/transport block | fixed by `P2b-provider` |
-| `GET /` | **500** | `P5-web-routes` |
-| `GET /assumptions` | **500** | `P5-web-routes` |
+| `GET /` | **500**, 21 bytes | **200**, 1648 bytes |
+| `GET /assumptions` | **500** | **200**, 5673 bytes |
+| `POST /valuation` | **500** | **200**, with the provider/model/transport block |
+| `POST /upload` | renders no template | reachable; no HTTP proof in its own unit |
 
-**Why it showed as a blank 500 and not a message.** The failing calls sit inside a
-blanket `except Exception` that renders the error onto a page — using the same broken
-call. The error page could not render either. That is the clearest argument in this
-repository for backlog item 8.
+**Why a total outage showed as a blank 500 and not a message.** The failing calls sit
+inside a blanket `except Exception` that renders the error onto a page — **through the
+same broken call.** So the handler meant to report a failure could not report anything.
+
+That is not a deduction. The reviewer of `P5-web-routes` exercised the error branch of
+`assumptions_page` after the fix: it now returns 200 and renders
+`<div class="alert alert-error">[Errno 2] No such file…</div>`. Before the fix, that
+same branch produced 21 bytes of `Internal Server Error`.
+
+**This is the clearest argument in the repository for backlog item 8.**
 
 ### The test gate runs, and one test is red on purpose
 
@@ -136,23 +145,26 @@ were uncovered at `796de9a` were the guess at the old `normalizer.py:50-51`, whi
 2. `ingestion/` and `api/` have **no tests at all.** That is where 51 of the 116
    zero-default sites live, and where the extraction boundary sits.
 
-### Type errors, by kind, at `0e4649f`
+### Type errors, by kind and by file, at `622262b`
 
-| Kind | At `bc19431` | Now |
-|---|---|---|
-| `union-attr` | 16 | **5** |
-| `arg-type` | 11 | **7** |
-| `assignment` | 4 | 4 |
-| `typeddict-item`, `operator` | 2 | 2 |
-| **total** | **33** | **18** |
+| Kind | `bc19431` | Now | | File | `d885d8d` | Now |
+|---|---|---|---|---|---|---|
+| `union-attr` | 16 | **5** | | `ingestion/claude_extractor.py` | 5 | 5 |
+| `arg-type` | 11 | **3** | | `api/routes_valuation.py` | 6 | **4** |
+| `assignment` | 4 | 4 | | `analysis/projector.py` | 4 | 4 |
+| `typeddict-item`, `operator` | 2 | 2 | | `api/routes_upload.py` | 3 | **1** |
+| **total** | **33** | **14** | | **total** | **18** | **14** |
 
-**The 18 are a strict subset of the 33.** Verified by the code reviewer with
-`comm -13` against a `git archive` export, line numbers stripped: nothing was added.
-The file count fell 19 → 18 only because `models/company.py` was deleted.
+**The 14 are a strict subset of the 33.** Verified by the code reviewers with `comm -13`
+against `git archive` exports, line numbers stripped: nothing was added at any step.
 
-**At least three of the original 33 were live outages, not typing niceties.** Two are
-now fixed — the extraction crash and two of the four broken template calls. One is
-still open:
+**Count `error:` lines, not output lines.** An earlier revision of this table said
+`8/5/4/4 = 21` against its own stated total of 18, because the count swept up mypy's
+`note:` lines as well. Notes added 2 to `routes_valuation` and 1 to `routes_upload`.
+**A by-file breakdown that does not sum to the total is a broken measurement**, and this
+one sat here through two updates.
+
+**One of the 14 is a live defect, not a typing nicety:**
 
 ```
 api/routes_valuation.py: Argument "balance_sheet" to "calculate_wacc"
@@ -163,8 +175,9 @@ api/routes_valuation.py: Argument "balance_sheet" to "calculate_wacc"
 valuation, and the blanket `except Exception` renders that as a string on the results
 page. Rule 3.
 
-**The remaining 4 in `api/routes_upload.py` are the last broken template call.** They
-are backlog item 27, not noise.
+The survivor in `api/routes_upload.py` is `:27`,
+`Unsupported operand types for / ("Path" and "None")` — a `str | None` used as a path
+segment. Not yet on the backlog.
 
 ---
 
@@ -265,35 +278,50 @@ one.
 
 ## 5. Open items
 
-Ranked by cost. The full list with evidence is
+Ranked by cost, **open first**. The full list with evidence is
 [docs/9-reference/refactor-backlog.md](docs/9-reference/refactor-backlog.md); this is
-the headline.
+the headline. Re-ranked at `622262b`.
 
-| # | Item | Cost | State |
-|---|---|---|---|
-| 19 | `analysis/normalizer.py:68` — one sign rule applied to two kinds of line | earnings moved by **2×** the item, in the wrong direction, on ordinary input | **closed at `38b903c`** |
-| 20 | `analysis/capm.py:87` — a **NaN** beta is returned, not raised | a NaN share price renders, because `nan <= g` is `False` and the one working guard does not fire | **open. The highest-cost defect now known.** Confirmed end to end |
-| 24 | a red test that goes green stays excluded by the gate | the gate stopped checking the thing the fix was made to guarantee | **closed at `81816be`** |
-| 25 | `analysis/normalizer.py:167-170` — an adjustment whose **year** matches no statement is silently discarded | a valuation labelled "normalised" whose figures are GAAP, with no signal | **new.** The item's year and the statements' years come from two separate model passes with nothing reconciling them |
-| 26 | `api/routes_valuation.py:152` branches on a character every path contains | latent; live only on the legacy no-year branch | **new, and corrected.** My first write-up of it was wrong |
-| 27 | `GET /` and `GET /assumptions` return **500** | the web half cannot be started by a user | **open.** `P5-web-routes` |
-| 8 | Blanket `except Exception` at five sites | **more urgent again.** It swallowed the web outage for the whole life of this repository, because the error page uses the same broken call | open |
-| 1 | **116** silent zero-default sites (`models/` 60, `ingestion/` 49, `analysis/` 5, `api/` 2) | **worse than recorded.** It does not produce zeros; it produces a signed, correctly-scaled figure that tracks the filing | open |
-| 2 | `analysis/dcf.py:80` — missing balance sheet gives **zero net debt** | equity value overstated by the whole debt balance | **open, and now proven by measurement.** A red test states the requirement |
-| 3 | `analysis/normalizer.py:46` — unknown line item **guesses** `other_operating_expense` | the adjustment lands on the wrong line | **closed at `38b903c`** |
-| 4 | No test suite at all | nothing detects any of the above | **closed.** 20 tests, `analysis/dcf.py` at 100% of statements |
-| 5 | `api/routes_valuation.py:25` — module-global extraction cache, `pop`ped on use | shared across users; a page refresh re-runs the LLM | open |
-| 6 | Five `x / 100 if x else None` conversions | a deliberate `0` from the user is read as "not supplied" | open |
-| 7 | `cli.py` and `api/` duplicate the pipeline | a fix must be made twice or it is made once | open |
-| 13 | Provider default differed between one-PDF and multi-PDF upload | extraction could not run on this machine at all | **closed at `0e4649f`** |
-| 14 | `analysis/dcf.py:73` — empty `projected_fcffs` raises a bare `IndexError` | a stack trace where a named input error belongs | new |
-| 15 | `models/financial_statements.py:295` — `latest_year` returns `0` for an empty extraction | turns "no data" into "year zero" with no error | new |
-| 16 | Nine scripts carry a `sys.path.insert` to a path that does not exist on this machine | none of them runs as `python tests/<name>.py` | new |
-| 17 | `analysis/capm.py:14` imports from `ingestion/` | a layering break; `analysis/` must not depend on `ingestion/` | new |
-| 18 | The lint gate's rule set is unpinned | a ruff upgrade changes what the gate enforces, with no commit to point at | new |
-| 21 | `analysis/normalizer.py:68` — an unrecognised `direction` silently takes the `remove` branch | any spelling but `"add_back"` moves the adjustment the wrong way | **closed at `38b903c`** |
-| 22 | `analysis/wacc.py:37` — zero debt balance gives a 0% cost of debt | missing data read as a measurement | new |
-| 23 | `analysis/fcff.py` holds **no `raise` at all** | wholly empty statements return a well-formed result with `fcff = 0.0` | new |
+### Open
+
+| # | Item | Cost |
+|---|---|---|
+| 20 | `analysis/capm.py` — a **NaN** beta is returned, not raised | **the highest-cost defect known.** A NaN share price renders, because `nan <= g` is `False` and the one working guard in `analysis/` does not fire. Confirmed end to end, both entry points |
+| 1 | **116** silent zero-default sites — `models/` 60, `ingestion/` 49, `analysis/` 5, `api/` 2 | **worse than its original description.** It does not produce zeros; it produces a signed, correctly-scaled figure that tracks the filing and reads as a measurement |
+| 2 | `analysis/dcf.py:80` — missing balance sheet gives **zero net debt** | equity value overstated by the whole debt balance. A red test already states the requirement |
+| 25 | `analysis/normalizer.py:167-170` — an adjustment whose **year** matches no statement is discarded | a valuation labelled "normalised" whose figures are as-reported, with no signal |
+| 8 | Blanket `except Exception` at five sites | **it swallowed the web outage for the life of the repository**, because the error page rendered through the same broken call |
+| 6 | Five `x / 100 if x else None` conversions | a deliberate `0` from the user is read as "not supplied" |
+| 15 | `models/financial_statements.py:295` — `latest_year` returns `0` for an empty extraction | turns "no data" into "year zero" with no error. The silent upstream of item 2 |
+| 22 | `analysis/wacc.py:37` — zero debt balance gives a 0% cost of debt | missing data read as a measurement |
+| 23 | `analysis/fcff.py` holds **no `raise` at all** | wholly empty statements return a well-formed result with `fcff = 0.0` |
+| 9 | Unlabelled cost-of-debt assumption, `analysis/wacc.py` | a 4% guess reaches the share price with nothing saying so |
+| 10 | D&A subtraction buried in the parser, `ingestion/claude_extractor.py:479` | an accounting decision taken inside a parser, on two zero-defaulted values |
+| 7 | `cli.py` and `api/` duplicate the pipeline | a fix must be made twice or it is made once |
+| 5 | `api/routes_valuation.py:31` — module-global extraction cache, `pop`ped on read | shared across users; a page refresh re-runs the paid extraction |
+| 11 | **14** type errors, down from 33 | one is a live crash path. Every removal so far was a real defect, never an annotation |
+| 14 | `analysis/dcf.py:73` — empty `projected_fcffs` raises a bare `IndexError` | a stack trace where a named input error belongs |
+| 16 | Nine scripts carry a `sys.path.insert` to a path that does not exist here | none runs as `python tests/<name>.py`. Use `-m tests.<name>` |
+| 26 | `api/routes_valuation.py:152` branches on a character every path contains | **latent.** Live only on the legacy no-year branch. My first write-up of this was wrong and was corrected by review |
+| 17 | `analysis/capm.py:14` imports from `ingestion/` | a layering break |
+| 18 | The lint gate's rule set is unpinned | a ruff upgrade changes what the gate enforces, with no commit to point at |
+| 28 | `api/routes_upload.py:27` — `str | None` used as a path segment | not yet written up. The last type error in that file |
+
+### Closed
+
+| # | Item | Closed at |
+|---|---|---|
+| 3 | Unknown NRI line item guessed a field | `38b903c` |
+| 4 | No test suite; `pytest` could not collect | `d1854fb`, extended through `81816be` |
+| 12 | Dead code and repository hygiene | `d1854fb` — mostly; three `tests/*.pkl` stay tracked on purpose |
+| 13 | Provider default differed with the number of PDFs uploaded | `0e4649f` |
+| 19 | One sign rule applied to two kinds of income statement line | `38b903c` |
+| 21 | An unrecognised `direction` silently reversed the adjustment | `38b903c` |
+| 24 | A red test that went green stayed outside the gate | `81816be` |
+| 27 | `GET /` and `GET /assumptions` returned 500 | `622262b` |
+
+**Eight closed, twenty open.** Items 19 to 28 did not exist when this build started —
+**every one of them was found by running the code**, not by reading it.
 
 ---
 

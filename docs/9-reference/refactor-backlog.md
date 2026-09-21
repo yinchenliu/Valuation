@@ -57,7 +57,8 @@ rather than lying.
 | 24 | A red test that goes green stays outside the gate | — | `tests/` | **closed at `81816be`** |
 | 25 | An adjustment whose year matches no statement is discarded | **silent** | `analysis/normalizer.py` | **new** |
 | 26 | The `files` branch tests for a character every path contains | stopping, **latent** | `api/routes_valuation.py` | **new.** Live only on the legacy no-year branch |
-| 27 | `GET /` and `GET /assumptions` return **500** | stopping | `api/` | **closed at `d885d8d`+1** |
+| 27 | `GET /` and `GET /assumptions` return **500** | stopping | `api/` | **closed at `622262b`** |
+| 28 | `api/routes_upload.py:27` — `str \| None` used as a path segment | stopping | `api/routes_upload.py` | **new.** The last type error in that file |
 
 ---
 
@@ -551,7 +552,7 @@ not render either, and the failure surfaced as a bare 500 with no message. mypy 
 reporting all four as `arg-type` errors since `bc19431`; they were ranked below a
 different error from the same output.
 
-**Fixed.** Unit `P5-web-routes`, two lines. Measured before and after against a
+**Fixed at `622262b`.** Unit `P5-web-routes`, two lines. Measured before and after against a
 `git archive` export of the baseline, by the programmer and again by the reviewer:
 
 ```
