@@ -19,6 +19,8 @@ edits another's.
 | 2026-09-20 | P1c-flow | tester | `fail` — deliverable complete; found the normalizer sign error | [entry](2026-09-20T2145-tester-p1c-flow.md) |
 | 2026-09-20 | P1b-arith | code_reviewer | `approved` — 1 minor, 2 notes. Confirmed the NaN chain end to end | [entry](2026-09-20T2215-code_reviewer-p1b-arith.md) |
 | 2026-09-20 | P1c-flow | code_reviewer | `approved` — 5 notes. Confirmed the sign error and quantified it | [entry](2026-09-20T2215-code_reviewer-p1c-flow.md) |
+| 2026-09-20 | P4-normalizer | programmer | `ok` — 9 of 9 criteria. Backlog items 19, 3 and 21 fixed | [entry](2026-09-20T2300-programmer-p4-normalizer.md) |
+| 2026-09-20 | P4-normalizer | code_reviewer | `approved` — 1 minor, 2 notes. Re-derived all six signs two ways | [entry](2026-09-20T2330-code_reviewer-p4-normalizer.md) |
 
 `P1-suite` and `P2-hygiene` were accepted together at `d1854fb`, because they landed in
 one working tree in parallel and no commit separates them. `P1b-arith` and `P1c-flow`
