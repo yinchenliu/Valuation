@@ -2,7 +2,7 @@
 
 Every known defect, with its evidence and what it costs. **Re-measured at `81816be`,
 2026-09-21.** Items 3, 4, 19, 21 and 24 are closed and item 12 mostly is. Items 14 to 25
-are new — and **every one of 19 to 24 was found by running the code, not by reading
+are new — and **every one of 19 to 25 was found by running the code, not by reading
 it.** That is the single strongest argument for the test suite that found them.
 
 **Read this before reporting a defect as new**, and before writing an assignment that
@@ -29,7 +29,7 @@ rather than lying.
 
 ## Ranked by cost
 
-| # | Item | Silent? | Area | State at `38b903c` |
+| # | Item | Silent? | Area | State at `81816be` |
 |---|---|---|---|---|
 | 1 | **116** silent zero-default sites | **silent** | `models/` 60, `ingestion/` 49, `analysis/` 5, `api/` 2 | open |
 | 2 | Missing balance sheet gives zero net debt | **silent** | `analysis/dcf.py` | open, **proven by measurement** |
@@ -67,7 +67,7 @@ rather than lying.
 grep -rnE "if [^)]+ else 0(\.0)?\b|\bor +0(\.0)?\b|\.get\([^,]+, *0(\.0)?\)|: *float *= *0\.0" \
   --include=*.py models analysis api ingestion | wc -l
 ```
-→ **116** at `38b903c`. By area: `models/` 60, `ingestion/` 49, `analysis/` 5,
+→ **116** at `81816be`, unchanged since `38b903c`. By area: `models/` 60, `ingestion/` 49, `analysis/` 5,
 `api/` 2.
 
 | Commit | Count | The delta |
@@ -139,8 +139,9 @@ year:
 Unrecognised line_item 'Goodwill impairment charge' on the 2023 non-recurring item…
 ```
 
-The `print` is deleted. Locked by a test that was written red and is now green — see
-**item 24**, which is about that test no longer being run by the gate.
+The `print` is deleted. Locked by a test that was written red, went green, and now
+lives in `tests/unit/test_normalizer_stops.py` inside the gate — see **item 24** for
+why that move was needed.
 
 ## 4. No test suite; `pytest` cannot collect · **CLOSED at `d1854fb`**
 
@@ -681,7 +682,8 @@ value arrives from the model, so the set of possible spellings was never closed.
 Unrecognised direction 'Add_Back' on the 2022 non-recurring item 'Restructuring charge'…
 ```
 
-Locked by a test that was written red and is now green — see **item 24**.
+Locked by a test in `tests/unit/test_normalizer_stops.py`, written red and now green
+inside the gate — see **item 24**.
 
 ## 22. Zero debt balance gives a 0% cost of debt · **silent**
 
