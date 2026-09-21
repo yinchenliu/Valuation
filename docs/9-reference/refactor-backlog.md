@@ -1,8 +1,9 @@
 # Refactor backlog
 
-Every known defect, with its evidence and what it costs. **Re-measured at `d1854fb`,
-2026-09-20.** Item 4 is closed. Items 12 and 13 moved. Items 14 to 18 are new, found
-by the two units that have run.
+Every known defect, with its evidence and what it costs. **Re-measured at `38b903c`,
+2026-09-20.** Items 3, 4, 19 and 21 are closed and item 12 mostly is. Items 14 to 24
+are new — and **every one of 19 to 24 was found by running the code, not by reading
+it.** That is the single strongest argument for the test suite that found them.
 
 **Read this before reporting a defect as new**, and before writing an assignment that
 touches one of these files. An item listed here, in a line a unit did not touch, is
@@ -28,11 +29,11 @@ rather than lying.
 
 ## Ranked by cost
 
-| # | Item | Silent? | Area | State at `d1854fb` |
+| # | Item | Silent? | Area | State at `38b903c` |
 |---|---|---|---|---|
-| 1 | **117** silent zero-default sites | **silent** | `models/`, `analysis/`, `api/`, `ingestion/` | open |
+| 1 | **116** silent zero-default sites | **silent** | `models/` 60, `ingestion/` 49, `analysis/` 5, `api/` 2 | open |
 | 2 | Missing balance sheet gives zero net debt | **silent** | `analysis/dcf.py` | open, **proven by measurement** |
-| 3 | Unknown NRI line item guesses a field | **silent** | `analysis/normalizer.py` | open |
+| 3 | Unknown NRI line item guesses a field | **silent** | `analysis/normalizer.py` | **closed at `38b903c`** |
 | 4 | No test suite; `pytest` cannot collect | stopping | `tests/` | **closed** — 20 tests |
 | 5 | Module-global extraction cache, popped on use | mixed | `api/routes_valuation.py` | open |
 | 6 | Falsy treated as missing, five times | **silent** | `api/routes_valuation.py` | open |
@@ -47,11 +48,17 @@ rather than lying.
 | 15 | `latest_year` returns `0` for an empty extraction | **silent** | `models/financial_statements.py` | new |
 | 16 | Nine scripts point at a path that does not exist | stopping | `tests/` | new |
 | 17 | `analysis/` imports from `ingestion/` | — | `analysis/capm.py` | new |
-| 18 | The lint gate's rule set is unpinned | — | `ruff.toml` | new |
+| 18 | The lint gate's rule set is unpinned | — | `ruff.toml` | open |
+| 19 | One sign rule applied to two kinds of line | **silent** | `analysis/normalizer.py` | **closed at `38b903c`** |
+| 20 | A NaN beta is returned, not raised | **silent** | `analysis/capm.py` | **open. The highest-cost defect now known** |
+| 21 | An unrecognised `direction` silently reverses | **silent** | `analysis/normalizer.py` | **closed at `38b903c`** |
+| 22 | Zero debt balance gives a 0% cost of debt | **silent** | `analysis/wacc.py` | open |
+| 23 | `analysis/fcff.py` holds no `raise` at all | **silent** | `analysis/fcff.py` | open |
+| 24 | A red test that goes green stays outside the gate | — | `tests/` | **new, live now** |
 
 ---
 
-## 1. 119 silent zero-default sites · **silent**
+## 1. 116 silent zero-default sites · **silent**
 
 **Fact.** Reproduce:
 
@@ -59,14 +66,25 @@ rather than lying.
 grep -rnE "if [^)]+ else 0(\.0)?\b|\bor +0(\.0)?\b|\.get\([^,]+, *0(\.0)?\)|: *float *= *0\.0" \
   --include=*.py models analysis api ingestion | wc -l
 ```
-→ **117** at `d1854fb`, was 119 at `bc19431`. The delta is exactly the two dead fields
-in the deleted `models/company.py`. By area: `models/` 60, `ingestion/` 49,
-`analysis/` 6, `api/` 2.
+→ **116** at `38b903c`. By area: `models/` 60, `ingestion/` 49, `analysis/` 5,
+`api/` 2.
+
+| Commit | Count | The delta |
+|---|---|---|
+| `bc19431` | 119 | — |
+| `d1854fb` | 117 | the two dead fields in the deleted `models/company.py` |
+| `38b903c` | 116 | one `changes.get(field, 0.0)` rewritten by `P4-normalizer` |
 
 **The grep excludes `tests/`, and `tests/` is not clean.** The nine scripts hold 33
 more hits of the same shape. They are dev scripts, not pipeline code, and
 [5-testing/strategy.md](../5-testing/strategy.md) already says they are not evidence of
-correctness — but the 117 figure must not be read as saying `tests/` has none.
+correctness — but the figure must not be read as saying `tests/` has none.
+
+**A comment can inflate this number.** `P4-normalizer`'s first draft carried an
+explanatory comment quoting the old code; the grep counted it and held the count at
+117. The programmer reworded it, on the grounds that a measurement that counts a
+comment is not a measurement. **Check any future delta against the diff, not the
+count.**
 
 **What it costs.** A zero meaning "we did not extract this" is the same bytes as a zero
 meaning "this is zero". Because every dataclass money field defaults to `0.0`, an
@@ -97,26 +115,31 @@ that year — which is routine, because `extract_multi_year()` takes the balance
 overstated by the **entire debt balance**. For a company with $100bn of net debt and 12bn
 shares, that is $8.33 added to the implied share price, silently, on a clean run.
 
-**This is the highest-cost silent defect in the repository.**
+**This was called the highest-cost silent defect in the repository at `bc19431`. It is
+no longer.** Item 19 outranked it — now closed — and **item 20 outranks it today**,
+because a NaN reaches the share price through the same function's one working guard.
+Item 2 still needs a missing balance sheet; item 20 does not.
 
 **Fix.** Raise, naming the year and the missing statement.
+`tests/unit/test_dcf_rule3_red.py` already states the requirement and is red.
 
-## 3. Unknown NRI line item guesses a field · **silent**
+## 3. Unknown NRI line item guesses a field · **CLOSED at `38b903c`**
 
-**Fact.** `analysis/normalizer.py:46-47`:
+**Was.** `analysis/normalizer.py:46-47` printed a line to stdout and returned
+`other_operating_expense` for any label it did not recognise. The list holds 20
+spellings and filings use many more, so the adjustment landed on the wrong income
+statement line, moving operating margin, every projected year, and the share price. The
+only signal was a `print` the web app never displayed.
 
-```python
-print(f"  [normalizer] Unrecognised line_item '{line_item}' — defaulting to other_operating_expense")
-return "other_operating_expense"
+**Now.** `_resolve_field` raises `ValueError`, naming the unrecognised label and the
+year:
+
+```
+Unrecognised line_item 'Goodwill impairment charge' on the 2023 non-recurring item…
 ```
 
-**What it costs.** The model returns a label the `_LABEL_TO_FIELD` list does not hold —
-easy, since it holds 20 spellings and filings use many more. The adjustment lands on the
-wrong income statement line. Operating margin moves, which moves every projected year,
-which moves the share price. The only signal is a line on stdout that nobody reads, and
-which the web app does not display at all.
-
-**Fix.** Raise, naming the unrecognised label and the year it came from.
+The `print` is deleted. Locked by a test that was written red and is now green — see
+**item 24**, which is about that test no longer being run by the gate.
 
 ## 4. No test suite; `pytest` cannot collect · **CLOSED at `d1854fb`**
 
@@ -127,19 +150,20 @@ during collection and failed before a test ran.
 **Now.** Unit `P1-suite` wrapped all nine scripts in `def main()` behind an
 `if __name__ == "__main__":` guard, and added `tests/unit/`.
 
-| | `bc19431` | `d1854fb` |
-|---|---|---|
-| `assert` statements | 0 | **40** |
-| guarded scripts | 0 | **9 of 9** |
-| tests collected | 0 | **20** |
-| `pytest -q` | 3 collection errors | 19 pass, 1 red on purpose, 0.26 s |
-| paid calls during collection | attempted | **none** |
+Units `P1b-arith` and `P1c-flow` then took the other five `analysis/` modules.
 
-**What is still open, and it is the honest headline.** One `analysis/` module of six
-has any test. `analysis/dcf.py` is at 100% of statements; `capm.py`, `fcff.py`,
-`normalizer.py`, `projector.py` and `wacc.py` are at **0%** — 170 statements that no
-test touches. [5-testing/strategy.md](../5-testing/strategy.md) section 6 gives the
-order to take them in.
+| | `bc19431` | `38b903c` |
+|---|---|---|
+| `assert` statements | 0 | **263** |
+| guarded scripts | 0 | **9 of 9** |
+| tests collected | 0 | **93** |
+| `pytest -q` | 3 collection errors | 92 pass, 1 red on purpose, 3.8 s |
+| paid calls during collection | attempted | **none** |
+| `analysis/` statement coverage | 0 of 194 | **202 of 202 — 100%** |
+
+**What is still open.** `ingestion/` and `api/` have **no tests at all.** That is where
+51 of the 116 zero-default sites live, and where the extraction boundary sits. Coverage
+of `analysis/` being complete says nothing about either.
 
 **One test is red on purpose.** `tests/unit/test_dcf_rule3_red.py` states item 2's
 requirement. It goes green when item 2 is fixed, and it is **kept, not deleted**. Until
@@ -448,7 +472,31 @@ Items 19 to 23 were found by units `P1b-arith` and `P1c-flow`, and confirmed
 independently by their reviewers. **None was found by reading.** Each needed a test to
 call the function with inputs nobody had tried.
 
-## 19. One sign rule applied to two kinds of line · **silent** · **highest cost known**
+## 24. A red test that goes green stays outside the gate · **live now**
+
+**Fact.** Measured at `38b903c`:
+
+```
+pytest -q                                  ->  93 tests, 92 pass, 1 red
+pytest -q --ignore-glob="*_rule3_red.py"   ->  90 passed
+pytest -q tests/unit/test_normalizer_rule3_red.py  ->  2 passed
+```
+
+The gate runs 90 of the 92 passing tests. The missing two are the former red tests for
+items 3 and 21. They went green when `P4-normalizer` fixed what they stated, and they
+are still in a file matching the pattern the gate excludes.
+
+**What it costs.** The two tests that prove the fix works are the two the gate does not
+run. A later change could break the stop they lock and every gate would stay green.
+This is the shape of defect this repository exists to avoid: a clean report about
+something nobody checked.
+
+**Fix.** When a red test goes green, move it into the module's normal test file. The
+pattern `*_rule3_red.py` means "states a requirement the code does not meet", not
+"tests a stop". **Add this to the tester's contract**, so the next unit does it without
+being told.
+
+## 19. One sign rule applied to two kinds of line · **CLOSED at `38b903c`**
 
 **Fact.** Two lines of the income statement move earnings in opposite directions:
 
@@ -499,11 +547,31 @@ def adjusted_impact(self) -> float:
 That is the effect on **earnings**. `normalizer.py:68` computes the delta on the
 **field**, and the two are equal only when the field reduces earnings.
 
-**Fix, and it is not a judgement.** The delta on a field is
-`adjusted_impact × field_sign`, where `field_sign` is `-1` for a field that reduces
-earnings and `+1` for one that raises them. Only `other_non_operating` is `+1` today.
-[Rule 2](../2-rules/rules.md) permits this: **a lookup table that maps a key to a
-number is allowed.** It is looking up *behaviour* that is forbidden.
+**Fixed at `38b903c`, and it was not a judgement.** The delta on a field is now
+
+```python
+item.adjusted_impact * _FIELD_EARNINGS_SIGN[field]
+```
+
+`_FIELD_EARNINGS_SIGN` holds six `±1.0` entries; only `other_non_operating` is `+1.0`.
+[Rule 2](../2-rules/rules.md) permits it explicitly: **a lookup table that maps a key
+to a number is allowed.** It is looking up *behaviour* that is forbidden.
+
+**Verified three times, independently, by three agents who did not share context.** The
+programmer derived all six signs by bumping each field and reading the change in `ebt`.
+The reviewer re-derived them by finite difference at two step sizes, against both `ebt`
+and `net_income`, and checked the invariant the fix exists to restore —
+`Δebt == adjusted_impact` — over all six fields and both directions, 12 of 12. The
+orchestrator ran the worked case and the expense case.
+
+After: `other_non_operating` 30.0, `ebt` 430.0, effective tax rate 23.26%. The expense
+path is unchanged: an `add_back` of 50 in `sga` still moves it 200 → 150 and raises
+`ebit` 400 → 450.
+
+**One consequence, recorded rather than hidden.** This converts a silent wrong number
+into a hard stop, and that stop lands in the blanket catch at
+`api/routes_valuation.py:220`, which renders it as a bare string on the results page.
+**Item 8 is more urgent than its rank suggests.**
 
 ## 20. A NaN beta is returned, not raised · **silent**
 
@@ -540,19 +608,20 @@ Chain confirmed end to end by the reviewer: `capm.py:72` → `:87` → `:32` →
 input. Then add a NaN check that does not rely on a comparison — `math.isnan` — at the
 point WACC is built, because **a guard written as `<=` cannot catch this.**
 
-## 21. An unrecognised `direction` silently reverses the adjustment · **silent**
+## 21. An unrecognised `direction` silently reverses the adjustment · **CLOSED at `38b903c`**
 
-**Fact.** `analysis/normalizer.py:68` tests `item.direction == "add_back"`. Every other
-string — `"Add_Back"`, `"addback"`, a typo, an empty string — takes the `else` branch
-and is treated as `remove`.
+**Was.** `analysis/normalizer.py:68` tested `item.direction == "add_back"`. Every other
+string — `"Add_Back"`, `"addback"`, a typo, an empty string — took the `else` branch and
+was treated as `remove`, moving the adjustment the opposite way with no signal. The
+value arrives from the model, so the set of possible spellings was never closed.
 
-**What it costs.** The adjustment moves the opposite way from the one intended, with no
-signal. The value arrives from the model, so the set of possible spellings is not
-closed. [Rule 3](../2-rules/rules.md).
+**Now.** Raises `ValueError` naming the value and the year:
 
-**Fix.** Raise on any value that is neither `"add_back"` nor `"remove"`, naming the
-value and the year. A red test already states this:
-`tests/unit/test_normalizer_rule3_red.py`.
+```
+Unrecognised direction 'Add_Back' on the 2022 non-recurring item 'Restructuring charge'…
+```
+
+Locked by a test that was written red and is now green — see **item 24**.
 
 ## 22. Zero debt balance gives a 0% cost of debt · **silent**
 
@@ -589,22 +658,24 @@ statements covered.
    of this step: one default provider makes the provider a named assumption, and
    [rule 6](../2-rules/rules.md) then requires it to be visible in the output. It ships
    with its labelling, not before it.
-3. **Items 19, 3 and 21 together** — all three are in `analysis/normalizer.py`, all
-   three are about the same 34-line function, and two of the three already have a red
-   test waiting. **Item 19 is first in the whole list** because it is the only silent
-   defect here that fires on ordinary, complete input. Every other one needs something
-   to be missing.
-4. **Item 13, with Foundry.** **Extraction cannot run on the build machine at all**
+3. ~~**Items 19, 3 and 21**~~ — **done at `38b903c`**, in one unit, because all three
+   sat in the same 34-line function. Item 19 went first in the whole list because it
+   was the only silent defect here that fired on ordinary, complete input.
+4. **Item 24** — move the two now-green tests out of the `*_rule3_red.py` pattern, so
+   the gate runs them. Small, and it must happen before anything else lands, or the
+   gate keeps reporting green about a stop it does not check.
+5. **Item 13, with Foundry.** **Extraction cannot run on the build machine at all**
    until it lands, so nothing after this can be exercised against a real filing.
-5. **Item 20**, with item 14 alongside — both are `analysis/dcf.py:24` failing to stop,
-   for different reasons. Item 20 needs a check that is not a comparison.
-6. **Item 2**, with item 15 alongside — the same failure walking through two files.
+6. **Item 20**, with item 14 alongside — both are `analysis/dcf.py:24` failing to stop,
+   for different reasons. **Item 20 needs a check that is not a comparison**, because
+   every comparison against NaN is `False`.
+7. **Item 2**, with item 15 alongside — the same failure walking through two files.
    Item 2's red test goes green here.
-7. **Item 7** — unify the pipeline, so each later fix is made once.
-8. **Item 6**, then **item 22**, then **item 23**.
-9. **Item 8**, then **item 11**. Typed failures, which item 1 depends on.
-10. **Item 1** — the large one. Last, with the suite in place.
-11. **Items 9, 10, 5, 16, 17, 18.**
+8. **Item 7** — unify the pipeline, so each later fix is made once.
+9. **Item 6**, then **item 22**, then **item 23**.
+10. **Item 8**, then **item 11**. Typed failures, which item 1 depends on.
+11. **Item 1** — the large one. Last, with the suite in place.
+12. **Items 9, 10, 5, 16, 17, 18.**
 
 **Two deviations from the stated rule, both named rather than hidden.**
 

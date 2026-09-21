@@ -4,18 +4,18 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `796de9a`, 2026-09-20**, on branch `build/phase-1-2`. Four work units
-have been accepted: `P1-suite`, `P2-hygiene`, `P1b-arith` and `P1c-flow`. Every one was
-reviewed and approved. The journal is
+**Measured at `38b903c`, 2026-09-20**, on branch `build/phase-1-2`. Five work units
+have been accepted: `P1-suite`, `P2-hygiene`, `P1b-arith`, `P1c-flow` and
+`P4-normalizer`. Every one was reviewed and approved. The journal is
 [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
 
 ---
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `796de9a` |
+| Gate | Command | Result at `38b903c` |
 |---|---|---|
-| Tests | `.venv/Scripts/python.exe -m pytest -q` | **93 tests. 90 pass, 3 red on purpose**, 4.1 s |
+| Tests | `.venv/Scripts/python.exe -m pytest -q` | **93 tests. 92 pass, 1 red on purpose**, 3.8 s |
 | **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **90 passed**, 0 failed |
 | Lint | `.venv/Scripts/python.exe -m ruff check .` | **5 errors**, every one `BLE001` |
 | Types | `.venv/Scripts/python.exe -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **33 errors in 4 files**, 18 files checked |
@@ -23,6 +23,16 @@ reviewed and approved. The journal is
 **Use the `--ignore-glob` form as the gate.** It excludes every deliberately red test by
 pattern, so it keeps working as more are written. An earlier revision of this file named
 a single file by path; that form went stale the moment a second red test landed.
+
+### The gate is currently blind to two passing tests, and that is a defect
+
+`pytest -q` runs 93 and reports 92 passing. The gate runs 90. The missing two are the
+former red tests in `tests/unit/test_normalizer_rule3_red.py`, which **went green** when
+`P4-normalizer` fixed the defects they stated — and which the `--ignore-glob` still
+excludes, because they are still in a file matching the pattern.
+
+**A red test that goes green must leave the pattern**, or the gate stops checking the
+very thing the fix was made to guarantee. This is [backlog item 24](docs/9-reference/refactor-backlog.md).
 
 **Set `COVERAGE_FILE` before measuring coverage** if anything else may be running:
 two processes in one tree collide on the root `.coverage`, and a `--cov-branch` run
@@ -34,24 +44,24 @@ against statement-only data aborts as a pytest `INTERNALERROR`.
 backlog item 8 and phase 5 owns them. **They are deliberately left visible.**
 Suppressing them would delete the record of a defect instead of fixing it.
 
-### The test gate runs, and three tests are red on purpose
+### The test gate runs, and one test is red on purpose
 
 `pytest` no longer makes a paid API call during collection. It needs no key, no PDF
 and no network.
 
-**Three tests fail deliberately.** Each states a requirement the code does not meet.
-Each goes green when its defect is fixed, and **each is kept, not deleted.**
+**One test fails deliberately.** `tests/unit/test_dcf_rule3_red.py` states that
+`run_dcf` must stop when the balance sheet is absent. That is backlog item 2, and it is
+still open.
 
-| File | States |
-|---|---|
-| `tests/unit/test_dcf_rule3_red.py` | `run_dcf` must stop when the balance sheet is absent — backlog item 2 |
-| `tests/unit/test_normalizer_rule3_red.py`, 2 tests | an unrecognised line item and an unrecognised direction must stop — backlog items 3 and 19 |
+Two more were red at `796de9a` and are **now green**, because `P4-normalizer` fixed what
+they stated. They are still in a `*_rule3_red.py` file and therefore still invisible to
+the gate. See above.
 
 Every red test lives in a file matching `*_rule3_red.py`, which is what the gate's
 `--ignore-glob` keys on. **A red test outside that pattern breaks the gate**, so put
-every new one there.
+every new one there — and **move it out again the day it goes green.**
 
-**A failure outside those three is a real regression.**
+**A failure other than that one is a real regression.**
 
 ### `tests/`, measured at `796de9a`
 
@@ -63,23 +73,21 @@ every new one there.
 | tests collected | 0 | **93** |
 | paid API calls during collection | attempted | **none** |
 
-### Coverage, measured at `796de9a`
+### Coverage, measured at `38b903c`
 
 ```
 analysis/capm.py         30 statements    0 missed   100%
 analysis/dcf.py          24               0          100%
 analysis/fcff.py         19               0          100%
-analysis/normalizer.py   28               2           93%
+analysis/normalizer.py   36               0          100%
 analysis/projector.py    68               0          100%
 analysis/wacc.py         25               0          100%
-analysis/ TOTAL         194               2           99%
-
-models/financial_statements.py  151      14           91%
-models/valuation.py              95       3           97%
+analysis/ TOTAL         202               0          100%
 ```
 
-**192 of 194 statements in `analysis/`, against 24 at `d1854fb`.** The two uncovered
-lines are the guess at `analysis/normalizer.py:50-51`, which only a red test reaches.
+**202 of 202 statements in `analysis/`, against 24 at `d1854fb`.** The two lines that
+were uncovered at `796de9a` were the guess at the old `normalizer.py:50-51`, which
+`P4-normalizer` deleted.
 
 **Two caveats a reader must not skip.**
 
@@ -192,11 +200,13 @@ the headline.
 
 | # | Item | Cost | State |
 |---|---|---|---|
-| 19 | `analysis/normalizer.py:68` — **one sign rule applied to two kinds of line** | earnings move by **2×** the item, in the wrong direction, on ordinary input | **new, and the highest-cost defect known.** Confirmed twice |
-| 20 | `analysis/capm.py:87` — a **NaN** beta is returned, not raised | a NaN share price renders, because `nan <= g` is `False` and the one working guard does not fire | new. Confirmed end to end |
-| 1 | **117** silent zero-default sites (`models/` 60, `ingestion/` 49, `analysis/` 6, `api/` 2) | a wrong share price on a clean run | open |
+| 19 | `analysis/normalizer.py:68` — one sign rule applied to two kinds of line | earnings moved by **2×** the item, in the wrong direction, on ordinary input | **closed at `38b903c`** |
+| 20 | `analysis/capm.py:87` — a **NaN** beta is returned, not raised | a NaN share price renders, because `nan <= g` is `False` and the one working guard does not fire | **open. The highest-cost defect now known.** Confirmed end to end |
+| 24 | a red test that goes green stays excluded by the gate | the gate stops checking the thing the fix was made to guarantee | **new, live now.** 2 passing tests are outside the gate |
+| 8 | Blanket `except Exception` at five sites | **more urgent since `38b903c`** — every stop we add lands in the catch at `api/routes_valuation.py:220` and renders as a bare string | open |
+| 1 | **116** silent zero-default sites (`models/` 60, `ingestion/` 49, `analysis/` 5, `api/` 2) | a wrong share price on a clean run | open |
 | 2 | `analysis/dcf.py:80` — missing balance sheet gives **zero net debt** | equity value overstated by the whole debt balance | **open, and now proven by measurement.** A red test states the requirement |
-| 3 | `analysis/normalizer.py:46` — unknown line item **guesses** `other_operating_expense` | the adjustment lands on the wrong line | open |
+| 3 | `analysis/normalizer.py:46` — unknown line item **guesses** `other_operating_expense` | the adjustment lands on the wrong line | **closed at `38b903c`** |
 | 4 | No test suite at all | nothing detects any of the above | **closed.** 20 tests, `analysis/dcf.py` at 100% of statements |
 | 5 | `api/routes_valuation.py:25` — module-global extraction cache, `pop`ped on use | shared across users; a page refresh re-runs the LLM | open |
 | 6 | Five `x / 100 if x else None` conversions | a deliberate `0` from the user is read as "not supplied" | open |
@@ -207,7 +217,7 @@ the headline.
 | 16 | Nine scripts carry a `sys.path.insert` to a path that does not exist on this machine | none of them runs as `python tests/<name>.py` | new |
 | 17 | `analysis/capm.py:14` imports from `ingestion/` | a layering break; `analysis/` must not depend on `ingestion/` | new |
 | 18 | The lint gate's rule set is unpinned | a ruff upgrade changes what the gate enforces, with no commit to point at | new |
-| 21 | `analysis/normalizer.py:68` — an unrecognised `direction` silently takes the `remove` branch | any spelling but `"add_back"` moves the adjustment the wrong way | new. Red test written |
+| 21 | `analysis/normalizer.py:68` — an unrecognised `direction` silently takes the `remove` branch | any spelling but `"add_back"` moves the adjustment the wrong way | **closed at `38b903c`** |
 | 22 | `analysis/wacc.py:37` — zero debt balance gives a 0% cost of debt | missing data read as a measurement | new |
 | 23 | `analysis/fcff.py` holds **no `raise` at all** | wholly empty statements return a well-formed result with `fcff = 0.0` | new |
 
