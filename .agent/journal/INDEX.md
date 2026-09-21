@@ -28,6 +28,7 @@ edits another's.
 | 2026-09-21 | P2b-provider | code_reviewer, r2 | **`approved`** — every finding reproduced. Corrected the orchestrator's backlog item 26 | [entry](2026-09-21T0300-code_reviewer-p2b-provider-r2.md) |
 | 2026-09-21 | P5-web-routes | programmer | `ok` — 7 of 7. `GET /` 500 → 200; found two errors in the orchestrator's own documents | [entry](2026-09-21T0400-programmer-p5-web-routes.md) |
 | 2026-09-21 | P5-web-routes | code_reviewer | **`approved`** — 2 minor. Settled a disputed finding against the programmer | [entry](2026-09-21T0500-code_reviewer-p5-web-routes.md) |
+| 2026-09-21 | P5b-route-tests | tester | **`pass`** — 104 asserts over 4 routes. Proved the old suite blind. Escalated E1 and E2 | [entry](2026-09-21T0600-tester-p5b-route-tests.md) |
 
 `P2b-provider` is the first unit to take two review rounds. Round 1's `changes_requested`
 was caused by **the assignment**, not the code: its file scope excluded the two lines

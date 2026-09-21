@@ -59,6 +59,7 @@ rather than lying.
 | 26 | The `files` branch tests for a character every path contains | stopping, **latent** | `api/routes_valuation.py` | **new.** Live only on the legacy no-year branch |
 | 27 | `GET /` and `GET /assumptions` return **500** | stopping | `api/` | **closed at `622262b`** |
 | 28 | `api/routes_upload.py:27` — `str \| None` used as a path segment | stopping | `api/routes_upload.py` | **new.** The last type error in that file |
+| 29 | `POST /valuation` with no `files` runs an extraction on an empty path | **silent** | `api/routes_valuation.py` | **new.** A rule 3 break with no field named |
 
 ---
 
@@ -524,6 +525,42 @@ version in `requirements-dev.txt` is the cheaper half and has no such cost.
 Items 19 to 23 were found by units `P1b-arith` and `P1c-flow`, and confirmed
 independently by their reviewers. **None was found by reading.** Each needed a test to
 call the function with inputs nobody had tried.
+
+## 29. `POST /valuation` with no `files` runs an extraction on an empty path · **silent**
+
+**Fact.** `api/routes_valuation.py:131` declares `files: str = Form("")`, and `:154`
+branches on it without ever checking that it holds anything:
+
+```python
+filings = _parse_files_param(files) if ":" in files else [(0, files)]
+```
+
+Measured by the tester of `P5b-route-tests`, and again by the orchestrator, with the
+extractor faked:
+
+```
+POST /valuation data={"ticker": "TESTCO"}   ->  HTTP 200
+  extract_financials received pdf_path = ''
+  the word 'files' appears on the page: False
+```
+
+**What it costs.** A request that names no filing is not an error here. It becomes an
+extraction against the empty string, and whatever that produces flows into a rendered
+page. [Rule 3](../2-rules/rules.md): a missing input must stop the run and name the
+field. This one does neither.
+
+**It is not item 26 and not item 1.** Item 26 is about the branch *test*; this is about
+the value being empty in the first place. Item 1's census counts a different pattern and
+does not match a `""` default in a `Form()` declaration, so this site has never been
+counted.
+
+**Fix.** Stop when `files` is empty, naming `files`. The three inputs declared without a
+default — `ticker` and `pdf_files` on `POST /upload`, `ticker` on `POST /valuation` —
+already return 422 naming the field, so the correct behaviour is established in the same
+file.
+
+**No test asserts it in either direction.** The tester reported it rather than encoding
+it, because asserting the current behaviour would lock the defect.
 
 ## 27. `GET /` and `GET /assumptions` return 500 · **CLOSED 2026-09-21**
 
