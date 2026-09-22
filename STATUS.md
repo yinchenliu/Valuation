@@ -120,7 +120,7 @@ still open. `ls tests/unit/*_rule3_red.py` returns exactly that one line.
 | tests collected | 0 | **121** |
 | paid API calls during collection | attempted | **none** |
 
-### Coverage, measured at `742f447`
+### Coverage, measured at `ff632df`
 
 ```
 analysis/capm.py         40 statements    3 missed    92%
@@ -136,7 +136,7 @@ api/routes_valuation.py  93               8           91%
 api/ TOTAL              126               8           94%
 ```
 
-**`api/` went from 0 of 126 statements to 118 of 126 at `742f447`.** Before
+**`api/` went from 0 of 126 statements to 118 of 126 at `742f447`, unchanged since.** Before
 `P5b-route-tests`, coverage.py reported `Module app was never imported`. The eight
 uncovered arcs are each a fallback or a recorded backlog item the tester **refused to
 pin**: the cache-hit branch (item 5), the yfinance share-count fallback (rule 5), and
@@ -301,7 +301,7 @@ the headline. Re-ranked at `622262b`.
 
 | # | Item | Cost |
 |---|---|---|
-| 20 | `analysis/capm.py` — a **NaN** beta is returned, not raised | **the highest-cost defect known.** A NaN share price renders, because `nan <= g` is `False` and the one working guard in `analysis/` does not fire. Confirmed end to end, both entry points |
+| 30 | `analysis/dcf.py:46-57` — a NaN in one `ProjectedFCFF` still reaches the share price | **the highest-cost defect now known.** It sums and discounts the cash flows with no check on what it is summing. All three stops added at `ff632df` sit on the discount-rate side; **the cash-flow side has none.** Confirmed before and after, middle year and final year |
 | 1 | **116** silent zero-default sites — `models/` 60, `ingestion/` 49, `analysis/` 5, `api/` 2 | **worse than its original description.** It does not produce zeros; it produces a signed, correctly-scaled figure that tracks the filing and reads as a measurement |
 | 2 | `analysis/dcf.py:80` — missing balance sheet gives **zero net debt** | equity value overstated by the whole debt balance. A red test already states the requirement |
 | 25 | `analysis/normalizer.py:167-170` — an adjustment whose **year** matches no statement is discarded | a valuation labelled "normalised" whose figures are as-reported, with no signal |
