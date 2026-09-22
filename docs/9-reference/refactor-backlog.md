@@ -1,7 +1,7 @@
 # Refactor backlog
 
-Every known defect, with its evidence and what it costs. **Re-measured at `ff632df`,
-2026-09-21.** Ten are closed: 3, 4, 13, 14, 19, 20, 21, 24, 27, and 12 mostly.
+Every known defect, with its evidence and what it costs. **Re-measured at `2ca620a`,
+2026-09-21.** Twelve are closed: 3, 4, 13, 14, 19, 20, 21, 23b, 24, 27, 30, and 12 mostly.
 
 **Items 14 to 30 did not exist when this build started, and every one of 19 to 30 was
 found by running the code rather than by reading it.** That is the single strongest
@@ -32,7 +32,7 @@ rather than lying.
 
 ## Ranked by cost
 
-| # | Item | Silent? | Area | State at `ff632df` |
+| # | Item | Silent? | Area | State at `2ca620a` |
 |---|---|---|---|---|
 | 1 | **116** silent zero-default sites | **silent** | `models/` 60, `ingestion/` 49, `analysis/` 5, `api/` 2 | open |
 | 2 | Missing balance sheet gives zero net debt | **silent** | `analysis/dcf.py` | open, **proven by measurement** |
@@ -56,14 +56,16 @@ rather than lying.
 | 20 | A NaN beta is returned, not raised | **silent** | `analysis/capm.py` | **closed at `ff632df`** |
 | 21 | An unrecognised `direction` silently reverses | **silent** | `analysis/normalizer.py` | **closed at `38b903c`** |
 | 22 | Zero debt balance gives a 0% cost of debt | **silent** | `analysis/wacc.py` | open |
-| 23 | `analysis/fcff.py` holds no `raise` at all, **and holds the NaN clamp twin** | **silent** | `analysis/fcff.py` | open |
+| 23 | `analysis/fcff.py` holds no `raise` for empty statements, **and `calculate_fcff_projected` has seven unguarded float parameters** | **silent** | `analysis/fcff.py` | open; **the clamp twin (23b) is closed at `2ca620a`** |
 | 24 | A red test that goes green stays outside the gate | — | `tests/` | **closed at `81816be`** |
 | 25 | An adjustment whose year matches no statement is discarded | **silent** | `analysis/normalizer.py` | **new** |
 | 26 | The `files` branch tests for a character every path contains | stopping, **latent** | `api/routes_valuation.py` | **new.** Live only on the legacy no-year branch |
 | 27 | `GET /` and `GET /assumptions` return **500** | stopping | `api/` | **closed at `622262b`** |
 | 28 | `api/routes_upload.py:27` — `str \| None` used as a path segment | stopping | `api/routes_upload.py` | **new.** The last type error in that file |
 | 29 | `POST /valuation` with no `files` runs an extraction on an empty path | **silent** | `api/routes_valuation.py` | **new.** A rule 3 break with no field named |
-| 30 | A NaN in one `ProjectedFCFF` still reaches the share price | **silent** | `analysis/dcf.py` | **new.** The cash-flow side is unguarded |
+| 30 | A NaN in one `ProjectedFCFF` reaches the share price | **silent** | `analysis/dcf.py` | **closed at `2ca620a`** |
+| 31 | `discount_cash_flows`' `wacc` is unguarded on a direct call | **silent** | `analysis/dcf.py` | **new, latent.** The `run_dcf` chain stops two lines later |
+| 32 | `models/valuation.py:138` renders a share price of `0.0` on zero diluted shares | **silent** | `models/valuation.py` | **new.** Same shape as item 2 |
 
 ---
 
@@ -532,7 +534,37 @@ Items 19 to 23 were found by units `P1b-arith` and `P1c-flow`, and confirmed
 independently by their reviewers. **None was found by reading.** Each needed a test to
 call the function with inputs nobody had tried.
 
-## 30. A NaN in one `ProjectedFCFF` still reaches the share price · **silent**
+## 31. `discount_cash_flows`' `wacc` is unguarded on a direct call · **silent, latent**
+
+**Fact.** `analysis/dcf.py` guards every projected cash flow but not the `wacc`
+parameter of `discount_cash_flows` itself. Verified by the reviewer of
+`P4d-cashflow-nan`: a direct call with a NaN `wacc` returns `nan`.
+
+**Why it is latent.** Through `run_dcf` the chain stops two lines later, at
+`calculate_terminal_value`. No current caller reaches it with a NaN.
+
+**Why it stays recorded.** `discount_cash_flows` is public, and "safe because nothing
+calls it that way today" is the argument
+[.claude/agents/code-reviewer.md](../../.claude/agents/code-reviewer.md) names as one of
+the three that never justify a downgrade. Reachability is not the test.
+
+## 32. Zero diluted shares render a share price of `0.0` · **silent**
+
+**Fact.** `models/valuation.py:138`. Reported by the tester of `P1-suite`, reported
+again by `P4d-cashflow-nan`, and never assigned.
+
+**What it costs.** It is item 2's shape on the **denominator** of the headline figure.
+Equity value divided by zero shares gives `0.0` rather than a stop, so a valuation with
+no share count renders a price of zero — which reads as a company worth nothing rather
+than as an absent input.
+
+**Why no test asserts it.** Locking `implied_share_price == 0.0` would make the defect
+permanent. The testers reported it instead, twice.
+
+**Fix.** Raise, naming `diluted_shares`. **`models/valuation.py` carries 40 assertions**
+— any unit touching it must expect to answer for every one.
+
+## 30. A NaN in one `ProjectedFCFF` reaches the share price · **CLOSED at `2ca620a`**
 
 **Fact.** Confirmed by the reviewer of `P4c-nan-stops`, **before and after** that unit,
 in a middle projection year and in the final year: a NaN in a single `ProjectedFCFF`
@@ -548,10 +580,19 @@ cash-flow side has none.
 **Why it is not charged to `P4c-nan-stops`.** `analysis/dcf.py:46-57` is unchanged by
 that diff, and widening its scope to reach this would itself have been a review finding.
 
-**Fix.** A `math.isnan` check on each projected cash flow, naming the year. **Not a
-comparison** — see item 20 for why.
+**Fixed at `2ca620a`.** `analysis/dcf.py` guards each projected cash flow before it is
+discounted, naming the **year** rather than only the field. The terminal value's base
+cash flow is guarded inside `calculate_terminal_value`, **not** in `run_dcf` — a guard
+there would be dead code, because `discount_cash_flows` runs first over the whole list
+including the last element. The reviewer verified that by stack trace rather than by
+argument: `run_dcf:133 <- discount_cash_flows:97 <- _require_finite:35`, with the later
+lines never reached.
 
-## 23b. The NaN tax clamp twin, `analysis/fcff.py:44` · **silent**
+**Two more doors are still open**, both reported by the same unit and neither charged to
+it: item **31** (`discount_cash_flows`' `wacc` on a direct call) and item **32**
+(`models/valuation.py:138`).
+
+## 23b. The NaN tax clamp twin, `analysis/fcff.py:44` · **CLOSED at `2ca620a`**
 
 **Fact.** `max(0.0, min(nan, 0.50))` is **`0.0`**. Python's `min` and `max` keep their
 first argument when a comparison is `False`, and every comparison against NaN is
@@ -571,7 +612,24 @@ most favourable possible assumption, silently.
 out of that unit's scope and still has it. Recorded here rather than as a new number
 because it is the same defect as item 23's file.
 
-**Fix.** The same check, before the clamp, naming the field.
+**Fixed at `2ca620a`**, checking before the clamp as `analysis/wacc.py` does. Measured
+cost, reproduced independently by the reviewer:
+
+| Tax rate supplied | `tax_rate` | after-tax interest | FCFF |
+|---|---|---|---|
+| `0.25`, from the filing | 0.25 | 7.5 | **112.5** |
+| NaN, before the fix | **0.00** | 10.0 | **115.0** |
+
+An unknown rate raised free cash flow by 2.5 in a single year and was reported as a
+measurement.
+
+**The clamp still clamps**, which was the point of keeping two controls on it: `0.80`
+still becomes `0.50` and `-0.30` still becomes `0.0`, byte-identical before and after.
+A **known** out-of-range rate is corrected; only an **unknown** one stops. Before the
+fix the two were indistinguishable in the output, and the unknown one gave the most
+favourable result available.
+
+`analysis/fcff.py` is still open on item 23's other half.
 
 ## 29. `POST /valuation` with no `files` runs an extraction on an empty path · **silent**
 

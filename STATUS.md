@@ -4,7 +4,7 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `ff632df`, 2026-09-21**, on branch `build/phase-1-2`. **Ten work units
+**Measured at `2ca620a`, 2026-09-21**, on branch `build/phase-1-2`. **Twelve work units
 accepted, and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; three times a reviewer overturned a
 claim, twice against a programmer and once against the orchestrator. The journal is
@@ -14,7 +14,7 @@ claim, twice against a programmer and once against the orchestrator. The journal
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `ff632df` |
+| Gate | Command | Result at `2ca620a` |
 |---|---|---|
 | Tests | `.venv/Scripts/python.exe -m pytest -q` | **121 tests. 120 pass, 1 red on purpose**, 3.9 s |
 | **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **120 passed**, 0 failed |
@@ -120,16 +120,16 @@ still open. `ls tests/unit/*_rule3_red.py` returns exactly that one line.
 | tests collected | 0 | **121** |
 | paid API calls during collection | attempted | **none** |
 
-### Coverage, measured at `ff632df`
+### Coverage, measured at `2ca620a`
 
 ```
 analysis/capm.py         40 statements    3 missed    92%
-analysis/dcf.py          29               2           93%
-analysis/fcff.py         19               0          100%
+analysis/dcf.py          35               3           91%
+analysis/fcff.py         24               1           96%
 analysis/normalizer.py   36               0          100%
 analysis/projector.py    68               0          100%
 analysis/wacc.py         34               1           97%
-analysis/ TOTAL         226               6           97%
+analysis/ TOTAL         237               8           97%
 
 api/routes_upload.py     33               0          100%
 api/routes_valuation.py  93               8           91%
@@ -301,7 +301,8 @@ the headline. Re-ranked at `622262b`.
 
 | # | Item | Cost |
 |---|---|---|
-| 30 | `analysis/dcf.py:46-57` — a NaN in one `ProjectedFCFF` still reaches the share price | **the highest-cost defect now known.** It sums and discounts the cash flows with no check on what it is summing. All three stops added at `ff632df` sit on the discount-rate side; **the cash-flow side has none.** Confirmed before and after, middle year and final year |
+| 32 | `models/valuation.py:138` renders a share price of `0.0` on zero diluted shares | same shape as item 2, on the **denominator** of the headline figure |
+| 31 | `discount_cash_flows`' `wacc` is unguarded on a **direct** call | **latent.** The `run_dcf` chain stops two lines later, so no current path reaches it |
 | 1 | **116** silent zero-default sites — `models/` 60, `ingestion/` 49, `analysis/` 5, `api/` 2 | **worse than its original description.** It does not produce zeros; it produces a signed, correctly-scaled figure that tracks the filing and reads as a measurement |
 | 2 | `analysis/dcf.py:80` — missing balance sheet gives **zero net debt** | equity value overstated by the whole debt balance. A red test already states the requirement |
 | 25 | `analysis/normalizer.py:167-170` — an adjustment whose **year** matches no statement is discarded | a valuation labelled "normalised" whose figures are as-reported, with no signal |
@@ -315,7 +316,7 @@ the headline. Re-ranked at `622262b`.
 | 7 | `cli.py` and `api/` duplicate the pipeline | a fix must be made twice or it is made once |
 | 5 | `api/routes_valuation.py:31` — module-global extraction cache, `pop`ped on read | shared across users; a page refresh re-runs the paid extraction |
 | 11 | **14** type errors, down from 33 | one is a live crash path. Every removal so far was a real defect, never an annotation |
-| 23b | `analysis/fcff.py:44` — the NaN tax clamp twin | `max(0.0, min(nan, 0.50))` is **`0.0`**, so an unknown tax rate becomes a 0% rate and a full tax shield, which **raises** the valuation. `analysis/wacc.py` held the same clamp and was fixed at `ff632df` |
+| 23 | `analysis/fcff.py` holds no `raise` for empty statements, and `calculate_fcff_projected` has **seven** unguarded float parameters | wholly empty statements return a well-formed result with `fcff = 0.0` |
 | 16 | Nine scripts carry a `sys.path.insert` to a path that does not exist here | none runs as `python tests/<name>.py`. Use `-m tests.<name>` |
 | 26 | `api/routes_valuation.py:152` branches on a character every path contains | **latent.** Live only on the legacy no-year branch. My first write-up of this was wrong and was corrected by review |
 | 17 | `analysis/capm.py:14` imports from `ingestion/` | a layering break |
@@ -336,9 +337,11 @@ the headline. Re-ranked at `622262b`.
 | 24 | A red test that went green stayed outside the gate | `81816be` |
 | 27 | `GET /` and `GET /assumptions` returned 500 | `622262b` |
 | 20 | A NaN beta was returned, not raised | `ff632df` |
+| 30 | A NaN cash flow reached the share price | `2ca620a` |
+| 23b | The NaN tax clamp twin | `2ca620a` |
 | 14 | Empty `projected_fcffs` raised a bare `IndexError` | `ff632df` |
 
-**Ten closed, twenty-one open.** Items 19 to 28 did not exist when this build started —
+**Twelve closed, twenty-one open.** Items 19 to 28 did not exist when this build started —
 **every one of them was found by running the code**, not by reading it.
 
 ---
