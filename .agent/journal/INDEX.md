@@ -31,6 +31,8 @@ edits another's.
 | 2026-09-21 | P5b-route-tests | tester | **`pass`** — 104 asserts over 4 routes. Proved the old suite blind. Escalated E1 and E2 | [entry](2026-09-21T0600-tester-p5b-route-tests.md) |
 | 2026-09-21 | P4c-nan-stops | programmer | `ok` — items 20 and 14 closed. Found the NaN tax clamp | [entry](2026-09-21T0700-programmer-p4c-nan-stops.md) |
 | 2026-09-21 | P4c-nan-stops | code_reviewer | **`approved`** — 5 notes. Built its own 23-case probe rather than re-running the programmer's | [entry](2026-09-21T0800-code_reviewer-p4c-nan-stops.md) |
+| 2026-09-21 | P4d-cashflow-nan | programmer | `ok` — 8 of 8. Items 30 and 23b closed | [entry](2026-09-21T0900-programmer-p4d-cashflow-nan.md) |
+| 2026-09-21 | P4d-cashflow-nan | code_reviewer | **`approved`** — 3 notes. Verified the dead-code argument by stack trace | [entry](2026-09-21T1000-code_reviewer-p4d-cashflow-nan.md) |
 
 `P2b-provider` is the first unit to take two review rounds. Round 1's `changes_requested`
 was caused by **the assignment**, not the code: its file scope excluded the two lines
@@ -46,7 +48,7 @@ deliverable.** Three units reported `fail` and all three were approved by review
 reported `pass`. Read the verdict line at the top of an entry before reading the word
 alone.
 
-**Nine units, and not one was accepted on its own report.** Every programmer run went to
+**Twelve units, and not one was accepted on its own report.** Every programmer run went to
 a reviewer that re-ran the measurements rather than reading them. Three times a reviewer
 overturned a claim: it disproved a programmer's reason for stopping, it disproved a
 different programmer's finding, and it confirmed two errors in the orchestrator's own
