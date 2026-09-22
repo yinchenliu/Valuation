@@ -66,6 +66,9 @@ rather than lying.
 | 30 | A NaN in one `ProjectedFCFF` reaches the share price | **silent** | `analysis/dcf.py` | **closed at `2ca620a`** |
 | 31 | `discount_cash_flows`' `wacc` is unguarded on a direct call | **silent** | `analysis/dcf.py` | **new, latent.** The `run_dcf` chain stops two lines later |
 | 32 | `models/valuation.py:138` renders a share price of `0.0` on zero diluted shares | **silent** | `models/valuation.py` | **new.** Same shape as item 2 |
+| 33 | The CLI cache is keyed on the **ticker alone**, so the PDFs you pass are silently ignored | **silent** | `cli.py` | **new.** Found on the first real filing run |
+| 34 | The risk-free rate is a hardcoded `0.04` presented as measured | **silent** | `config.py`, `analysis/capm.py` | **new.** Rule 6 |
+| 35 | A beta from a regression explaining 10% of variance is reported without qualification | **silent** | `analysis/capm.py` | **new.** Rule 6 |
 
 ---
 
@@ -533,6 +536,82 @@ version in `requirements-dev.txt` is the cheaper half and has no such cost.
 Items 19 to 23 were found by units `P1b-arith` and `P1c-flow`, and confirmed
 independently by their reviewers. **None was found by reading.** Each needed a test to
 call the function with inputs nobody had tried.
+
+# Found by the first run against a real filing, 2026-09-22
+
+Three L3Harris 10-Ks (FY2023, FY2024, FY2025 — 506 pages) were supplied by the user.
+The FY2025 filing was extracted by `claude-opus-5` through the Foundry gateway:
+272,204 input tokens, 77 seconds, and the figures trace to the printed page —
+`Revenue $ 21,865 $ 21,325` on page 23 is what the extraction returned for 2025 and
+2024.
+
+**The pipeline works. The number it produces is not yet trustworthy, and items 33 to 35
+are why.**
+
+## 33. The CLI cache is keyed on the ticker alone · **silent**
+
+**Fact.** `cli.py:248-253`:
+
+```python
+return d / f".cache_{args.ticker.lower()}_extraction.pkl"
+```
+
+The PDFs passed on the command line are **not part of the key** and are never compared
+against the cache's contents.
+
+**Measured.** The first run against the user's new filings —
+`cli.py "…LHX/…2025_English.pdf" -t LHX --cache-dir ./cache` — completed in **2 seconds**
+and printed a full valuation of **$351.77**. It had loaded
+`cache/.cache_lhx_extraction.pkl`, a pickle that predates this entire build, and **never
+opened the PDF at all.** The output says `LOADING CACHED EXTRACTION` but does not say
+that the file named on the command line was ignored.
+
+**What it costs.** A complete, plausible, correctly-formatted valuation from data of
+unknown provenance — unknown extractor version, unknown provider, unknown date — with no
+signal. This is `STATUS.md` traps 1 and 3 firing together, and it is the first thing a
+new user will hit, because the cache flag appears in four of the six examples in the
+CLI's own help text.
+
+**Fix.** Key the cache on the input files as well as the ticker — a hash of the paths
+and their modification times. **A cache that can answer a question it was not asked is
+worse than no cache.**
+
+## 34. The risk-free rate is a hardcoded constant presented as measured · **silent**
+
+**Fact.** `config.py:42` — `DEFAULT_RISK_FREE_RATE = 0.04  # 4.0% fallback if market
+fetch fails`. `analysis/capm.py:123` substitutes it whenever no override is supplied,
+and the CLI's `--risk-free-rate` defaults to `None`.
+
+**There is no market fetch.** `grep -rn "treasury\|TNX\|risk_free" ingestion/price_fetcher.py`
+returns nothing. The comment describes a fallback for a mechanism that was never built.
+
+**What it costs.** The output prints `Risk-free rate: 4.00%` alongside genuinely measured
+figures, with nothing distinguishing it. It enters the cost of equity, so it reaches
+every discounted cash flow. [Rule 6](../2-rules/rules.md).
+
+**Fix.** Either fetch it, or label it. Labelling is the cheaper half and closes the rule
+break on its own.
+
+## 35. An unusable beta is reported without qualification · **silent**
+
+**Fact.** On the LHX run: `Beta: 0.493 (regression)`, `R-squared: 0.099`,
+`Std error: 0.196`. The regression explains **10%** of the variance, and the standard
+error is 40% of the estimate.
+
+**What it costs.** Measured on this filing, holding everything else as the run produced
+it:
+
+| Beta | Implied price | Against the market's $240.21 |
+|---|---|---|
+| 0.493, as regressed | $343.57 | **+43.0%** |
+| 0.80, a sector figure | $227.33 | **−5.4%** |
+
+**One unmeasurable input moves the answer from a 43% buy to a 5% sell.** The diagnostic
+that says so is printed two lines above it and carries no threshold, no warning and no
+consequence.
+
+**Fix.** [Rule 6](../2-rules/rules.md). Name a minimum R-squared, and when the
+regression falls below it, say so in the output beside the beta — or stop.
 
 ## 31. `discount_cash_flows`' `wacc` is unguarded on a direct call · **silent, latent**
 
