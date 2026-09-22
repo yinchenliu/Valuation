@@ -7,6 +7,8 @@ Beta is estimated by regressing stock returns on market returns.
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 from scipy import stats
 
@@ -14,12 +16,32 @@ import config
 from ingestion.price_fetcher import PriceData
 from models.valuation import CAPMResult
 
+# The smallest number of aligned observations an OLS regression of one series
+# on another can produce all three of this module's statistics from. It is
+# derived, not chosen: the standard error of the slope is
+#
+#     SE(beta) = sqrt( SSE / ((n - 2) * Sxx) )
+#
+# so n - 2 must be at least 1. Measured against scipy 1.18.1: at n = 2
+# `stats.linregress` returns a finite slope of exactly 1.0 for a perfect fit
+# and `stderr = nan`, which would then be carried into `CAPMResult.std_error`
+# and rendered. At n = 0 and n = 1 every returned statistic is nan.
+MINIMUM_REGRESSION_OBSERVATIONS = 3
+
 
 def calculate_beta(price_data: PriceData) -> tuple[float, float, float]:
     """Run OLS regression of stock returns vs. market returns.
 
     Returns:
         (beta, r_squared, std_error)
+
+    Raises:
+        ValueError: when the inputs cannot produce a finite beta, naming which
+            input was inadequate. `stats.linregress` raises nothing for an
+            empty or a degenerate series — it returns `nan` for every
+            statistic — and a `nan` beta cannot be detected downstream by a
+            comparison, because `nan <= x` and `nan > x` are both False. This
+            function is the source of that value, so it is where the run stops.
 
     `stats.linregress` also returns two statistics this function discards:
       - the intercept (Jensen's alpha — the part of the stock return the
@@ -29,10 +51,41 @@ def calculate_beta(price_data: PriceData) -> tuple[float, float, float]:
     Neither reaches `CAPMResult`. A caller that needs one must widen this
     signature; it cannot recover them from the return value.
     """
+    market_returns = np.asarray(price_data.market_returns, dtype=float)
+    stock_returns = np.asarray(price_data.stock_returns, dtype=float)
+
+    if market_returns.size != stock_returns.size:
+        raise ValueError(
+            f"market_returns holds {market_returns.size} observations and "
+            f"stock_returns holds {stock_returns.size}: beta regresses one on "
+            "the other period by period, so the two series must be aligned and "
+            "of equal length"
+        )
+
+    if market_returns.size < MINIMUM_REGRESSION_OBSERVATIONS:
+        raise ValueError(
+            f"market_returns and stock_returns hold {market_returns.size} "
+            "observations; beta needs at least "
+            f"{MINIMUM_REGRESSION_OBSERVATIONS} because the standard error of "
+            "the slope divides by (n - 2). Supply a longer price history; a "
+            "beta cannot be estimated from this one"
+        )
+
     slope, _intercept, r_value, _p_value, std_err = stats.linregress(
-        price_data.market_returns,
-        price_data.stock_returns,
+        market_returns,
+        stock_returns,
     )
+
+    if math.isnan(slope) or math.isnan(r_value) or math.isnan(std_err):
+        raise ValueError(
+            "the regression of stock_returns on market_returns produced no "
+            f"finite beta (beta={slope}, r_value={r_value}, "
+            f"std_error={std_err}). market_returns has variance "
+            f"{float(np.var(market_returns))} over {market_returns.size} "
+            "observations; a market series with no variation explains nothing "
+            "and no beta exists for it"
+        )
+
     return slope, r_value ** 2, std_err
 
 

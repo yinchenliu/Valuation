@@ -29,6 +29,8 @@ edits another's.
 | 2026-09-21 | P5-web-routes | programmer | `ok` — 7 of 7. `GET /` 500 → 200; found two errors in the orchestrator's own documents | [entry](2026-09-21T0400-programmer-p5-web-routes.md) |
 | 2026-09-21 | P5-web-routes | code_reviewer | **`approved`** — 2 minor. Settled a disputed finding against the programmer | [entry](2026-09-21T0500-code_reviewer-p5-web-routes.md) |
 | 2026-09-21 | P5b-route-tests | tester | **`pass`** — 104 asserts over 4 routes. Proved the old suite blind. Escalated E1 and E2 | [entry](2026-09-21T0600-tester-p5b-route-tests.md) |
+| 2026-09-21 | P4c-nan-stops | programmer | `ok` — items 20 and 14 closed. Found the NaN tax clamp | [entry](2026-09-21T0700-programmer-p4c-nan-stops.md) |
+| 2026-09-21 | P4c-nan-stops | code_reviewer | **`approved`** — 5 notes. Built its own 23-case probe rather than re-running the programmer's | [entry](2026-09-21T0800-code_reviewer-p4c-nan-stops.md) |
 
 `P2b-provider` is the first unit to take two review rounds. Round 1's `changes_requested`
 was caused by **the assignment**, not the code: its file scope excluded the two lines

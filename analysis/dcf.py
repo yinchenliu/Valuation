@@ -8,6 +8,8 @@ Implied Share Price = Equity Value / Diluted Shares Outstanding
 
 from __future__ import annotations
 
+import math
+
 from models.financial_statements import FinancialStatements
 from models.valuation import DCFResult, ProjectedFCFF, WACCResult
 
@@ -20,7 +22,20 @@ def calculate_terminal_value(
     """Gordon Growth Model terminal value.
 
     TV = FCFF_n * (1 + g) / (WACC - g)
+
+    The NaN check below is not redundant with the spread check that follows
+    it. **A comparison cannot detect NaN**: `nan <= 0.025` is False and so is
+    `nan > 0.025`, so the spread check falls through and the whole valuation
+    completes with `implied_share_price = nan`. This is the last line of
+    defence before a price is rendered, and it has to be `math.isnan`.
     """
+    if math.isnan(wacc) or math.isnan(terminal_growth_rate):
+        raise ValueError(
+            f"WACC ({wacc}) and terminal growth rate ({terminal_growth_rate}) "
+            "must both be numbers; a NaN here would pass the spread check "
+            "below silently and render as a NaN share price. A NaN WACC means "
+            "an input was absent or degenerate in CAPM or in WACC"
+        )
     if wacc <= terminal_growth_rate:
         raise ValueError(
             f"WACC ({wacc:.4f}) must exceed terminal growth rate ({terminal_growth_rate:.4f})"
@@ -63,6 +78,12 @@ def run_dcf(
     Returns:
         DCFResult with enterprise value, equity value, implied share price.
     """
+    if not projected_fcffs:
+        raise ValueError(
+            "projected_fcffs is empty: a DCF needs at least one projected year, "
+            "because the terminal value is built from the final projected FCFF"
+        )
+
     wacc = wacc_result.wacc
     n = len(projected_fcffs)
 
