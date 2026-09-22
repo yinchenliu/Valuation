@@ -1,9 +1,12 @@
 # Refactor backlog
 
-Every known defect, with its evidence and what it costs. **Re-measured at `81816be`,
-2026-09-21.** Items 3, 4, 19, 21 and 24 are closed and item 12 mostly is. Items 14 to 25
-are new — and **every one of 19 to 25 was found by running the code, not by reading
-it.** That is the single strongest argument for the test suite that found them.
+Every known defect, with its evidence and what it costs. **Re-measured at `ff632df`,
+2026-09-21.** Ten are closed: 3, 4, 13, 14, 19, 20, 21, 24, 27, and 12 mostly.
+
+**Items 14 to 30 did not exist when this build started, and every one of 19 to 30 was
+found by running the code rather than by reading it.** That is the single strongest
+argument for the test suite that found them — and for the gates it added, since three of
+them were found by a reviewer re-running a measurement it had been handed.
 
 **Read this before reporting a defect as new**, and before writing an assignment that
 touches one of these files. An item listed here, in a line a unit did not touch, is
@@ -29,37 +32,38 @@ rather than lying.
 
 ## Ranked by cost
 
-| # | Item | Silent? | Area | State at `81816be` |
+| # | Item | Silent? | Area | State at `ff632df` |
 |---|---|---|---|---|
 | 1 | **116** silent zero-default sites | **silent** | `models/` 60, `ingestion/` 49, `analysis/` 5, `api/` 2 | open |
 | 2 | Missing balance sheet gives zero net debt | **silent** | `analysis/dcf.py` | open, **proven by measurement** |
 | 3 | Unknown NRI line item guesses a field | **silent** | `analysis/normalizer.py` | **closed at `38b903c`** |
-| 4 | No test suite; `pytest` cannot collect | stopping | `tests/` | **closed** — 20 tests |
+| 4 | No test suite; `pytest` cannot collect | stopping | `tests/` | **closed** — 121 tests |
 | 5 | Module-global extraction cache, popped on use | mixed | `api/routes_valuation.py` | open |
 | 6 | Falsy treated as missing, five times | **silent** | `api/routes_valuation.py` | open |
 | 7 | `cli.py` and `api/` duplicate the pipeline | **silent** | both | open |
 | 8 | Blanket `except Exception` at five sites | **silent** | `api/`, `cli.py`, `ingestion/`, `tests/` | open, **now the only lint errors** |
 | 9 | Unlabelled cost-of-debt assumption | **silent** | `analysis/wacc.py` | open |
 | 10 | D&A subtraction buried in the parser | **silent** | `ingestion/claude_extractor.py` | open |
-| 11 | 33 type errors, one a live crash path | stopping | 4 files | open, error set unchanged |
+| 11 | **14** type errors, down from 33 | stopping | 4 files | open; every removal so far was a real defect |
 | 12 | Dead code and stale repository hygiene | — | several | **mostly closed** |
-| 13 | Provider changes with the number of PDFs uploaded | stopping, here | `ingestion/`, `api/` | open, **and now a blocker** |
-| 14 | Empty `projected_fcffs` raises a bare `IndexError` | stopping | `analysis/dcf.py` | new |
+| 13 | Provider changed with the number of PDFs uploaded | stopping, here | `ingestion/`, `api/` | **closed at `0e4649f`** |
+| 14 | Empty `projected_fcffs` raises a bare `IndexError` | stopping | `analysis/dcf.py` | **closed at `ff632df`** |
 | 15 | `latest_year` returns `0` for an empty extraction | **silent** | `models/financial_statements.py` | new |
 | 16 | Nine scripts point at a path that does not exist | stopping | `tests/` | new |
 | 17 | `analysis/` imports from `ingestion/` | — | `analysis/capm.py` | new |
 | 18 | The lint gate's rule set is unpinned | — | `ruff.toml` | open |
 | 19 | One sign rule applied to two kinds of line | **silent** | `analysis/normalizer.py` | **closed at `38b903c`** |
-| 20 | A NaN beta is returned, not raised | **silent** | `analysis/capm.py` | **open. The highest-cost defect now known** |
+| 20 | A NaN beta is returned, not raised | **silent** | `analysis/capm.py` | **closed at `ff632df`** |
 | 21 | An unrecognised `direction` silently reverses | **silent** | `analysis/normalizer.py` | **closed at `38b903c`** |
 | 22 | Zero debt balance gives a 0% cost of debt | **silent** | `analysis/wacc.py` | open |
-| 23 | `analysis/fcff.py` holds no `raise` at all | **silent** | `analysis/fcff.py` | open |
+| 23 | `analysis/fcff.py` holds no `raise` at all, **and holds the NaN clamp twin** | **silent** | `analysis/fcff.py` | open |
 | 24 | A red test that goes green stays outside the gate | — | `tests/` | **closed at `81816be`** |
 | 25 | An adjustment whose year matches no statement is discarded | **silent** | `analysis/normalizer.py` | **new** |
 | 26 | The `files` branch tests for a character every path contains | stopping, **latent** | `api/routes_valuation.py` | **new.** Live only on the legacy no-year branch |
 | 27 | `GET /` and `GET /assumptions` return **500** | stopping | `api/` | **closed at `622262b`** |
 | 28 | `api/routes_upload.py:27` — `str \| None` used as a path segment | stopping | `api/routes_upload.py` | **new.** The last type error in that file |
 | 29 | `POST /valuation` with no `files` runs an extraction on an empty path | **silent** | `api/routes_valuation.py` | **new.** A rule 3 break with no field named |
+| 30 | A NaN in one `ProjectedFCFF` still reaches the share price | **silent** | `analysis/dcf.py` | **new.** The cash-flow side is unguarded |
 
 ---
 
@@ -71,7 +75,7 @@ rather than lying.
 grep -rnE "if [^)]+ else 0(\.0)?\b|\bor +0(\.0)?\b|\.get\([^,]+, *0(\.0)?\)|: *float *= *0\.0" \
   --include=*.py models analysis api ingestion | wc -l
 ```
-→ **116** at `81816be`, unchanged since `38b903c`. By area: `models/` 60, `ingestion/` 49, `analysis/` 5,
+→ **116** at `ff632df`, unchanged since `38b903c`. By area: `models/` 60, `ingestion/` 49, `analysis/` 5,
 `api/` 2.
 
 | Commit | Count | The delta |
@@ -452,7 +456,7 @@ through the public API must be distinguishable by the reader.
 
 ---
 
-## 14. Empty `projected_fcffs` raises a bare `IndexError` · stopping
+## 14. Empty `projected_fcffs` raises a bare `IndexError` · **CLOSED at `ff632df`**
 
 **Fact.** `analysis/dcf.py:73` — `final_fcff = projected_fcffs[-1].fcff`. Measured by
 the tester: `IndexError: list index out of range`.
@@ -461,7 +465,9 @@ the tester: `IndexError: list index out of range`.
 nothing, which is the other half. Item 8's blanket catch then renders
 `"list index out of range"` on the results page, where a named input error belongs.
 
-**Fix.** One line. Raise, naming `projected_fcffs`. A test can then be written green.
+**Fixed at `ff632df`.** `analysis/dcf.py` raises `ValueError` naming
+`projected_fcffs`. Measured before and after by the reviewer:
+`IndexError: list index out of range` → `ValueError: projected_fcffs is empty…`.
 
 ## 15. `latest_year` returns `0` for an empty extraction · **silent**
 
@@ -525,6 +531,47 @@ version in `requirements-dev.txt` is the cheaper half and has no such cost.
 Items 19 to 23 were found by units `P1b-arith` and `P1c-flow`, and confirmed
 independently by their reviewers. **None was found by reading.** Each needed a test to
 call the function with inputs nobody had tried.
+
+## 30. A NaN in one `ProjectedFCFF` still reaches the share price · **silent**
+
+**Fact.** Confirmed by the reviewer of `P4c-nan-stops`, **before and after** that unit,
+in a middle projection year and in the final year: a NaN in a single `ProjectedFCFF`
+produces `implied_share_price = nan` even when WACC is finite.
+
+`analysis/dcf.py:46-57` sums and discounts the projected cash flows with no check on
+what it is summing.
+
+**What it costs.** The same as item 20 — a NaN share price on a clean run — through a
+different door. **All three stops item 20 added sit on the discount-rate side.** The
+cash-flow side has none.
+
+**Why it is not charged to `P4c-nan-stops`.** `analysis/dcf.py:46-57` is unchanged by
+that diff, and widening its scope to reach this would itself have been a review finding.
+
+**Fix.** A `math.isnan` check on each projected cash flow, naming the year. **Not a
+comparison** — see item 20 for why.
+
+## 23b. The NaN tax clamp twin, `analysis/fcff.py:44` · **silent**
+
+**Fact.** `max(0.0, min(nan, 0.50))` is **`0.0`**. Python's `min` and `max` keep their
+first argument when a comparison is `False`, and every comparison against NaN is
+`False`. Measured:
+
+```
+min(nan, 0.50)           ->  nan
+max(0.0, min(nan, 0.50)) ->  0.0
+```
+
+**What it costs.** The clamp turns an unknown tax rate into **zero percent** — a full
+tax shield, which **raises** the valuation. An input nobody could compute becomes the
+most favourable possible assumption, silently.
+
+`analysis/wacc.py` held the identical clamp and `P4c-nan-stops` fixed it, checking
+**before** the clamp because afterwards the evidence is gone. `analysis/fcff.py:44` was
+out of that unit's scope and still has it. Recorded here rather than as a new number
+because it is the same defect as item 23's file.
+
+**Fix.** The same check, before the clamp, naming the field.
 
 ## 29. `POST /valuation` with no `files` runs an extraction on an empty path · **silent**
 
@@ -788,7 +835,7 @@ into a hard stop, and that stop lands in the blanket catch at
 `api/routes_valuation.py:220`, which renders it as a bare string on the results page.
 **Item 8 is more urgent than its rank suggests.**
 
-## 20. A NaN beta is returned, not raised · **silent**
+## 20. A NaN beta is returned, not raised · **CLOSED at `ff632df`**
 
 **Fact.** `analysis/capm.py:87` calls `calculate_beta`, which calls
 `scipy.stats.linregress`. On an empty series that returns `nan` for the slope and
@@ -819,9 +866,34 @@ Chain confirmed end to end by the reviewer: `capm.py:72` → `:87` → `:32` →
 `analysis/dcf.py:24` → `:74,75` → `models/valuation.py:138`. Reached from both
 `api/routes_valuation.py:167-172` and `cli.py:687-692`.
 
-**Fix.** Stop in `calculate_beta` when the series is empty or too short, naming the
-input. Then add a NaN check that does not rely on a comparison — `math.isnan` — at the
-point WACC is built, because **a guard written as `<=` cannot catch this.**
+**Fixed at `ff632df`** by unit `P4c-nan-stops`, with three stops in series, every one
+`math.isnan` and none a comparison:
+
+| File | Catches |
+|---|---|
+| `analysis/capm.py` | unequal series lengths; fewer than 3 observations; a regression whose statistics come back NaN |
+| `analysis/wacc.py` | a NaN arriving where CAPM cannot see it — an overridden beta, a NaN market cap, a `CAPMResult` built elsewhere |
+| `analysis/dcf.py` | the last guard before a price is rendered now rejects NaN itself, rather than trusting upstream |
+
+**The proof is the path that did not move.** Six new stops were added to files already
+at 100% coverage, where every assertion was derived by hand, so the risk was never that
+a stop fails to fire — it is that a healthy path shifts. The reviewer ran six controls
+**with its own inputs**, different from the programmer's, and none moved by a digit:
+`implied_share_price = 12.697763190328896`, `beta = 1.596774193548387`,
+`std_error = 0.10158303025640267`.
+
+**The threshold of 3 observations is derived, not fitted.**
+`SE(beta) = sqrt(SSE / ((n-2) · Sxx))` needs `n - 2 >= 1`. scipy 1.18.1 at `n = 2`
+returns a finite slope with `stderr = nan`, so the old code rendered a price while
+carrying a NaN diagnostic. Adopting the threshold **removes** a number the old code
+produced, which is the opposite of fitting a case.
+
+**Coverage fell and was not worked around.** `capm.py` 92%, `dcf.py` 93%, `wacc.py` 97%;
+all six missed lines are the new raises. The reviewer reached every one by execution, so
+no unreachable guard was written to hold a percentage.
+
+**Two doors are still open.** See item **30** — the cash-flow side is unguarded — and
+item **23b**, the tax clamp twin in `analysis/fcff.py`.
 
 ## 21. An unrecognised `direction` silently reverses the adjustment · **CLOSED at `38b903c`**
 

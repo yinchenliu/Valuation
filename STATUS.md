@@ -4,17 +4,17 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `742f447`, 2026-09-21**, on branch `build/phase-1-2`. Nine work units
-have been accepted: `P1-suite`, `P2-hygiene`, `P1b-arith`, `P1c-flow`, `P4-normalizer`,
-`P4b-normalizer-verify`, `P2b-provider`, `P5-web-routes` and `P5b-route-tests`. Every
-one was reviewed or verified, and none was accepted on its own report. The journal is
+**Measured at `ff632df`, 2026-09-21**, on branch `build/phase-1-2`. **Ten work units
+accepted, and not one on its own report.** Every programmer run went to a reviewer that
+re-ran the measurements rather than reading them; three times a reviewer overturned a
+claim, twice against a programmer and once against the orchestrator. The journal is
 [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
 
 ---
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `742f447` |
+| Gate | Command | Result at `ff632df` |
 |---|---|---|
 | Tests | `.venv/Scripts/python.exe -m pytest -q` | **121 tests. 120 pass, 1 red on purpose**, 3.9 s |
 | **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **120 passed**, 0 failed |
@@ -123,13 +123,13 @@ still open. `ls tests/unit/*_rule3_red.py` returns exactly that one line.
 ### Coverage, measured at `742f447`
 
 ```
-analysis/capm.py         30 statements    0 missed   100%
-analysis/dcf.py          24               0          100%
+analysis/capm.py         40 statements    3 missed    92%
+analysis/dcf.py          29               2           93%
 analysis/fcff.py         19               0          100%
 analysis/normalizer.py   36               0          100%
 analysis/projector.py    68               0          100%
-analysis/wacc.py         25               0          100%
-analysis/ TOTAL         202               0          100%
+analysis/wacc.py         34               1           97%
+analysis/ TOTAL         226               6           97%
 
 api/routes_upload.py     33               0          100%
 api/routes_valuation.py  93               8           91%
@@ -142,9 +142,13 @@ uncovered arcs are each a fallback or a recorded backlog item the tester **refus
 pin**: the cache-hit branch (item 5), the yfinance share-count fallback (rule 5), and
 the legacy `file_path` branch (item 26). Pinning one would lock the defect.
 
-**202 of 202 statements in `analysis/`, against 24 at `d1854fb`.** The two lines that
-were uncovered at `796de9a` were the guess at the old `normalizer.py:50-51`, which
-`P4-normalizer` deleted.
+**220 of 226 statements in `analysis/`, against 24 at `d1854fb`.** It reached 202 of
+202 at `742f447`; `P4c-nan-stops` then added six `raise` statements that no existing
+test reaches, because no existing test supplies the broken input they catch.
+
+**That gap is deliberate and was not worked around.** The unit was told in writing not
+to add an unreachable guard or restructure code to hold a percentage, and the reviewer
+reached all six lines by execution to confirm none is dead. A tester closes them next.
 
 **Two caveats a reader must not skip.**
 
@@ -311,7 +315,7 @@ the headline. Re-ranked at `622262b`.
 | 7 | `cli.py` and `api/` duplicate the pipeline | a fix must be made twice or it is made once |
 | 5 | `api/routes_valuation.py:31` — module-global extraction cache, `pop`ped on read | shared across users; a page refresh re-runs the paid extraction |
 | 11 | **14** type errors, down from 33 | one is a live crash path. Every removal so far was a real defect, never an annotation |
-| 14 | `analysis/dcf.py:73` — empty `projected_fcffs` raises a bare `IndexError` | a stack trace where a named input error belongs |
+| 23b | `analysis/fcff.py:44` — the NaN tax clamp twin | `max(0.0, min(nan, 0.50))` is **`0.0`**, so an unknown tax rate becomes a 0% rate and a full tax shield, which **raises** the valuation. `analysis/wacc.py` held the same clamp and was fixed at `ff632df` |
 | 16 | Nine scripts carry a `sys.path.insert` to a path that does not exist here | none runs as `python tests/<name>.py`. Use `-m tests.<name>` |
 | 26 | `api/routes_valuation.py:152` branches on a character every path contains | **latent.** Live only on the legacy no-year branch. My first write-up of this was wrong and was corrected by review |
 | 17 | `analysis/capm.py:14` imports from `ingestion/` | a layering break |
@@ -331,8 +335,10 @@ the headline. Re-ranked at `622262b`.
 | 21 | An unrecognised `direction` silently reversed the adjustment | `38b903c` |
 | 24 | A red test that went green stayed outside the gate | `81816be` |
 | 27 | `GET /` and `GET /assumptions` returned 500 | `622262b` |
+| 20 | A NaN beta was returned, not raised | `ff632df` |
+| 14 | Empty `projected_fcffs` raised a bare `IndexError` | `ff632df` |
 
-**Eight closed, twenty-one open.** Items 19 to 28 did not exist when this build started —
+**Ten closed, twenty-one open.** Items 19 to 28 did not exist when this build started —
 **every one of them was found by running the code**, not by reading it.
 
 ---
