@@ -1,7 +1,7 @@
 # Refactor backlog
 
-Every known defect, with its evidence and what it costs. **Re-measured at `6cf34d3`,
-2026-09-22.** Seventeen are closed: 3, 4, 9, 13, 14, 19, 20, 21, 22, 23b, 24, 27, 30, 33, 34, 35, and 12 mostly.
+Every known defect, with its evidence and what it costs. **Re-measured at `7354698`,
+2026-09-22.** Seventeen are closed: 3, 4, 9, 13, 14, 19, 20, 21, 22, 23b, 24, 27, 30, 33, 34, 35, and 12 mostly. **Item 36 is half closed** — see it.
 
 **Items 14 to 38 did not exist when this build started, and every one of 19 to 38 was
 found by running the code rather than by reading it.** Items 33 to 38 came from the
@@ -33,7 +33,7 @@ rather than lying.
 
 ## Ranked by cost
 
-| # | Item | Silent? | Area | State at `6cf34d3` |
+| # | Item | Silent? | Area | State at `7354698` |
 |---|---|---|---|---|
 | 1 | **116** silent zero-default sites | **silent** | `models/` 60, `ingestion/` 49, `analysis/` 5, `api/` 2 | open |
 | 2 | Missing balance sheet gives zero net debt | **silent** | `analysis/dcf.py` | open, **proven by measurement** |
@@ -70,7 +70,9 @@ rather than lying.
 | 33 | The CLI cache is keyed on the **ticker alone**, so the PDFs you pass are silently ignored | **silent** | `cli.py` | **closed at `6cf34d3`** |
 | 34 | The risk-free rate is a hardcoded `0.04` presented as measured | **silent** | `config.py`, `analysis/capm.py`, `api/` | **closed at `6cf34d3`** |
 | 35 | A beta from a regression explaining 10% of variance is reported without qualification | **silent** | `analysis/capm.py` | **closed at `6cf34d3`** |
-| 36 | **The same PDF extracted twice gave share prices 16% apart**, and `confidence` is read nowhere | **silent** | `ingestion/`, `analysis/normalizer.py` | **open. The most consequential item on this list** |
+| 36 | **The same PDF extracted twice gave share prices 16% apart** | **silent** | `ingestion/`, `analysis/` | **half closed at `7354698`.** `low` items are now withheld; the variance itself is unmeasured |
+| 39 | `models/financial_statements.py:28` defaults `confidence` to `"high"` | **silent** | `models/` | **new.** The last place absence becomes the strongest reading |
+| 40 | Five dev scripts now produce a price neither entry point would | — | `tests/` | **new, and created by `7354698`** |
 | 37 | `analysis/wacc.py`'s new stop states an inference as a fact | — | `analysis/wacc.py` | **new.** Message only; 23 of 23 wacc tests stay green with the rewrite |
 | 38 | `analysis/wacc.py` fabricates a 100% equity weighting when market cap and debt are both zero | **silent** | `analysis/wacc.py` | **new.** Item 22's weights half. Verified unblocked |
 
@@ -602,6 +604,33 @@ which requires the call to return. **No test pins the fabricated weights themsel
 zero debt balance is gone, so a guard added here no longer collides with it. Verified:
 `1 failed, 145 passed` with the guard inserted. **Safe to dispatch.**
 
+## 39. `confidence` still defaults to the strongest reading in `models/` · **silent**
+
+**Fact.** `models/financial_statements.py:28` — `confidence: str = "high"`.
+
+`7354698` removed the same optimistic default from the parser, which now stops on a
+missing tag. **The reviewer established that no path a user can reach constructs a
+`NonRecurringItem` without a confidence**, so the user's decision is fully in force
+today. This is the last place where absence becomes the strongest reading, and it is a
+type-level gap rather than a live one.
+
+**Fix.** Make the field required, or default it to `low`. Needs a `models/` unit with a
+tester, because `models/valuation.py` and `models/financial_statements.py` between them
+carry more than 40 assertions.
+
+## 40. Five dev scripts now produce a price neither entry point would · —
+
+**Fact.** Five scripts under `tests/` call `normalize_financials` with the
+**unpartitioned** item list. **This misrepresentation is new as of `7354698`**: they
+apply `low`-confidence items that both the CLI and the web app now withhold, and they
+print no excluded block.
+
+**What it costs.** A script that prints a different share price from the product, with
+no indication why. They are dev scripts and not evidence of correctness — but a reader
+comparing one against the CLI would find a discrepancy with no explanation.
+
+**Fix.** Call the partition first, as both entry points do. `tests/` is a tester's file.
+
 ## 36. The same filing extracted twice gave share prices 16% apart · **silent**
 
 **This is the most consequential item on this list.** Every other defect here is a wrong
@@ -649,16 +678,38 @@ not print the tag at all.
 tell which to believe. Neither run is detectably wrong; both are internally consistent
 and both cite their sources.
 
-**Fix — and the second half is a product decision, not an engineering one.**
+### Half closed at `7354698`
 
-- Make `confidence` reach `analysis/`. At minimum the absent-value default must stop
-  being `"high"`.
-- Then decide what a low-confidence adjustment *does*: apply it and label it, exclude it
-  and list it separately so the reader can put it back, or stop and ask. **Escalate that
-  choice; it is not an implementer's to make.**
-- Separately, decide whether extraction should be run more than once and the spread
-  reported. That would replace "16% on one pair" with a measured range, and it is the
-  only way to know whether this pair was typical.
+**The user decided, on 2026-09-22:** *"For low confidence, just leave a note and
+document, but don't need to adjust the F/S."*
+
+`analysis/normalizer.py` now partitions before normalising. A `low` item is withheld and
+listed separately with its cited source, in both outputs, under wording saying it was
+not applied. `confidence` reaches `analysis/`, and an absent tag stops the parse instead
+of becoming `"high"`.
+
+**What it cost on the user's own filing: `$0.00`.** The FY2024 extraction tagged 13
+items `high` and 2 `medium` and **none `low`**, so nothing was withheld.
+
+### Still open, and it is the harder half
+
+**Nobody has measured the variance.** One pair of runs differing by 16% is an
+observation, not a range. Worse, the single occurrence that prompted all this **cannot
+be sized**: the two runs used different filings, the graft double-counted a charge
+already present, and **all three cache files hold zero `low`-confidence items**
+(`{high 40, medium 3}`, `{high 22, medium 1}`, `{high 13, medium 2}`).
+
+So the user's rule is sound in principle and **untested in practice**. Establishing
+whether it helps needs the same filing extracted several times and the spread reported —
+roughly $6 in tokens, and the only way to turn one observation into a range.
+
+**And the schema half is untouched.** Total debt moved between the two runs, `10,443`
+against `11,116`, and **there is no confidence field anywhere outside
+`NonRecurringItem`** — the model had no way to express doubt about it. Closing that means
+asking the model for something new, which `AGENTS.md` makes an escalation to the user.
+
+**Do not "fix" this by pinning the model's sampling.** A reproducible wrong answer is
+not better than a variable one; it is the same defect with the evidence hidden.
 
 **Do not "fix" this by pinning the model's sampling.** A reproducible wrong answer is
 not better than a variable one; it is the same defect with the evidence hidden.

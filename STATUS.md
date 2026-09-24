@@ -4,7 +4,7 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `3028627`, 2026-09-22**, on branch `build/phase-1-2`. **Fourteen work units
+**Measured at `7354698`, 2026-09-22**, on branch `build/phase-1-2`. **Fifteen work units
 accepted, and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; three times a reviewer overturned a
 claim, twice against a programmer and once against the orchestrator. The journal is
@@ -14,7 +14,7 @@ claim, twice against a programmer and once against the orchestrator. The journal
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `3028627` |
+| Gate | Command | Result at `7354698` |
 |---|---|---|
 | Tests | `.venv/Scripts/python.exe -m pytest -q` | **146 tests. 145 pass, 1 red on purpose**, 11 s |
 | **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **145 passed**, 0 failed |
@@ -55,6 +55,14 @@ a single file by path; that form went stale the moment a second red test landed.
 `38b903c` two tests went green and stayed inside it, so the two tests proving a fix
 worked were the two the gate did not run. That was backlog item 24, closed at
 `81816be`, and the rule is now in `.claude/agents/tester.md` so it is not rediscovered.
+
+**Use the type gate command exactly as written above.** Until `7354698` the three agent
+contracts printed a shorter form, `mypy models analysis ingestion api`, which reports
+**18 errors in 6 files** — the four extra being only missing third-party stubs that
+`--ignore-missing-imports` exists to suppress. Two agents measuring "the types gate"
+both got a defensible number and disagreed. `docs/8-build/environment.md` was **not** at
+fault: it is headed "Result at `bc19431`" and states that it owns the commands, not the
+counts.
 
 **Set `COVERAGE_FILE` before measuring coverage** if anything else may be running:
 two processes in one tree collide on the root `.coverage`, and a `--cov-branch` run
@@ -302,7 +310,9 @@ the headline. Re-ranked at `622262b`.
 
 | # | Item | Cost |
 |---|---|---|
-| 36 | **The same filing extracted twice gave share prices 16% apart** — $343.15 against $296.01 | **the most consequential item on this list.** Every other defect here is a wrong answer traceable to a line; this is a *different* answer to the same question. `confidence` is read nowhere, and its absent-value default is `"high"` |
+| 36 | **The same filing extracted twice gave share prices 16% apart** — $343.15 against $296.01 | **half closed at `7354698`.** On the user's decision, `low`-confidence items are now withheld and listed. **The variance itself is still unmeasured** — one pair is an observation, not a range, and the single occurrence that prompted it cannot be sized: three cached extractions hold **zero** `low` items between them |
+| 39 | `models/financial_statements.py:28` defaults `confidence` to `"high"` | the last place absence becomes the strongest reading. **No live path reaches it**, so the decision is in force today; it is a type-level gap |
+| 40 | Five dev scripts produce a price neither entry point would | **created by `7354698`.** They apply `low` items both entry points withhold, and print no excluded block |
 | 38 | `analysis/wacc.py` fabricates a 100% equity weighting when market cap and debt are both zero | a supplied `--cost-of-debt` with a missing balance sheet also gets a zero debt weight, so the rate the user typed vanishes. **Verified unblocked**; fixing it costs exactly one test |
 | 32 | `models/valuation.py:138` renders a share price of `0.0` on zero diluted shares | same shape as item 2, on the **denominator** of the headline figure |
 | 37 | `analysis/wacc.py`'s new stop states an inference as a fact | the stop is right; the message asserts the extraction failed when a real deleveraging produces the same pattern. **Message only** |
