@@ -73,6 +73,79 @@ assert set(_FIELD_EARNINGS_SIGN).issuperset(
 
 _LEGAL_DIRECTIONS: tuple[str, str] = ("add_back", "remove")
 
+# What each confidence tag the extractor may return does to the statements.
+#
+# The user's decision, 2026-09-22: "For low confidence, just leave a note and
+# document, but don't need to adjust the F/S." So a `low` item is listed, with
+# its description and its cited source, and **not** applied. `medium` and `high`
+# are applied, exactly as before.
+#
+# Two tuples of strings, not a mapping to behaviour: rule 2 permits a table that
+# maps a key to a value and forbids one that maps a key to a function. Nothing
+# here is called; partition_by_confidence does the deciding in literal Python.
+#
+# There is no threshold constant and no setting. A knob here would let the
+# decision be reversed by a value nobody reads, which is the shape of the defect
+# this closes.
+_CONFIDENCE_APPLIED: tuple[str, str] = ("high", "medium")
+_CONFIDENCE_EXCLUDED: tuple[str] = ("low",)
+
+
+def partition_by_confidence(
+    non_recurring: list[NonRecurringItem],
+) -> tuple[list[NonRecurringItem], list[NonRecurringItem]]:
+    """Split non-recurring items into (applied, excluded) on their confidence.
+
+    Returns two lists, in that order, each in the order the items arrived:
+
+      applied  — `high` and `medium`. These go to normalize_financials and move
+                 the income statement.
+      excluded — `low`. These move nothing. The caller must print them, with the
+                 source each cited, so a reader can put one back by hand.
+
+    **The decision is here and not in `ingestion/`.** Rule 1: the model
+    identifies a candidate item and cites the note it came from; `analysis/`
+    decides what that does to a figure. Until this function existed `analysis/`
+    did not decide — it applied whatever it was handed, so the 1,140M add-back
+    the model itself tagged `low` in the **FY2025** L3Harris 10-K extraction moved
+    the valuation exactly as far as a figure read cleanly off a page (backlog item
+    36, which records that filing and that run). No cache entry on disk now holds
+    a `low` item, so this docstring cites the recorded run, not a measurement.
+
+    Raises:
+        ValueError: on a confidence this engine does not recognise, naming the
+            value and the year. Rule 3. An absent tag must never be read as
+            `high`: defaulting an unknown to the *strongest* reading is the same
+            guess as defaulting a missing number to zero, in the direction that
+            silently maximises the adjustment.
+    """
+    applied: list[NonRecurringItem] = []
+    excluded: list[NonRecurringItem] = []
+
+    for item in non_recurring:
+        # str() rather than a bare .strip(): a JSON null or a number that reached
+        # the field arrives here as None or float, and must raise the named
+        # ValueError below rather than an AttributeError from inside this loop.
+        # Case and surrounding space are folded, as _resolve_field folds them for
+        # line_item: "LOW" is not an unknown label, it is `low` shouted.
+        key = str(item.confidence).strip().lower()
+        if key in _CONFIDENCE_APPLIED:
+            applied.append(item)
+        elif key in _CONFIDENCE_EXCLUDED:
+            excluded.append(item)
+        else:
+            raise ValueError(
+                f"Unrecognised confidence {item.confidence!r} on the {item.year} "
+                f"non-recurring item '{item.description}' "
+                f"({item.amount:,.0f} on {item.line_item}): confidence must be "
+                f"one of: "
+                f"{', '.join(_CONFIDENCE_APPLIED + _CONFIDENCE_EXCLUDED)}. "
+                f"It is not assumed to be 'high' — an item this engine cannot "
+                f"rank is an input it does not have."
+            )
+
+    return applied, excluded
+
 
 def _resolve_field(line_item: str, year: int) -> str:
     """Map an NRI line_item value to the matching IncomeStatement field name.

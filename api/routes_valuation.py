@@ -9,7 +9,7 @@ from fastapi.templating import Jinja2Templates
 import config
 from analysis.capm import run_capm
 from analysis.dcf import run_dcf
-from analysis.normalizer import normalize_financials
+from analysis.normalizer import normalize_financials, partition_by_confidence
 from analysis.projector import derive_assumptions, project_fcffs
 from analysis.wacc import calculate_wacc
 from config import BASE_DIR
@@ -20,7 +20,7 @@ from ingestion.claude_extractor import (
     resolve_provider,
 )
 from ingestion.price_fetcher import fetch_price_data
-from models.financial_statements import FinancialStatements
+from models.financial_statements import FinancialStatements, NonRecurringItem
 from models.valuation import ProjectionAssumptions
 
 router = APIRouter()
@@ -28,7 +28,16 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 # In-memory cache: extraction results from assumptions_page are reused in run_valuation
 # so the LLM is only called once per upload.
-_extraction_cache: dict[str, FinancialStatements] = {}
+#
+# It carries the EXCLUDED non-recurring items alongside the normalised
+# statements, because those items are a fact about the share price this cache
+# entry will produce. Caching the statements alone is what made them
+# unreachable from the result page: the page would have had to say nothing was
+# excluded, or say nothing at all, on exactly the path a real user takes.
+# (The module-global cache itself is backlog item 5 and is not this unit's.)
+_extraction_cache: dict[
+    str, tuple[FinancialStatements, list[NonRecurringItem]]
+] = {}
 
 
 def _parse_files_param(files_str: str) -> list[tuple[int, str]]:
@@ -98,8 +107,12 @@ async def assumptions_page(
     if filings:
         try:
             financials, non_recurring = _extract_from_files(filings, ticker, company_name)
-            financials = normalize_financials(financials, non_recurring)
-            _extraction_cache[cache_key] = financials
+            # Partition first, normalise with the applied half only. The
+            # decision belongs to analysis/ (rule 1) and normalize_financials
+            # keeps the signature its tests were written against.
+            applied, excluded = partition_by_confidence(non_recurring)
+            financials = normalize_financials(financials, applied)
+            _extraction_cache[cache_key] = (financials, excluded)
             defaults = derive_assumptions(financials)
             # Format for display
             defaults["revenue_growth_display"] = [f"{g * 100:.1f}" for g in defaults["revenue_growth_rates"]]
@@ -179,12 +192,17 @@ async def run_valuation(
     try:
         # 1. Use cached normalized financials from assumptions_page (avoids re-calling LLM)
         if files in _extraction_cache:
-            financials = _extraction_cache.pop(files)
+            financials, excluded_items = _extraction_cache.pop(files)
         else:
             # Fallback: extract + normalize if cache miss
             filings = _parse_files_param(files) if ":" in files else [(0, files)]
             raw_fin, non_recurring = _extract_from_files(filings, ticker, company_name)
-            financials = normalize_financials(raw_fin, non_recurring)
+            # Same order as assumptions_page: partition, then normalise with the
+            # applied half. Both branches must produce the same two values, or
+            # the page would report a different exclusion than the arithmetic
+            # used depending on which one ran.
+            applied, excluded_items = partition_by_confidence(non_recurring)
+            financials = normalize_financials(raw_fin, applied)
 
         # 2. Build assumptions (from post-adjustment financials)
         rev_growth_list = []
@@ -290,6 +308,10 @@ async def run_valuation(
             "assumptions": assumptions,
             "current_price": price_data.current_price,
             "extraction": extraction,
+            # The items that were NOT applied. The template says so in as many
+            # words and prints the source each cited, so a reader can reverse
+            # the decision by hand.
+            "excluded_non_recurring": excluded_items,
         })
 
     except Exception as e:
@@ -304,4 +326,8 @@ async def run_valuation(
             "assumptions": None,
             "current_price": 0,
             "extraction": None,
+            # Empty rather than absent: on the error path there is no valuation
+            # to exclude anything from, and an undefined name in the context is
+            # how a template quietly renders nothing on the success path too.
+            "excluded_non_recurring": [],
         })

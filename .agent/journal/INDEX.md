@@ -38,6 +38,10 @@ edits another's.
 | 2026-09-22 | P6-honest-output | programmer, r2 | `ok` — F1, F2, F6 answered; escalated a test collision rather than narrowing a check | [entry](2026-09-22T1600-programmer-p6-honest-output-r2.md) |
 | 2026-09-22 | P6b-wacc-fixture | tester | **`pass`** — **rejected the binary the assignment gave it, and was right** | [entry](2026-09-22T1700-tester-p6b-wacc-fixture.md) |
 | 2026-09-22 | P6 + P6b | code_reviewer | **`approved`** — measured all three open questions on a patched scratch tree | [entry](2026-09-22T1800-code_reviewer-p6-p6b.md) |
+| 2026-09-22 | P7-low-confidence | programmer, r1 | `ok` — implements the user's 2026-09-22 decision | [entry](2026-09-22T1900-programmer-p7-low-confidence.md) |
+| 2026-09-22 | P7-low-confidence | code_reviewer, r1 | `changes_requested` — 2 major: a `.get` the rewrite carried in, and a counterfactual wrong twice | [entry](2026-09-22T2000-code_reviewer-p7-low-confidence.md) |
+| 2026-09-22 | P7-low-confidence | programmer, r2 | `ok` — **withdrew its own figure** and showed it cannot be recomputed | [entry](2026-09-22T2100-programmer-p7-low-confidence-r2.md) |
+| 2026-09-22 | P7-low-confidence | code_reviewer, r2 | **`approved`** — **withdrew its own round-1 repair suggestion** | [entry](2026-09-22T2200-code_reviewer-p7-r2.md) |
 
 `P2b-provider` is the first unit to take two review rounds. Round 1's `changes_requested`
 was caused by **the assignment**, not the code: its file scope excluded the two lines
@@ -53,7 +57,7 @@ deliverable.** Three units reported `fail` and all three were approved by review
 reported `pass`. Read the verdict line at the top of an entry before reading the word
 alone.
 
-**Fourteen units, and not one was accepted on its own report.** Every programmer run went to
+**Fifteen units, and not one was accepted on its own report.** Every programmer run went to
 a reviewer that re-ran the measurements rather than reading them. Three times a reviewer
 overturned a claim: it disproved a programmer's reason for stopping, it disproved a
 different programmer's finding, and it confirmed two errors in the orchestrator's own

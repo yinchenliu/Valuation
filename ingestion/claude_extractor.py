@@ -689,21 +689,77 @@ def _parse_financials_response(
 
 
 def _parse_nri_response(json_str: str) -> list[NonRecurringItem]:
-    """Parse Pass 2 JSON → NonRecurringItem list."""
+    """Parse Pass 2 JSON → NonRecurringItem list.
+
+    Three absences are distinguished from three empty-but-present values, because
+    in each pair the two mean opposite things and the run cannot recover the
+    difference later (rule 3):
+
+    - `non_recurring_items` **absent** means the reply was never a Pass 2 answer,
+      and nothing was read. `"non_recurring_items": []` means the model read the
+      filing and found none — the prompt asks for exactly that (`:297`). The CLI
+      and the result page both state, in words, what was withheld; on an absent
+      key they would state "nothing was withheld" about a reply nobody parsed.
+    - `confidence` is read with `[]`, not with a fallback to "high". The prompt
+      asks for it on every item (`:255`), and `analysis/normalizer.py` now decides
+      from it whether the item touches the statements at all. Defaulting an absent
+      tag to the *strongest* value would hand that engine a certainty the model
+      never expressed, and the adjustment would land at full weight with nothing
+      saying so. Rule 3, in the optimistic direction.
+    - `source` is the citation a reader follows to reverse an exclusion by hand
+      (rule 4), so "the model cited no note" and "the key never arrived" must not
+      collapse into the same empty string. An explicit `""` is accepted and is
+      rendered `(none cited)`; an absent key stops.
+
+    A KeyError here would name the field but not the item, so the loop raises a
+    ValueError that names the year and the description as well — the two things a
+    reader needs to find the item in the filing. The `.get` calls inside the
+    messages below are deliberate: they are diagnostics printed about an item that
+    is already known to be malformed, and a KeyError raised while building the
+    message would hide the field that is actually missing.
+    """
     data = json.loads(json_str)
-    return [
-        NonRecurringItem(
-            year=int(item["year"]),
-            description=item["description"],
-            amount=float(item["amount"]),
-            line_item=item["line_item"],
-            direction=item["direction"],
-            category=item["category"],
-            confidence=item.get("confidence", "high"),
-            source=item.get("source", ""),
+    if "non_recurring_items" not in data:
+        raise ValueError(
+            "Pass 2 returned no 'non_recurring_items' field. An empty list is a "
+            "valid answer and means the model found none; an absent field means "
+            "the reply was not a Pass 2 answer and nothing was read. These are "
+            f"not the same, so the run stops here. Keys returned: "
+            f"{sorted(data)!r}"
         )
-        for item in data.get("non_recurring_items", [])
-    ]
+    items: list[NonRecurringItem] = []
+    for item in data["non_recurring_items"]:
+        if "confidence" not in item:
+            raise ValueError(
+                f"Pass 2 returned a non-recurring item with no 'confidence' "
+                f"field: year {item.get('year')}, "
+                f"{item.get('description')!r}. The prompt requires one of "
+                f"high | medium | low on every item, and it is not assumed to "
+                f"be 'high': analysis/normalizer.py decides from this tag "
+                f"whether the item is applied to the financial statements."
+            )
+        if "source" not in item:
+            raise ValueError(
+                f"Pass 2 returned a non-recurring item with no 'source' field: "
+                f"year {item.get('year')}, {item.get('description')!r}. The "
+                f"prompt requires the filing reference on every item, and an "
+                f"absent one is not read as an empty citation: the source is "
+                f"what lets a reader find the note and apply a withheld item by "
+                f"hand."
+            )
+        items.append(
+            NonRecurringItem(
+                year=int(item["year"]),
+                description=item["description"],
+                amount=float(item["amount"]),
+                line_item=item["line_item"],
+                direction=item["direction"],
+                category=item["category"],
+                confidence=item["confidence"],
+                source=item["source"],
+            )
+        )
+    return items
 
 
 # ---------------------------------------------------------------------------

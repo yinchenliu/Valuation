@@ -188,8 +188,14 @@ This is Windows. The interpreter lives under `Scripts`, not `bin`.
 ```
 .venv/Scripts/python.exe -m pytest -q
 .venv/Scripts/python.exe -m ruff check .
-.venv/Scripts/python.exe -m mypy models analysis ingestion api
+.venv/Scripts/python.exe -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports
 ```
+
+**Use that command exactly.** A shorter form was printed here until 2026-09-22 and it
+reports **18 errors in 6 files** where the real gate reports **14 in 4** — the four extra
+are only missing third-party stubs, which `--ignore-missing-imports` is there to
+suppress. Two agents measuring "the types gate" with different commands both got a
+defensible number and disagreed. `STATUS.md` section 1 carries the live figure.
 `docs/8-build/environment.md` owns the gates. Read it before you assume one passes.
 
 **4. `STATUS.md` and `.agent/journal/INDEX.md` are sealed twice.**

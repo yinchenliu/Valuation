@@ -47,7 +47,7 @@ import config
 from analysis.capm import run_capm
 from analysis.dcf import run_dcf
 from analysis.fcff import calculate_fcff_historical
-from analysis.normalizer import normalize_financials
+from analysis.normalizer import normalize_financials, partition_by_confidence
 from analysis.projector import derive_assumptions, project_fcffs
 from analysis.wacc import calculate_wacc
 from ingestion.claude_extractor import extract_financials, extract_multi_year
@@ -608,14 +608,22 @@ def print_non_recurring_items(
     items: list[NonRecurringItem],
     provider: str,
 ) -> None:
-    _section(f"NON-RECURRING ITEMS (identified by {provider.upper()})")
+    """Print the items that WILL be applied to the statements.
+
+    `items` is the applied half of `partition_by_confidence`, never the raw Pass 2
+    list. The heading says so, because a list printed under "non-recurring items"
+    that is not the list the arithmetic used is the defect this unit closes
+    wearing a different face. The excluded half is printed by
+    print_excluded_non_recurring_items, below.
+    """
+    _section(f"NON-RECURRING ITEMS APPLIED (identified by {provider.upper()})")
     if not items:
-        print("  None found.")
+        print("  None applied.")
         return
 
     total_add = sum(i.amount for i in items if i.direction == "add_back")
     total_rem = sum(i.amount for i in items if i.direction == "remove")
-    print(f"  Found {len(items)} items  |  "
+    print(f"  Applying {len(items)} items  |  "
           f"Total add-backs: {total_add:,.0f}M  |  Total removals: {total_rem:,.0f}M\n")
 
     for item in items:
@@ -625,6 +633,43 @@ def print_non_recurring_items(
         print(f"         {item.description}")
         if item.source:
             print(f"         Source: {item.source}")
+        print()
+
+
+def print_excluded_non_recurring_items(items: list[NonRecurringItem]) -> None:
+    """Print the items that were NOT applied, with everything needed to reverse it.
+
+    The user's decision, 2026-09-22: "For low confidence, just leave a note and
+    document, but don't need to adjust the F/S." Documenting it means the year,
+    the amount, the line item, the direction, the description and the source the
+    model cited — a reader who disagrees can apply any one of these by hand from
+    this block alone.
+
+    The wording says "NOT applied" in as many words. A list printed without that
+    sentence reads as a summary of what was done, which is the opposite of what
+    it is.
+    """
+    _section("NON-RECURRING ITEMS EXCLUDED — NOT applied to the F/S")
+    if not items:
+        print("  None. Every item the model identified was applied.")
+        return
+
+    total_add = sum(i.amount for i in items if i.direction == "add_back")
+    total_rem = sum(i.amount for i in items if i.direction == "remove")
+    print(f"  {len(items)} item(s) the model tagged LOW confidence were NOT applied")
+    print("  to the financial statements, so the valuation below does not "
+          "include them.")
+    print(f"  Add-backs withheld: {total_add:,.0f}M  |  "
+          f"Removals withheld: {total_rem:,.0f}M")
+    print("  To apply one, re-read the note it cites and treat it by hand.\n")
+
+    for item in items:
+        sign = "+" if item.direction == "add_back" else "-"
+        print(f"  [{item.year}] {sign}{item.amount:,.0f}M  {item.category.upper()}  "
+              f"({item.confidence} confidence — EXCLUDED)  "
+              f"line_item={item.line_item}  direction={item.direction}")
+        print(f"         {item.description}")
+        print(f"         Source: {item.source if item.source else '(none cited)'}")
         print()
 
 
@@ -917,11 +962,16 @@ def main() -> None:
 
     # ===== STAGE 3: NON-RECURRING ITEMS (Pass 2 output) =====================
     _step(3, "Displaying non-recurring items")
-    print_non_recurring_items(adjustments, args.provider)
+    # The partition happens BEFORE normalisation and outside it: rule 1 puts the
+    # decision in analysis/, and normalize_financials keeps the signature its
+    # tests were written against. Only `applied` reaches the arithmetic.
+    applied, excluded = partition_by_confidence(adjustments)
+    print_non_recurring_items(applied, args.provider)
+    print_excluded_non_recurring_items(excluded)
 
     # ===== STAGE 4: NORMALIZE (GAAP -> Non-GAAP) ============================
     _step(4, "Normalizing financials (GAAP -> Non-GAAP)")
-    adjusted = normalize_financials(financials, adjustments)
+    adjusted = normalize_financials(financials, applied)
     print_normalization(financials, adjusted)
 
     # ===== STAGE 5: HISTORICAL FCFF =========================================
@@ -996,7 +1046,17 @@ def main() -> None:
     print(f"  Company:            {args.company_name}")
     print(f"  Current Price:      ${price_data.current_price:>11.2f}")
     print(f"  Implied Price:      ${dcf_result.implied_share_price:>11.2f}")
-    
+    # The headline figure says what it excludes, beside itself. A share price
+    # that silently differs from the one a reader would compute from the printed
+    # adjustments is the defect this exclusion exists to fix, wearing a
+    # different face.
+    if excluded:
+        withheld = sum(i.adjusted_impact for i in excluded)
+        print(f"  This price EXCLUDES {len(excluded)} low-confidence "
+              f"non-recurring item(s)")
+        print(f"  worth {withheld:+,.0f}M of earnings adjustment in total "
+              f"(listed in full above).")
+
     direction = "UPSIDE" if dcf_result.upside_downside >= 0 else "DOWNSIDE"
     print(f"  Valuation:          {direction} of {dcf_result.upside_downside:>+10.1f}%")
     print(f"  {'=' * 42}")
@@ -1019,6 +1079,26 @@ def main() -> None:
     print("\n  Cost of debt (pre-tax)")
     print(_wrap_label(f"{wacc_result.cost_of_debt:.2%} — "
                       f"{wacc_result.cost_of_debt_source}", indent="    "))
+    # What was left out is as much a fact about this price as what was assumed,
+    # so it is repeated here for the reader who scrolled past stage 3 to the
+    # answer. Same reason the three labels above are repeated.
+    print("\n  Non-recurring items excluded")
+    if excluded:
+        print(_wrap_label(
+            f"{len(excluded)} item(s) the model tagged LOW confidence were NOT "
+            f"applied to the financial statements, on the user's decision of "
+            f"2026-09-22. Each is listed above with its year, amount, line "
+            f"item, direction, description and cited source.", indent="    "))
+        for item in excluded:
+            print(_wrap_label(
+                f"[{item.year}] {item.adjusted_impact:+,.0f}M on "
+                f"{item.line_item} — {item.description} "
+                f"(source: {item.source if item.source else 'none cited'})",
+                indent="    "))
+    else:
+        print(_wrap_label(
+            "none — every item the model identified carried medium or high "
+            "confidence and was applied.", indent="    "))
     print(f"\n  {'=' * 42}")
     # Done
     elapsed = time.time() - _t0

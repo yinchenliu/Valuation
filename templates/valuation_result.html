@@ -23,6 +23,17 @@
         <div class="summary-card {% if dcf.upside_downside > 0 %}positive{% else %}negative{% endif %}">
             <h3>Implied Share Price</h3>
             <div class="big-number">${{ "%.2f"|format(dcf.implied_share_price) }}</div>
+            {# The headline figure says what it leaves out, beside itself. A
+               share price that silently differs from the one a reader would
+               compute from the printed adjustments is the defect the exclusion
+               exists to fix, wearing a different face. #}
+            {% if excluded_non_recurring %}
+            <div style="{{ PROV }}">
+                This price <strong>EXCLUDES</strong> {{ excluded_non_recurring|length }}
+                low-confidence non-recurring item(s), listed below. They were
+                <strong>not</strong> applied to the financial statements.
+            </div>
+            {% endif %}
         </div>
         <div class="summary-card">
             <h3>Current Price</h3>
@@ -124,6 +135,52 @@
             <tr><td>NWC (% of Revenue)</td><td>{{ "%.1f"|format(assumptions.nwc_pct_revenue * 100) }}%</td></tr>
         </table>
     </div>
+
+    <!-- The non-recurring items that were NOT applied. Everything a reader
+         needs to reverse the decision by hand is in this table: the year, the
+         amount, the line item, the direction, the description and the note the
+         model cited. The heading and the sentence under it say "excluded" and
+         "not applied" in as many words, because a list printed without that
+         sentence reads as a summary of what was done. -->
+    {% if excluded_non_recurring %}
+    <div class="section">
+        <h2>Non-recurring items EXCLUDED from this valuation</h2>
+        <p style="{{ PROV }}">
+            The {{ excluded_non_recurring|length }} item(s) below were
+            <strong>NOT applied</strong> to the financial statements, so every
+            figure on this page — including the implied share price — is
+            computed <strong>without</strong> them. The model that read the
+            filing tagged each one <code>low</code> confidence, and on the
+            user's decision of 2026-09-22 a low-confidence item is documented
+            rather than adjusted. To apply one, read the note it cites below
+            and treat it by hand.
+        </p>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Year</th>
+                    <th>Amount ($M)</th>
+                    <th>Line item</th>
+                    <th>Direction</th>
+                    <th>Description</th>
+                    <th>Source cited in the filing</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in excluded_non_recurring %}
+                <tr>
+                    <td>{{ item.year }}</td>
+                    <td>{{ "{:+,.0f}".format(item.adjusted_impact) }}</td>
+                    <td>{{ item.line_item }}</td>
+                    <td>{{ item.direction }}</td>
+                    <td>{{ item.description }}</td>
+                    <td>{% if item.source %}{{ item.source }}{% else %}(none cited){% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
 
     <!-- Rule 6, gathered. The same three labels appear beside their own figures
          in the CAPM & WACC table above; this block exists for the reader who
