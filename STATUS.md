@@ -4,7 +4,7 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `2ca620a`, 2026-09-21**, on branch `build/phase-1-2`. **Twelve work units
+**Measured at `3028627`, 2026-09-22**, on branch `build/phase-1-2`. **Fourteen work units
 accepted, and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; three times a reviewer overturned a
 claim, twice against a programmer and once against the orchestrator. The journal is
@@ -14,10 +14,10 @@ claim, twice against a programmer and once against the orchestrator. The journal
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `2ca620a` |
+| Gate | Command | Result at `3028627` |
 |---|---|---|
-| Tests | `.venv/Scripts/python.exe -m pytest -q` | **121 tests. 120 pass, 1 red on purpose**, 3.9 s |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **120 passed**, 0 failed |
+| Tests | `.venv/Scripts/python.exe -m pytest -q` | **146 tests. 145 pass, 1 red on purpose**, 11 s |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **145 passed**, 0 failed |
 | Lint | `.venv/Scripts/python.exe -m ruff check .` | **5 errors**, every one `BLE001` |
 | Types | `.venv/Scripts/python.exe -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **14 errors in 4 files**, 18 files checked |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
@@ -110,26 +110,26 @@ still open. `ls tests/unit/*_rule3_red.py` returns exactly that one line.
 
 **A failure other than that one is a real regression.**
 
-### `tests/`, measured at `742f447`
+### `tests/`, measured at `3028627`
 
-| | At `bc19431` | At `742f447` |
+| | At `bc19431` | At `3028627` |
 |---|---|---|
 | `.py` files | 10 | **20** |
-| `assert` statements | **0** | **442** |
+| `assert` statements | **0** | **483** |
 | scripts guarded by `if __name__ == "__main__":` | **0** | **9 of 9** |
-| tests collected | 0 | **121** |
+| tests collected | 0 | **146** |
 | paid API calls during collection | attempted | **none** |
 
-### Coverage, measured at `2ca620a`
+### Coverage, measured at `3028627`
 
 ```
-analysis/capm.py         40 statements    3 missed    92%
-analysis/dcf.py          35               3           91%
-analysis/fcff.py         24               1           96%
+analysis/capm.py         53 statements    0 missed   100%
+analysis/dcf.py          35               0          100%
+analysis/fcff.py         24               0          100%
 analysis/normalizer.py   36               0          100%
 analysis/projector.py    68               0          100%
-analysis/wacc.py         34               1           97%
-analysis/ TOTAL         237               8           97%
+analysis/wacc.py         39               0          100%
+analysis/ TOTAL         255               0          100%   (80 of 80 branches)
 
 api/routes_upload.py     33               0          100%
 api/routes_valuation.py  93               8           91%
@@ -142,13 +142,14 @@ uncovered arcs are each a fallback or a recorded backlog item the tester **refus
 pin**: the cache-hit branch (item 5), the yfinance share-count fallback (rule 5), and
 the legacy `file_path` branch (item 26). Pinning one would lock the defect.
 
-**220 of 226 statements in `analysis/`, against 24 at `d1854fb`.** It reached 202 of
-202 at `742f447`; `P4c-nan-stops` then added six `raise` statements that no existing
-test reaches, because no existing test supplies the broken input they catch.
+**`analysis/` is complete: 255 of 255 statements and 80 of 80 branches**, against 24
+statements at `d1854fb`. The stop paths added between `ff632df` and `6cf34d3` left eight
+`raise` statements uncovered for a while, because no existing test supplied the broken
+input they catch. `P6b-wacc-fixture` closed all eight.
 
-**That gap is deliberate and was not worked around.** The unit was told in writing not
-to add an unreachable guard or restructure code to hold a percentage, and the reviewer
-reached all six lines by execution to confirm none is dead. A tester closes them next.
+**The gap was never worked around.** Each unit was told in writing not to add an
+unreachable guard or restructure code to hold a percentage, and each reviewer reached
+the uncovered lines by execution to confirm none was dead.
 
 **Two caveats a reader must not skip.**
 
@@ -301,7 +302,10 @@ the headline. Re-ranked at `622262b`.
 
 | # | Item | Cost |
 |---|---|---|
+| 36 | **The same filing extracted twice gave share prices 16% apart** — $343.15 against $296.01 | **the most consequential item on this list.** Every other defect here is a wrong answer traceable to a line; this is a *different* answer to the same question. `confidence` is read nowhere, and its absent-value default is `"high"` |
+| 38 | `analysis/wacc.py` fabricates a 100% equity weighting when market cap and debt are both zero | a supplied `--cost-of-debt` with a missing balance sheet also gets a zero debt weight, so the rate the user typed vanishes. **Verified unblocked**; fixing it costs exactly one test |
 | 32 | `models/valuation.py:138` renders a share price of `0.0` on zero diluted shares | same shape as item 2, on the **denominator** of the headline figure |
+| 37 | `analysis/wacc.py`'s new stop states an inference as a fact | the stop is right; the message asserts the extraction failed when a real deleveraging produces the same pattern. **Message only** |
 | 31 | `discount_cash_flows`' `wacc` is unguarded on a **direct** call | **latent.** The `run_dcf` chain stops two lines later, so no current path reaches it |
 | 1 | **116** silent zero-default sites — `models/` 60, `ingestion/` 49, `analysis/` 5, `api/` 2 | **worse than its original description.** It does not produce zeros; it produces a signed, correctly-scaled figure that tracks the filing and reads as a measurement |
 | 2 | `analysis/dcf.py:80` — missing balance sheet gives **zero net debt** | equity value overstated by the whole debt balance. A red test already states the requirement |
@@ -329,6 +333,11 @@ the headline. Re-ranked at `622262b`.
 | # | Item | Closed at |
 |---|---|---|
 | 3 | Unknown NRI line item guessed a field | `38b903c` |
+| 9 | Unlabelled cost-of-debt assumption | `6cf34d3` |
+| 22 | Zero debt balance gave a 0% cost of debt | `6cf34d3` — its weights half is item 38 |
+| 33 | The CLI cache was keyed on the ticker alone | `6cf34d3` |
+| 34 | The risk-free rate was a constant presented as measured | `6cf34d3` |
+| 35 | An unusable beta was reported without qualification | `6cf34d3` |
 | 4 | No test suite; `pytest` could not collect | `d1854fb`, extended through `81816be` |
 | 12 | Dead code and repository hygiene | `d1854fb` — mostly; three `tests/*.pkl` stay tracked on purpose |
 | 13 | Provider default differed with the number of PDFs uploaded | `0e4649f` |
@@ -341,7 +350,7 @@ the headline. Re-ranked at `622262b`.
 | 23b | The NaN tax clamp twin | `2ca620a` |
 | 14 | Empty `projected_fcffs` raised a bare `IndexError` | `ff632df` |
 
-**Twelve closed, twenty-one open.** Items 19 to 28 did not exist when this build started —
+**Seventeen closed, twenty-one open.** Items 19 to 28 did not exist when this build started —
 **every one of them was found by running the code**, not by reading it.
 
 ---
@@ -360,7 +369,7 @@ Things that have already misled a reader of this repository.
    nothing at all. "It ran" is not evidence. Name an input that came from a filing.
 3. **`cli.py` and the web app can disagree.** They build assumptions by separate code
    paths. A figure verified in one is not verified in the other.
-4. **One test is red on purpose.** `pytest -q` reports `1 failed, 120 passed` and that
+4. **One test is red on purpose.** `pytest -q` reports `1 failed, 145 passed` and that
    is the expected state. Do not fix it by weakening it; fix backlog item 2. The gate
    form that excludes it is `pytest -q --ignore-glob="*_rule3_red.py"`.
 5. **A green test inside `*_rule3_red.py` is invisible to the gate.** That happened
