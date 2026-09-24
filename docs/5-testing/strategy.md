@@ -99,15 +99,15 @@ a suite that costs money to run is a suite nobody runs.
 
 ## 4. What `tests/` holds
 
-Re-measured at `d1854fb`:
+Re-measured at `6cf34d3`:
 
-| Measurement | `bc19431` | `d1854fb` |
+| Measurement | `bc19431` | `6cf34d3` |
 |---|---|---|
-| `.py` files | 10 | **13** |
-| `assert` statements | **0** | **40** |
+| `.py` files | 10 | **20** |
+| `assert` statements | **0** | **483** |
 | scripts guarded by `if __name__ == "__main__":` | **0** | **9 of 9** |
-| tests collected | 0 | **20** |
-| `pytest -q` | 3 collection errors | 19 pass, 1 red on purpose, 0.26 s |
+| tests collected | 0 | **146** |
+| `pytest -q` | 3 collection errors | 145 pass, 1 red on purpose, 11 s |
 
 The nine scripts now wrap their module body in `def main()` behind a guard, so
 `pytest` no longer runs an LLM call, a network fetch or a DCF at import. **They were
@@ -125,14 +125,35 @@ kept, not deleted** — `tests/compare_models.py` compares provider output and
 2. `tests/unit/test_dcf_rule3_red.py` **fails on purpose.** It states the requirement
    that `run_dcf` must stop when the balance sheet is absent. It goes green when
    backlog item 2 is fixed, and **it is kept, not deleted**. The phase-1 gate is
-   `pytest -q --ignore=tests/unit/test_dcf_rule3_red.py` → `19 passed` until then.
+   `pytest -q --ignore-glob="*_rule3_red.py"` → `145 passed` until then.
    A second red test means a real regression.
 
-### Where the gap is now
+   **The gate keys on the pattern, not on a filename.** An earlier revision named one
+   file by path and went stale the moment a second red test landed. And when a red test
+   goes green, **move it out of the pattern in the same unit** — otherwise the gate stops
+   running the very test that proves the fix.
 
-`analysis/dcf.py` is at 100% of statements. **The other five modules are at 0%** — 170
-statements that no test touches. Section 6 below gives the order to take them in, and
-that order is now the shortest path to a suite that means something.
+### Where the gap is now · re-measured at `6cf34d3`
+
+```
+analysis/   255 of 255 statements, 80 of 80 branches   100%
+api/        118 of 126 statements                       94%
+ingestion/  no tests at all
+models/     exercised only through analysis/ and api/
+```
+
+**An earlier revision of this section said "the other five modules are at 0%".** That
+was true at `d1854fb` and false from `796de9a` onward. It is corrected here because a
+testing document that misstates the suite is worse than one that says nothing.
+
+`analysis/` is finished. **`ingestion/` is the gap**: no test touches it, it holds 49 of
+the 116 zero-default sites, and it is where the extraction boundary sits — the one place
+where a figure enters this repository from outside.
+
+**The eight uncovered arcs in `api/` are uncovered on purpose.** Each is a fallback or a
+recorded backlog item a tester refused to pin, because a test asserting a known defect
+makes its fix turn red. See the cache-hit branch, the yfinance share-count fallback and
+the legacy `file_path` branch.
 
 ## 5. Two counts, never one
 
@@ -151,19 +172,28 @@ Measure it, do not estimate it:
 .venv/Scripts/python.exe -m pytest -q --cov=analysis --cov=models --cov-report=term-missing
 ```
 
-## 6. Where to start
+## 6. Where to start · re-measured at `6cf34d3`
 
-The backlog's suggested order puts tests first, because nothing else can be verified
-without them. In priority:
+The original list here ordered the six `analysis/` modules. **All six are done**, at 255
+of 255 statements and 80 of 80 branches. The order below replaces it.
 
-1. `analysis/dcf.py` — `calculate_terminal_value`, `discount_cash_flows`. Pure
-   arithmetic, trivially hand-checkable, and the `WACC <= g` raise is already correct
-   and worth locking.
-2. `analysis/fcff.py` — both formulas, with the SBC divergence made explicit.
-3. `analysis/wacc.py` — the identities above, plus the cost-of-debt fallback as a
-   **finding**, not an assertion.
-4. `analysis/normalizer.py` — `add_back` and `remove` directions, and the unknown-label
-   case, which should raise and currently does not. **Write that test red.**
-5. `analysis/projector.py` — the ΔNWC sign, which is the easiest thing here to reverse.
+1. **`ingestion/`.** No test touches it. It holds 49 of the 116 zero-default sites and
+   the whole extraction boundary — the one place a figure enters this repository from
+   outside. Use a **committed sample response**, never a live call; a suite that costs
+   money to run is a suite nobody runs.
+2. **The `api/` arcs that are not deliberate.** Eight are uncovered; each is currently a
+   fallback a tester refused to pin. When a backlog item closes, its arc becomes
+   testable — cover it then, in the same unit.
+3. **`models/`.** Exercised only through `analysis/` and `api/` today. Its properties
+   carry the arithmetic that four testers have leaned on without testing directly.
+
+Three habits this suite established, worth keeping:
+
+- **Prove the test can fail.** Mutate the line under test in a copy under `c:/tmp/` and
+  report how many assertions go red. Zero is a finding about your test.
+- **Restore what you removed.** When you repair a fixture, give the removed input back
+  and confirm every assertion fails again. An assertion that stays green went vacuous.
+- **Do not take a claim you can run.** Three reviewers overturned a claim they had been
+  handed, in each case by executing it rather than reading it.
 
 A red test that states a true requirement is doing its job. Do not weaken it.

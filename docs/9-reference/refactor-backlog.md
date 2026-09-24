@@ -1,10 +1,11 @@
 # Refactor backlog
 
-Every known defect, with its evidence and what it costs. **Re-measured at `2ca620a`,
-2026-09-21.** Twelve are closed: 3, 4, 13, 14, 19, 20, 21, 23b, 24, 27, 30, and 12 mostly.
+Every known defect, with its evidence and what it costs. **Re-measured at `6cf34d3`,
+2026-09-22.** Seventeen are closed: 3, 4, 9, 13, 14, 19, 20, 21, 22, 23b, 24, 27, 30, 33, 34, 35, and 12 mostly.
 
-**Items 14 to 30 did not exist when this build started, and every one of 19 to 30 was
-found by running the code rather than by reading it.** That is the single strongest
+**Items 14 to 38 did not exist when this build started, and every one of 19 to 38 was
+found by running the code rather than by reading it.** Items 33 to 38 came from the
+first runs against a real filing. That is the single strongest
 argument for the test suite that found them — and for the gates it added, since three of
 them were found by a reviewer re-running a measurement it had been handed.
 
@@ -32,17 +33,17 @@ rather than lying.
 
 ## Ranked by cost
 
-| # | Item | Silent? | Area | State at `2ca620a` |
+| # | Item | Silent? | Area | State at `6cf34d3` |
 |---|---|---|---|---|
 | 1 | **116** silent zero-default sites | **silent** | `models/` 60, `ingestion/` 49, `analysis/` 5, `api/` 2 | open |
 | 2 | Missing balance sheet gives zero net debt | **silent** | `analysis/dcf.py` | open, **proven by measurement** |
 | 3 | Unknown NRI line item guesses a field | **silent** | `analysis/normalizer.py` | **closed at `38b903c`** |
-| 4 | No test suite; `pytest` cannot collect | stopping | `tests/` | **closed** — 121 tests |
+| 4 | No test suite; `pytest` cannot collect | stopping | `tests/` | **closed** — 146 tests |
 | 5 | Module-global extraction cache, popped on use | mixed | `api/routes_valuation.py` | open |
 | 6 | Falsy treated as missing, five times | **silent** | `api/routes_valuation.py` | open |
 | 7 | `cli.py` and `api/` duplicate the pipeline | **silent** | both | open |
 | 8 | Blanket `except Exception` at five sites | **silent** | `api/`, `cli.py`, `ingestion/`, `tests/` | open, **now the only lint errors** |
-| 9 | Unlabelled cost-of-debt assumption | **silent** | `analysis/wacc.py` | open |
+| 9 | Unlabelled cost-of-debt assumption | **silent** | `analysis/wacc.py` | **closed at `6cf34d3`** |
 | 10 | D&A subtraction buried in the parser | **silent** | `ingestion/claude_extractor.py` | open |
 | 11 | **14** type errors, down from 33 | stopping | 4 files | open; every removal so far was a real defect |
 | 12 | Dead code and stale repository hygiene | — | several | **mostly closed** |
@@ -55,7 +56,7 @@ rather than lying.
 | 19 | One sign rule applied to two kinds of line | **silent** | `analysis/normalizer.py` | **closed at `38b903c`** |
 | 20 | A NaN beta is returned, not raised | **silent** | `analysis/capm.py` | **closed at `ff632df`** |
 | 21 | An unrecognised `direction` silently reverses | **silent** | `analysis/normalizer.py` | **closed at `38b903c`** |
-| 22 | Zero debt balance gives a 0% cost of debt | **silent** | `analysis/wacc.py` | open |
+| 22 | Zero debt balance gives a 0% cost of debt | **silent** | `analysis/wacc.py` | **closed at `6cf34d3`**; its weights half is item 38 |
 | 23 | `analysis/fcff.py` holds no `raise` for empty statements, **and `calculate_fcff_projected` has seven unguarded float parameters** | **silent** | `analysis/fcff.py` | open; **the clamp twin (23b) is closed at `2ca620a`** |
 | 24 | A red test that goes green stays outside the gate | — | `tests/` | **closed at `81816be`** |
 | 25 | An adjustment whose year matches no statement is discarded | **silent** | `analysis/normalizer.py` | **new** |
@@ -66,10 +67,12 @@ rather than lying.
 | 30 | A NaN in one `ProjectedFCFF` reaches the share price | **silent** | `analysis/dcf.py` | **closed at `2ca620a`** |
 | 31 | `discount_cash_flows`' `wacc` is unguarded on a direct call | **silent** | `analysis/dcf.py` | **new, latent.** The `run_dcf` chain stops two lines later |
 | 32 | `models/valuation.py:138` renders a share price of `0.0` on zero diluted shares | **silent** | `models/valuation.py` | **new.** Same shape as item 2 |
-| 33 | The CLI cache is keyed on the **ticker alone**, so the PDFs you pass are silently ignored | **silent** | `cli.py` | **new.** Found on the first real filing run |
-| 34 | The risk-free rate is a hardcoded `0.04` presented as measured | **silent** | `config.py`, `analysis/capm.py` | **new.** Rule 6 |
-| 35 | A beta from a regression explaining 10% of variance is reported without qualification | **silent** | `analysis/capm.py` | **new.** Rule 6 |
-| 36 | **The same PDF extracted twice gave share prices 16% apart**, and `confidence` is read nowhere | **silent** | `ingestion/`, `analysis/normalizer.py` | **new. The most consequential item on this list** |
+| 33 | The CLI cache is keyed on the **ticker alone**, so the PDFs you pass are silently ignored | **silent** | `cli.py` | **closed at `6cf34d3`** |
+| 34 | The risk-free rate is a hardcoded `0.04` presented as measured | **silent** | `config.py`, `analysis/capm.py`, `api/` | **closed at `6cf34d3`** |
+| 35 | A beta from a regression explaining 10% of variance is reported without qualification | **silent** | `analysis/capm.py` | **closed at `6cf34d3`** |
+| 36 | **The same PDF extracted twice gave share prices 16% apart**, and `confidence` is read nowhere | **silent** | `ingestion/`, `analysis/normalizer.py` | **open. The most consequential item on this list** |
+| 37 | `analysis/wacc.py`'s new stop states an inference as a fact | — | `analysis/wacc.py` | **new.** Message only; 23 of 23 wacc tests stay green with the rewrite |
+| 38 | `analysis/wacc.py` fabricates a 100% equity weighting when market cap and debt are both zero | **silent** | `analysis/wacc.py` | **new.** Item 22's weights half. Verified unblocked |
 
 ---
 
@@ -81,7 +84,7 @@ rather than lying.
 grep -rnE "if [^)]+ else 0(\.0)?\b|\bor +0(\.0)?\b|\.get\([^,]+, *0(\.0)?\)|: *float *= *0\.0" \
   --include=*.py models analysis api ingestion | wc -l
 ```
-→ **116** at `ff632df`, unchanged since `38b903c`. By area: `models/` 60, `ingestion/` 49, `analysis/` 5,
+→ **116** at `6cf34d3`, unchanged since `38b903c`. By area: `models/` 60, `ingestion/` 49, `analysis/` 5,
 `api/` 2.
 
 | Commit | Count | The delta |
@@ -548,6 +551,56 @@ The FY2025 filing was extracted by `claude-opus-5` through the Foundry gateway:
 
 **The pipeline works. The number it produces is not yet trustworthy, and items 33 to 35
 are why.**
+
+## 37. The new zero-debt stop states an inference as a fact · —
+
+**Fact.** `analysis/wacc.py` now stops when a filing reports interest expense with a
+zero debt balance, and its message says a company that pays interest **has** debt, so
+the balance "did not extract".
+
+**That is an inference, not a fact.** Interest expense is a **flow** over the year;
+`total_debt` is a **stock** at the closing instant, and is exactly
+`short_term_debt + current_portion_lt_debt + long_term_debt`
+(`models/financial_statements.py:187-188`). Two ordinary filings produce the pair:
+
+- a company that repaid its borrowings before the balance sheet date reports a full
+  year of interest beside a zero closing balance;
+- **`BalanceSheet` has no lease-liability field at all** — verified independently by
+  two agents, `grep -in "lease" models/financial_statements.py` returns nothing — so
+  finance-lease interest can never reach `total_debt` by construction.
+
+**The stop itself is right and must stay.** The pattern is *ambiguous*, not impossible,
+and the two readings imply different costs of capital. [Rule 3](../2-rules/rules.md)
+says stop rather than guess between them; the old `return 0.0` guessed.
+
+**Fix.** Message only. Name **both** readings instead of asserting one. The reviewer
+verified that 23 of 23 `wacc` tests stay green with the rewrite, and no test pins the
+wording.
+
+**One thing neither the tester nor the programmer spotted**, found by the reviewer:
+`CashFlowStatement.debt_repaid` exists at `:243-244`. **The schema already carries the
+evidence that would disambiguate the two readings.** That is a future signature
+widening, not a guess available today — but it means this stop could one day become a
+decision.
+
+## 38. A 100% equity weighting is fabricated when market cap and debt are both zero · **silent**
+
+**Fact.** `analysis/wacc.py:215-223`. When `market_cap + total_debt == 0` the function
+returns `equity_weight = 1.0, debt_weight = 0.0` instead of stopping. A company with no
+market value and no debt is missing data, not a wholly equity-financed company.
+
+**This is item 22's weights half**, and it has a second face the programmer of
+`P6-honest-output` found: a **supplied** `--cost-of-debt` with a missing balance sheet
+still gets a zero debt weight, so the rate the user explicitly provided vanishes from
+the calculation entirely.
+
+**Measured cost of fixing it**, by the reviewer on a patched scratch tree: exactly one
+test fails, `test_cost_of_equity_survives_a_company_with_no_market_cap_and_no_debt`,
+which requires the call to return. **No test pins the fabricated weights themselves.**
+
+**It was blocked and is now unblocked.** The fixture that paired interest expense with a
+zero debt balance is gone, so a guard added here no longer collides with it. Verified:
+`1 failed, 145 passed` with the guard inserted. **Safe to dispatch.**
 
 ## 36. The same filing extracted twice gave share prices 16% apart · **silent**
 
