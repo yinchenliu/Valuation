@@ -69,6 +69,7 @@ rather than lying.
 | 33 | The CLI cache is keyed on the **ticker alone**, so the PDFs you pass are silently ignored | **silent** | `cli.py` | **new.** Found on the first real filing run |
 | 34 | The risk-free rate is a hardcoded `0.04` presented as measured | **silent** | `config.py`, `analysis/capm.py` | **new.** Rule 6 |
 | 35 | A beta from a regression explaining 10% of variance is reported without qualification | **silent** | `analysis/capm.py` | **new.** Rule 6 |
+| 36 | **The same PDF extracted twice gave share prices 16% apart**, and `confidence` is read nowhere | **silent** | `ingestion/`, `analysis/normalizer.py` | **new. The most consequential item on this list** |
 
 ---
 
@@ -547,6 +548,67 @@ The FY2025 filing was extracted by `claude-opus-5` through the Foundry gateway:
 
 **The pipeline works. The number it produces is not yet trustworthy, and items 33 to 35
 are why.**
+
+## 36. The same filing extracted twice gave share prices 16% apart · **silent**
+
+**This is the most consequential item on this list.** Every other defect here is a wrong
+answer that can be traced to a line of code. This one is a **different answer to the
+same question**, and the product's whole premise is that a reader can walk a share price
+back to a page.
+
+**Fact.** The FY2025 L3Harris 10-K was extracted twice, two days apart, by the same model
+through the same gateway:
+
+| Run | Implied share price |
+|---|---|
+| 2026-09-22, orchestrator | **$343.15** |
+| 2026-09-22, `P6-honest-output` | **$296.01** |
+
+The largest single cause, confirmed by the reviewer: one Pass 2 non-recurring item worth
+**1,140M** present in one run and absent in the other. Total add-backs differ by exactly
+that much — `2,408 − 1,140 = 1,268`.
+
+**The model tagged that item `confidence: low`, and nothing read the tag.**
+
+```
+requested from the model          ingestion/claude_extractor.py:255
+parsed, defaulting to "high"      ingestion/claude_extractor.py:702
+stored on NonRecurringItem        models/financial_statements.py:28
+printed by the CLI                cli.py:624
+read by anything that computes    -- nothing
+```
+
+`grep -c confidence analysis/normalizer.py` → **0**. A `low`-confidence 1,140M add-back
+is weighted identically to a figure read cleanly off a page, and the web interface does
+not print the tag at all.
+
+**Three separate defects sit inside this one item.**
+
+1. **Nothing consumes `confidence`.** The pipeline already has the information needed to
+   detect its own uncertainty and discards it.
+2. **`.get("confidence", "high")` defaults an unknown to the *strongest* value.** Rule 3,
+   and in the optimistic direction.
+3. **The schema has no confidence field outside `NonRecurringItem`.** Total debt also
+   moved between the two runs — `10,443` against `11,116` — and there is no field in
+   which the model could have expressed doubt about it.
+
+**What it costs.** A user who runs the same filing twice gets two answers and no way to
+tell which to believe. Neither run is detectably wrong; both are internally consistent
+and both cite their sources.
+
+**Fix — and the second half is a product decision, not an engineering one.**
+
+- Make `confidence` reach `analysis/`. At minimum the absent-value default must stop
+  being `"high"`.
+- Then decide what a low-confidence adjustment *does*: apply it and label it, exclude it
+  and list it separately so the reader can put it back, or stop and ask. **Escalate that
+  choice; it is not an implementer's to make.**
+- Separately, decide whether extraction should be run more than once and the spread
+  reported. That would replace "16% on one pair" with a measured range, and it is the
+  only way to know whether this pair was typical.
+
+**Do not "fix" this by pinning the model's sampling.** A reproducible wrong answer is
+not better than a variable one; it is the same defect with the evidence hidden.
 
 ## 33. The CLI cache is keyed on the ticker alone · **silent**
 

@@ -14,7 +14,14 @@ from scipy import stats
 
 import config
 from ingestion.price_fetcher import PriceData
-from models.valuation import CAPMResult
+from models.valuation import (
+    BETA_RELIABILITY_NOT_ASSESSED,
+    BETA_SOURCE_OVERRIDE,
+    BETA_SOURCE_REGRESSION,
+    RISK_FREE_SOURCE_SUBSTITUTED,
+    RISK_FREE_SOURCE_SUPPLIED,
+    CAPMResult,
+)
 
 # The smallest number of aligned observations an OLS regression of one series
 # on another can produce all three of this module's statistics from. It is
@@ -89,6 +96,54 @@ def calculate_beta(price_data: PriceData) -> tuple[float, float, float]:
     return slope, r_value ** 2, std_err
 
 
+def describe_beta_reliability(
+    r_squared: float,
+    std_error: float,
+    beta: float,
+    observations: int,
+) -> str:
+    """State, in words, whether a regressed beta is precise enough to present.
+
+    Rule 6, backlog item 35. The R-squared was already computed and already
+    printed; what was missing is a threshold it is judged against, and the
+    verdict standing *beside the beta* rather than two lines away.
+
+    **This returns a sentence. It changes no number and it stops nothing.**
+    A regression with a low R-squared is a real measurement of a weak
+    relationship between this stock and the market — the data are present and
+    the arithmetic is sound. That is rule 6 (say so), not rule 3 (stop). A
+    caller that refused to proceed here would refuse legitimate runs: a
+    defensive contractor whose returns track its order book rather than the
+    index is the normal case, not a broken one.
+
+    The threshold is `config.MINIMUM_BETA_R_SQUARED`, whose comment derives it
+    from the standard error of an OLS slope at the default 60-observation
+    window.
+
+    Args:
+        r_squared: the regression's R-squared, as returned by `calculate_beta`.
+        std_error: the standard error of the slope, from the same call.
+        beta: the slope itself, reported back so the reader can see the ratio.
+        observations: the number of aligned return periods regressed.
+    """
+    threshold = config.MINIMUM_BETA_R_SQUARED
+    if r_squared >= threshold:
+        return (
+            f"measured and above the minimum: R-squared {r_squared:.3f} >= "
+            f"{threshold:.3f} (config.MINIMUM_BETA_R_SQUARED), over "
+            f"{observations} observations"
+        )
+    return (
+        f"NOT RELIABLE — R-squared {r_squared:.3f} is below the "
+        f"{threshold:.3f} minimum in config.MINIMUM_BETA_R_SQUARED. The market "
+        f"explains only {r_squared:.1%} of this stock's return variation over "
+        f"{observations} observations, so beta {beta:.3f} carries a standard "
+        f"error of {std_error:.3f}. Treat the cost of equity, the WACC and the "
+        f"implied share price below as uncertain by a wide margin, and consider "
+        f"supplying a beta with --beta."
+    )
+
+
 def annualized_market_return(price_data: PriceData) -> float:
     """Geometric annualized S&P 500 return from historical periodic returns."""
     returns = np.asarray(price_data.market_returns, dtype=float)
@@ -120,7 +175,19 @@ def run_capm(
     Returns:
         CAPMResult with beta, cost of equity, and regression diagnostics.
     """
-    rf = risk_free_rate if risk_free_rate is not None else config.DEFAULT_RISK_FREE_RATE
+    # Rule 6. The *value* already flowed through to CAPMResult; what did not is
+    # the fact that it was substituted. `config.DEFAULT_RISK_FREE_RATE` is not a
+    # fallback for a failed fetch — there is no fetch — so on every run without
+    # an explicit rate this branch is the one that fires, and the output said
+    # nothing about it. This is not rule 3: a risk-free rate is not extracted
+    # from a filing, so no measurement is being papered over. It is an
+    # assumption that has to be visible as one.
+    if risk_free_rate is not None:
+        rf = risk_free_rate
+        rf_source = RISK_FREE_SOURCE_SUPPLIED
+    else:
+        rf = config.DEFAULT_RISK_FREE_RATE
+        rf_source = RISK_FREE_SOURCE_SUBSTITUTED
 
     if equity_risk_premium is not None:
         erp = equity_risk_premium
@@ -134,10 +201,26 @@ def run_capm(
 
     if beta_override is not None:
         beta = beta_override
+        # These two zeros are a known defect (backlog item 1): 0.0 here means
+        # "no regression was run", not "the regression explained nothing", and
+        # the two are the same bytes. They are NOT changed to None, because
+        # existing assertions read them as floats. `beta_source` is what now
+        # tells a reader which of the two a zero means, and the reliability
+        # verdict is NOT_ASSESSED rather than "weak" so that an overridden beta
+        # is not accused of failing a threshold it was never measured against.
         r_sq = 0.0
         std_err = 0.0
+        beta_src = BETA_SOURCE_OVERRIDE
+        reliability = BETA_RELIABILITY_NOT_ASSESSED
     else:
         beta, r_sq, std_err = calculate_beta(price_data)
+        beta_src = BETA_SOURCE_REGRESSION
+        reliability = describe_beta_reliability(
+            r_squared=r_sq,
+            std_error=std_err,
+            beta=beta,
+            observations=len(price_data.stock_returns),
+        )
 
     return CAPMResult(
         beta=beta,
@@ -145,4 +228,7 @@ def run_capm(
         equity_risk_premium=erp,
         r_squared=r_sq,
         std_error=std_err,
+        risk_free_rate_source=rf_source,
+        beta_source=beta_src,
+        beta_reliability=reliability,
     )

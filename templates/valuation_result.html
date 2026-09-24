@@ -3,6 +3,11 @@
 {% block title %}Valuation Result — {{ ticker }}{% endblock %}
 
 {% block content %}
+{# The provenance style is inline, and deliberately. static/style.css is not in
+   this unit's Files in scope, so a new class there could not be defined; an
+   inline style keeps the change inside templates/ and still renders. A later
+   unit that owns static/style.css should lift this into a `.provenance` rule. #}
+{% set PROV = "font-size:0.85em; font-weight:normal; color:#555; text-align:left; margin-top:0.35em; line-height:1.35;" %}
 <div class="card">
     <h1>DCF Valuation: {{ ticker }}{% if company_name %} — {{ company_name }}{% endif %}</h1>
 
@@ -33,12 +38,23 @@
     <div class="section">
         <h2>CAPM & WACC</h2>
         <table class="data-table">
+            <!-- Rule 6, backlog items 34, 35 and 9. Three of the numbers in
+                 this table are neither read from the filing nor derived by
+                 formula from one. Each now carries the sentence the producing
+                 function recorded, in the same row as the figure — not in a
+                 footnote and not two rows away, because a reader who reads
+                 only the number is the reader the label exists for. -->
             <tr><td>Beta</td><td>{{ "%.3f"|format(capm.beta) }}</td></tr>
+            <tr><td style="{{ PROV }}">Beta — source</td><td style="{{ PROV }}">{{ capm.beta_source }}</td></tr>
+            <tr><td style="{{ PROV }}">Beta — reliability</td><td style="{{ PROV }}">{{ capm.beta_reliability }}</td></tr>
             <tr><td>R-squared</td><td>{{ "%.3f"|format(capm.r_squared) }}</td></tr>
+            <tr><td>Std error of beta</td><td>{{ "%.3f"|format(capm.std_error) }}</td></tr>
             <tr><td>Risk-Free Rate</td><td>{{ "%.2f"|format(capm.risk_free_rate * 100) }}%</td></tr>
+            <tr><td style="{{ PROV }}">Risk-Free Rate — source</td><td style="{{ PROV }}">{{ capm.risk_free_rate_source }}</td></tr>
             <tr><td>Equity Risk Premium</td><td>{{ "%.2f"|format(capm.equity_risk_premium * 100) }}%</td></tr>
             <tr><td>Cost of Equity</td><td>{{ "%.2f"|format(capm.cost_of_equity * 100) }}%</td></tr>
             <tr><td>Cost of Debt (pre-tax)</td><td>{{ "%.2f"|format(wacc.cost_of_debt * 100) }}%</td></tr>
+            <tr><td style="{{ PROV }}">Cost of Debt — source</td><td style="{{ PROV }}">{{ wacc.cost_of_debt_source }}</td></tr>
             <tr><td>Tax Rate</td><td>{{ "%.2f"|format(wacc.tax_rate * 100) }}%</td></tr>
             <tr><td>Equity Weight (E/V)</td><td>{{ "%.1f"|format(wacc.equity_weight * 100) }}%</td></tr>
             <tr><td>Debt Weight (D/V)</td><td>{{ "%.1f"|format(wacc.debt_weight * 100) }}%</td></tr>
@@ -106,6 +122,38 @@
             <tr><td>D&A (% of Revenue)</td><td>{{ "%.1f"|format(assumptions.da_pct_revenue * 100) }}%</td></tr>
             <tr><td>CapEx (% of Revenue)</td><td>{{ "%.1f"|format(assumptions.capex_pct_revenue * 100) }}%</td></tr>
             <tr><td>NWC (% of Revenue)</td><td>{{ "%.1f"|format(assumptions.nwc_pct_revenue * 100) }}%</td></tr>
+        </table>
+    </div>
+
+    <!-- Rule 6, gathered. The same three labels appear beside their own figures
+         in the CAPM & WACC table above; this block exists for the reader who
+         reads the headline number and scrolls, and it follows the pattern set
+         by the extraction block below rather than inventing a second one. -->
+    <div class="section">
+        <h2>What in this valuation was not measured</h2>
+        <table class="data-table">
+            <tr>
+                <td>Risk-free rate</td>
+                <td>
+                    {{ "%.2f"|format(capm.risk_free_rate * 100) }}%
+                    <div style="{{ PROV }}">{{ capm.risk_free_rate_source }}</div>
+                </td>
+            </tr>
+            <tr>
+                <td>Beta</td>
+                <td>
+                    {{ "%.3f"|format(capm.beta) }}
+                    <div style="{{ PROV }}">{{ capm.beta_source }}</div>
+                    <div style="{{ PROV }}">{{ capm.beta_reliability }}</div>
+                </td>
+            </tr>
+            <tr>
+                <td>Cost of debt (pre-tax)</td>
+                <td>
+                    {{ "%.2f"|format(wacc.cost_of_debt * 100) }}%
+                    <div style="{{ PROV }}">{{ wacc.cost_of_debt_source }}</div>
+                </td>
+            </tr>
         </table>
     </div>
 

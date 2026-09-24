@@ -13,6 +13,8 @@ reads. See `docs/5-testing/strategy.md` section 3.
 
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from analysis.dcf import calculate_terminal_value, discount_cash_flows, run_dcf
@@ -354,3 +356,98 @@ def test_run_dcf_raises_when_terminal_growth_is_not_below_wacc() -> None:
     assert "0.04" in message, "the message must name the WACC that was passed"
     assert "growth" in message.lower()
     assert "0.06" in message, "the message must name the growth rate that was passed"
+
+
+# ---------------------------------------------------------------------------
+# The stops. Rule 3 — a missing input stops the run and names the field.
+#
+# NaN is the shape a missing input takes once it has been through a float
+# calculation, and `analysis/dcf.py`'s own `wacc <= terminal_growth_rate` guard
+# cannot see it: `nan <= 0.025` is False, so a NaN walked straight past it and
+# rendered as a NaN share price. Every expectation below is that requirement,
+# not a message recorded from a run.
+# ---------------------------------------------------------------------------
+
+NAN = float("nan")
+
+
+def test_terminal_value_stops_on_a_nan_final_cash_flow() -> None:
+    """The terminal value is the whole of the enterprise value beyond the
+    projection window, so a NaN base cash flow makes the entire valuation NaN.
+    `calculate_terminal_value` is called directly as well as through `run_dcf`,
+    so the guard has to be here and not only at the caller.
+
+    The growth rate and WACC are the worked example's 0.02 and 0.10, which
+    together give a finite 1275.0 from a base of 100 — so the only broken input
+    is the one the message must name.
+    """
+    with pytest.raises(ValueError, match="final_fcff"):
+        calculate_terminal_value(NAN, 0.02, 0.10)
+
+
+def test_terminal_value_stops_on_a_nan_wacc_before_the_spread_check() -> None:
+    """`wacc <= terminal_growth_rate` is False when `wacc` is NaN, so the spread
+    check below it passes a NaN through and the division that follows returns
+    NaN rather than raising. The NaN guard must therefore come first, and it
+    must name both figures so a reader can see which of the two was broken.
+    """
+    with pytest.raises(ValueError) as excinfo:
+        calculate_terminal_value(100.0, 0.02, NAN)
+
+    message = str(excinfo.value)
+    assert "WACC" in message
+    assert "growth" in message.lower()
+
+
+def test_terminal_value_stops_on_a_nan_growth_rate() -> None:
+    """The same guard from the other side: a NaN growth rate also survives
+    `wacc <= terminal_growth_rate` and reaches `(wacc - g)` in the denominator.
+    """
+    with pytest.raises(ValueError):
+        calculate_terminal_value(100.0, NAN, 0.10)
+
+
+def test_a_comparison_cannot_detect_the_nan_these_guards_catch() -> None:
+    """The premise the three tests above rest on, stated as arithmetic rather
+    than taken on trust. If `nan <= 0.02` were True the existing spread check
+    would already have stopped the run and the NaN guards would be ceremony.
+    """
+    assert (NAN <= 0.02) is False
+    assert (NAN > 0.02) is False
+    assert math.isnan(NAN * 1.02 / (NAN - 0.02))
+
+
+def test_discounting_stops_on_a_nan_year_and_names_that_year() -> None:
+    """A single NaN year makes the whole present value NaN, because anything
+    added to NaN is NaN. The guard names the *year* so a reader can find the
+    offending projection rather than only learning that one of them was bad.
+
+    Years 2026 and 2028 are finite; 2027 is not, and 2027 is what the message
+    must say.
+    """
+    with pytest.raises(ValueError, match="2027"):
+        discount_cash_flows(
+            [
+                make_projected_fcff(2026, 100.0),
+                make_projected_fcff(2027, NAN),
+                make_projected_fcff(2028, 100.0),
+            ],
+            0.10,
+        )
+
+
+def test_run_dcf_stops_when_there_are_no_projected_cash_flows() -> None:
+    """A DCF needs at least one projected year: the terminal value is built from
+    the final projected FCFF, and an empty list has no final element. Without
+    the stop, `pv_fcffs` would be the empty sum 0.0 and the run would reach
+    `projected_fcffs[-1]` and fail with an `IndexError` that names nothing.
+    """
+    with pytest.raises(ValueError, match="projected_fcffs"):
+        run_dcf(
+            projected_fcffs=[],
+            wacc_result=make_wacc_result(0.10),
+            financials=_financials_with_a_balance_sheet(),
+            terminal_growth_rate=0.02,
+            current_price=20.0,
+            diluted_shares=10.0,
+        )

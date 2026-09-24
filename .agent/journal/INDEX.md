@@ -33,6 +33,11 @@ edits another's.
 | 2026-09-21 | P4c-nan-stops | code_reviewer | **`approved`** — 5 notes. Built its own 23-case probe rather than re-running the programmer's | [entry](2026-09-21T0800-code_reviewer-p4c-nan-stops.md) |
 | 2026-09-21 | P4d-cashflow-nan | programmer | `ok` — 8 of 8. Items 30 and 23b closed | [entry](2026-09-21T0900-programmer-p4d-cashflow-nan.md) |
 | 2026-09-21 | P4d-cashflow-nan | code_reviewer | **`approved`** — 3 notes. Verified the dead-code argument by stack trace | [entry](2026-09-21T1000-code_reviewer-p4d-cashflow-nan.md) |
+| 2026-09-22 | P6-honest-output | programmer, r1 | `ok` — cache keyed on content; four labels | [entry](2026-09-22T1400-programmer-p6-honest-output.md) |
+| 2026-09-22 | P6-honest-output | code_reviewer, r1 | `changes_requested` — 2 major, **both the orchestrator's scope errors** | [entry](2026-09-22T1500-code_reviewer-p6-honest-output.md) |
+| 2026-09-22 | P6-honest-output | programmer, r2 | `ok` — F1, F2, F6 answered; escalated a test collision rather than narrowing a check | [entry](2026-09-22T1600-programmer-p6-honest-output-r2.md) |
+| 2026-09-22 | P6b-wacc-fixture | tester | **`pass`** — **rejected the binary the assignment gave it, and was right** | [entry](2026-09-22T1700-tester-p6b-wacc-fixture.md) |
+| 2026-09-22 | P6 + P6b | code_reviewer | **`approved`** — measured all three open questions on a patched scratch tree | [entry](2026-09-22T1800-code_reviewer-p6-p6b.md) |
 
 `P2b-provider` is the first unit to take two review rounds. Round 1's `changes_requested`
 was caused by **the assignment**, not the code: its file scope excluded the two lines
@@ -48,7 +53,7 @@ deliverable.** Three units reported `fail` and all three were approved by review
 reported `pass`. Read the verdict line at the top of an entry before reading the word
 alone.
 
-**Twelve units, and not one was accepted on its own report.** Every programmer run went to
+**Fourteen units, and not one was accepted on its own report.** Every programmer run went to
 a reviewer that re-ran the measurements rather than reading them. Three times a reviewer
 overturned a claim: it disproved a programmer's reason for stopping, it disproved a
 different programmer's finding, and it confirmed two errors in the orchestrator's own

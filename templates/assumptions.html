@@ -82,8 +82,16 @@
         <div class="form-row">
             <div class="form-group">
                 <label for="risk_free_rate">Risk-Free Rate (%)</label>
+                {# Rule 6, backlog item 34. This field used to be prefilled
+                   with a hardcoded 4.0 — a literal, duplicating
+                   config.DEFAULT_RISK_FREE_RATE — so every submission carried
+                   a rate and the result page told the reader they had supplied
+                   a figure the form supplied for them. Blank now, with the
+                   constant shown as a placeholder rendered from config by the
+                   route, so leaving it alone is reported as a substitution. #}
                 <input type="number" id="risk_free_rate" name="risk_free_rate"
-                       value="4.0" step="0.1">
+                       placeholder="blank = assume {{ default_risk_free_rate_display }}% (config.DEFAULT_RISK_FREE_RATE)"
+                       step="0.1">
             </div>
             <div class="form-group">
                 <label for="equity_risk_premium">Equity Risk Premium (%)</label>

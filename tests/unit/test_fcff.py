@@ -23,6 +23,8 @@ sections 3 and 4:
 
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from analysis.fcff import calculate_fcff_historical, calculate_fcff_projected
@@ -419,3 +421,46 @@ def test_stock_based_compensation_is_the_gap_between_the_two_methods() -> None:
     assert historical.cfo == pytest.approx(285.0)
     assert historical.fcff == pytest.approx(215.0)
     assert historical.fcff - 185.0 == pytest.approx(30.0)
+
+
+# ---------------------------------------------------------------------------
+# The stop. Rule 3 — `analysis/fcff.py:28-44`, reached from `fcff.py:71`.
+# ---------------------------------------------------------------------------
+
+
+def test_historical_fcff_stops_on_a_nan_tax_rate_before_the_clamp_hides_it() -> None:
+    """The guard must sit before `max(0.0, min(tax_rate, 0.50))`.
+
+    `min(nan, 0.50)` is `nan` and `max(0.0, nan)` is `0.0`, because every
+    comparison against NaN is False and both builtins then fall through to
+    their first argument. A NaN tax rate would therefore have become a
+    plausible 0.0 — and here a 0% rate means the *gross* interest is added
+    back, so FCFF and the valuation built on it both rise. After the clamp the
+    evidence is gone.
+
+    With this fixture the difference is arithmetic, not hypothetical:
+      at t = 0.20  FCFF = 200 + 100 * 0.80 - 70 = 210
+      at t = 0     FCFF = 200 + 100 * 1.00 - 70 = 230
+    A silent NaN would have reported the 230.
+
+    The expectation is rule 3's — stop and name the field — not a message read
+    off a run.
+    """
+    with pytest.raises(ValueError, match="tax_rate"):
+        calculate_fcff_historical(
+            _income_statement_2025(),
+            _cash_flow_2025(),
+            tax_rate_override=float("nan"),
+        )
+
+
+def test_the_clamp_would_have_turned_that_nan_into_a_zero_rate() -> None:
+    """The premise the test above rests on, checked as arithmetic rather than
+    taken on trust. If `max(0.0, min(nan, 0.50))` were itself NaN the guard
+    would be redundant, because the NaN would survive to the FCFF and be
+    visible. It is not: it becomes an ordinary-looking 0.0.
+    """
+    nan = float("nan")
+    assert (nan < 0.50) is False
+    assert math.isnan(min(nan, 0.50))
+    assert max(0.0, min(nan, 0.50)) == 0.0

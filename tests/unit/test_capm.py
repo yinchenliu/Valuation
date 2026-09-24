@@ -45,7 +45,13 @@ import pandas as pd
 import pytest
 
 import config
-from analysis.capm import annualized_market_return, calculate_beta, run_capm
+from analysis.capm import (
+    MINIMUM_REGRESSION_OBSERVATIONS,
+    annualized_market_return,
+    calculate_beta,
+    describe_beta_reliability,
+    run_capm,
+)
 from ingestion.price_fetcher import PriceData
 
 # ---------------------------------------------------------------------------
@@ -384,3 +390,152 @@ def test_the_risk_free_rate_defaults_to_the_named_constant() -> None:
 
     assert result.risk_free_rate == pytest.approx(config.DEFAULT_RISK_FREE_RATE)
     assert result.cost_of_equity == pytest.approx(config.DEFAULT_RISK_FREE_RATE + 0.06)
+
+
+# ---------------------------------------------------------------------------
+# The three stops in `calculate_beta` — `analysis/capm.py:64-93`.
+#
+# `stats.linregress` raises nothing for an empty or a degenerate series: it
+# returns `nan` for every statistic. A `nan` beta cannot be caught downstream
+# by a comparison, because `nan <= x` and `nan > x` are both False, so the
+# function that produced it is where the run has to stop.
+#
+# Each expected value below is rule 3's requirement — stop, and name the input
+# that was inadequate — not a message recorded from a run. The tests assert the
+# exception type and the field the message names, never its wording.
+# ---------------------------------------------------------------------------
+
+
+def test_beta_stops_when_the_two_return_series_are_not_the_same_length() -> None:
+    """Beta regresses one series on the other period by period, so an
+    observation in `stock_returns` has no partner if the two are not aligned.
+    Three market periods against four stock periods is not a shorter history,
+    it is a broken pairing, and no beta is defined for it.
+
+    Both lengths must appear so a reader can see which series is short.
+    """
+    with pytest.raises(ValueError) as excinfo:
+        calculate_beta(
+            PriceData(
+                ticker="TEST",
+                stock_returns=np.asarray([0.01, 0.02, 0.03, 0.04], dtype=float),
+                market_returns=np.asarray([0.01, 0.02, 0.03], dtype=float),
+                dates=pd.DatetimeIndex(pd.date_range("2020-01-31", periods=3)),
+                current_price=100.0,
+                periods_per_year=12,
+            )
+        )
+
+    message = str(excinfo.value)
+    assert "market_returns" in message
+    assert "stock_returns" in message
+    assert "3" in message and "4" in message
+
+
+def test_beta_stops_below_the_minimum_number_of_observations() -> None:
+    """SE(beta) = sqrt( SSE / ((n - 2) * Sxx) ), so n - 2 must be at least 1 and
+    n must therefore be at least 3. At n = 2 the slope of a perfect fit is a
+    finite 1.0 while the standard error is nan, which is the worst of the three
+    cases: a plausible beta carrying a diagnostic that does not exist.
+
+    Two observations is one below `MINIMUM_REGRESSION_OBSERVATIONS`, which is
+    derived in `analysis/capm.py` from the formula above rather than chosen.
+    """
+    with pytest.raises(ValueError) as excinfo:
+        calculate_beta(_price_data([0.01, 0.02], [0.01, 0.02], 12))
+
+    message = str(excinfo.value)
+    assert "2" in message, "the message must name how many observations arrived"
+    assert str(MINIMUM_REGRESSION_OBSERVATIONS) in message
+    assert "observations" in message.lower()
+
+
+# scipy warns about catastrophic cancellation on a constant regressor, which is
+# exactly the degeneracy under test. Filtered so it does not read as an
+# unexplained warning in the suite's output; the assertion is unchanged.
+@pytest.mark.filterwarnings("ignore::RuntimeWarning")
+def test_beta_stops_when_the_market_series_has_no_variation() -> None:
+    """OLS estimates beta as Cov(stock, market) / Var(market). A market series
+    that returns the same figure every period has Var(market) = 0, so the slope
+    is a division by zero and no beta exists — the market explains nothing,
+    whatever the stock did.
+
+    Var([0.01, 0.01, 0.01, 0.01]) = 0 by inspection: every observation equals
+    the mean. The stock series is deliberately *not* constant, so the only
+    degeneracy is on the regressor.
+    """
+    with pytest.raises(ValueError) as excinfo:
+        calculate_beta(
+            _price_data([0.01, 0.02, 0.03, 0.04], [0.01, 0.01, 0.01, 0.01], 12)
+        )
+
+    message = str(excinfo.value)
+    assert "market_returns" in message
+    assert "variance" in message.lower()
+
+
+def test_beta_stops_when_a_return_observation_is_nan() -> None:
+    """A NaN anywhere in either series makes every regression statistic NaN.
+    This is the shape a gap in the price history takes by the time it reaches
+    the regression, and it must not be returned as a beta.
+    """
+    with pytest.raises(ValueError) as excinfo:
+        calculate_beta(
+            _price_data([0.01, float("nan"), 0.03, 0.04], [0.01, 0.02, 0.03, 0.04], 12)
+        )
+
+    assert "beta" in str(excinfo.value).lower()
+
+
+# ---------------------------------------------------------------------------
+# `describe_beta_reliability` — `analysis/capm.py:130-145`. A rule 6 label, not
+# a stop, and the branch that warns was reached by no test in this file.
+#
+# Neither test below asserts the label's wording: a reformat must not turn them
+# red. What is asserted is that the two branches are told apart, and that each
+# is selected by the side of `config.MINIMUM_BETA_R_SQUARED` its input falls
+# on — which is the whole of what the function promises.
+# ---------------------------------------------------------------------------
+
+
+def test_a_beta_below_the_r_squared_minimum_is_labelled_unreliable() -> None:
+    """`config.MINIMUM_BETA_R_SQUARED` is the threshold, so an R-squared of
+    half it is on the warning side of the comparison by construction — the
+    expectation follows from the constant, not from a recorded run.
+
+    An R-squared of 0.10 means the market explains a tenth of this stock's
+    return variation, so the beta regressed from it is a number with a wide
+    confidence interval and the reader has to be told.
+    """
+    weak = describe_beta_reliability(
+        r_squared=config.MINIMUM_BETA_R_SQUARED / 2,
+        std_error=0.4,
+        beta=1.0,
+        observations=58,
+    )
+
+    assert "config.MINIMUM_BETA_R_SQUARED" in weak
+    assert "not reliable" in weak.lower()
+
+
+def test_the_two_reliability_labels_are_not_the_same_sentence() -> None:
+    """The label exists to distinguish a beta worth presenting from one that is
+    not, so the two sides of the threshold must not read alike. The strong case
+    is the threshold itself — `>=` is inclusive, so exactly the minimum is on
+    the acceptable side, and that is the boundary most likely to be inverted.
+    """
+    at_the_threshold = describe_beta_reliability(
+        r_squared=config.MINIMUM_BETA_R_SQUARED,
+        std_error=0.1,
+        beta=1.0,
+        observations=58,
+    )
+    below_the_threshold = describe_beta_reliability(
+        r_squared=config.MINIMUM_BETA_R_SQUARED / 2,
+        std_error=0.4,
+        beta=1.0,
+        observations=58,
+    )
+
+    assert at_the_threshold != below_the_threshold
+    assert "not reliable" not in at_the_threshold.lower()

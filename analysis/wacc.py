@@ -45,6 +45,112 @@ def _require_finite(value: float, field: str) -> None:
         )
 
 
+def cost_of_debt_with_source(
+    income_statement: IncomeStatement,
+    balance_sheet: BalanceSheet,
+    override: float | None = None,
+) -> tuple[float, str]:
+    """Pre-tax cost of debt, together with a sentence saying where it came from.
+
+    Rd = Interest Expense / Total Debt
+
+    Rule 6, backlog item 9. Four branches can return a number here and only one
+    of them is a measurement from the filing. Until now all four returned a
+    bare float, so a 4.00% substituted from `config.DEFAULT_COST_OF_DEBT` was
+    printed in the same cell, in the same format, as a 5.72% divided out of the
+    filing's own interest expense. This function is the single place that knows
+    which branch fired, so it is the place that says so.
+
+    Rule 3, backlog item 22. A fifth path returns nothing at all: a zero debt
+    balance standing beside a reported interest expense is a missing balance
+    sheet, not a debt-free company, and it raises rather than valuing the firm
+    as unlevered. See the comment on that branch.
+
+    `calculate_cost_of_debt` below is the unchanged float-returning form, kept
+    so that every existing caller and assertion keeps working. It delegates
+    here rather than repeating the branches, so the label cannot drift from the
+    number it describes.
+
+    Returns:
+        (rate, source) — the rate as a decimal, and a human sentence naming the
+        branch, the inputs it used, and whether it is a measurement.
+
+    Raises:
+        ValueError: when the balance sheet reports no debt while the income
+            statement reports interest expense, naming both figures and the
+            fields they came from.
+    """
+    if override is not None:
+        return override, (
+            "supplied by the caller (--cost-of-debt / "
+            "ProjectionAssumptions.cost_of_debt_override). Not derived from "
+            "the filing."
+        )
+
+    total_debt = balance_sheet.total_debt
+    interest = abs(income_statement.interest_expense)
+
+    if total_debt == 0:
+        # Backlog item 22, closed here. A zero debt balance used to return 0.0
+        # unconditionally, and that single zero carried two incompatible
+        # meanings: "this company carries no debt" and "the balance sheet did
+        # not extract". They are the same bytes and nothing downstream could
+        # tell them apart.
+        #
+        # The income statement tells them apart. A company that paid interest
+        # had debt to pay it on, so a reported interest expense beside a zero
+        # debt balance is not a debt-free company — it is a balance sheet that
+        # did not come through. That is a missing input, and rule 3 says the
+        # run stops and names the field rather than valuing the company as
+        # though it were unlevered.
+        #
+        # The consequence of NOT stopping is not confined to this rate. With
+        # total_debt == 0 the debt weight in `calculate_wacc` is also 0, so the
+        # whole debt term drops out of WACC: the firm is discounted at its cost
+        # of equity, the discount rate is overstated, and the share price is
+        # understated, on a clean run, with nothing in the output saying so.
+        if interest != 0:
+            raise ValueError(
+                f"the balance sheet reports total debt of 0 while the income "
+                f"statement reports interest expense of "
+                f"{income_statement.interest_expense:,.2f} for "
+                f"{income_statement.year}. A company that pays interest has "
+                f"debt, so the debt balance "
+                f"(BalanceSheet.short_term_debt + "
+                f"BalanceSheet.current_portion_lt_debt + "
+                f"BalanceSheet.long_term_debt, year "
+                f"{balance_sheet.year}) did not extract. The cost of debt is "
+                f"not substituted and the WACC is not computed from a zero "
+                f"debt weight: supply the debt balance, or supply a cost of "
+                f"debt explicitly with --cost-of-debt if the zero is correct."
+            )
+        # Zero debt AND zero interest: a genuinely debt-free company. 0.0 is a
+        # real measurement here, and it is labelled as one.
+        return 0.0, (
+            "no debt reported: total debt on the balance sheet is 0 and the "
+            f"income statement reports no interest expense for "
+            f"{income_statement.year}, so this company is debt-free and there "
+            "is no rate to measure. The debt term drops out of the WACC, which "
+            "is therefore the cost of equity."
+        )
+
+    if interest == 0:
+        return config.DEFAULT_COST_OF_DEBT, (
+            f"ASSUMPTION — config.DEFAULT_COST_OF_DEBT "
+            f"({config.DEFAULT_COST_OF_DEBT:.2%}) was SUBSTITUTED, because "
+            f"interest expense is not reported separately (0) while the "
+            f"balance sheet carries {total_debt:,.0f} of debt, so "
+            f"interest / total debt cannot be computed. This is a guess at a "
+            f"coupon, it is not this company's, and it reaches the WACC and "
+            f"the implied share price."
+        )
+
+    return interest / total_debt, (
+        f"measured from the filing: interest expense {interest:,.0f} / total "
+        f"debt {total_debt:,.0f}"
+    )
+
+
 def calculate_cost_of_debt(
     income_statement: IncomeStatement,
     balance_sheet: BalanceSheet,
@@ -56,20 +162,13 @@ def calculate_cost_of_debt(
 
     When interest_expense = 0 but the company carries debt, we fall back to
     config.DEFAULT_COST_OF_DEBT rather than returning 0%.
+
+    The rate only. `cost_of_debt_with_source` returns the same number together
+    with the label rule 6 requires; this wrapper exists so that callers which
+    need no label keep their signature and their meaning unchanged.
     """
-    if override is not None:
-        return override
-
-    total_debt = balance_sheet.total_debt
-    if total_debt == 0:
-        return 0.0
-
-    interest = abs(income_statement.interest_expense)
-    if interest == 0:
-        # Interest not separately reported; use default market rate
-        return config.DEFAULT_COST_OF_DEBT
-
-    return interest / total_debt
+    rate, _source = cost_of_debt_with_source(income_statement, balance_sheet, override)
+    return rate
 
 
 def calculate_wacc(
@@ -93,7 +192,9 @@ def calculate_wacc(
     cost_of_equity = capm_result.cost_of_equity
     _require_finite(cost_of_equity, "capm_result.cost_of_equity")
 
-    cost_of_debt = calculate_cost_of_debt(income_statement, balance_sheet, cost_of_debt_override)
+    cost_of_debt, cost_of_debt_source = cost_of_debt_with_source(
+        income_statement, balance_sheet, cost_of_debt_override
+    )
     _require_finite(cost_of_debt, "cost_of_debt")
 
     tax_rate = tax_rate_override if tax_rate_override is not None else income_statement.effective_tax_rate
@@ -118,6 +219,7 @@ def calculate_wacc(
             tax_rate=tax_rate,
             equity_weight=1.0,
             debt_weight=0.0,
+            cost_of_debt_source=cost_of_debt_source,
         )
 
     return WACCResult(
@@ -126,4 +228,5 @@ def calculate_wacc(
         tax_rate=tax_rate,
         equity_weight=equity_value / total_value,
         debt_weight=debt_value / total_value,
+        cost_of_debt_source=cost_of_debt_source,
     )

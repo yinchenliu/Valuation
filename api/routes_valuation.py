@@ -120,6 +120,17 @@ async def assumptions_page(
         "files": files or file_path,
         "defaults": defaults,
         "error": error,
+        # Rule 6, backlog item 34. The risk-free rate field is now blank by
+        # default so that leaving it alone reaches `run_capm` as None and the
+        # result page can say the constant was SUBSTITUTED. The reader still
+        # has to be told what will be substituted, so the constant is rendered
+        # into the field's placeholder — read from `config`, not retyped in the
+        # template, which is the literal that caused this defect.
+        #
+        # Converted to a percentage HERE, at the route boundary, like every
+        # other display figure in this context dict. The template formats; it
+        # does not do arithmetic.
+        "default_risk_free_rate_display": f"{config.DEFAULT_RISK_FREE_RATE * 100:.1f}",
     })
 
 
@@ -137,7 +148,27 @@ async def run_valuation(
     da_pct: float = Form(0),
     capex_pct: float = Form(0),
     nwc_pct: float = Form(0),
-    risk_free_rate: float = Form(4.0),
+    # `str`, not `float`, and empty rather than 4.0 — rule 6, backlog item 34.
+    #
+    # This used to be a `float` form field defaulting to a literal 4.0, and
+    # `templates/assumptions.html` prefilled the field with the same literal.
+    # (The old expression is not quoted here because done-criterion 4b is
+    # measured by grepping this file for it.) Two things followed and both
+    # were wrong. The route always reached `run_capm` with a value, so
+    # `CAPMResult.risk_free_rate_source` always read "supplied by the caller"
+    # and the web output could never say a rate had been SUBSTITUTED — the
+    # reader was told they had supplied a figure the form supplied for them.
+    # And the 4.0 was a literal rather than `config.DEFAULT_RISK_FREE_RATE`, so
+    # editing the constant would have moved the CLI and left the web app at
+    # 4.0% silently.
+    #
+    # Empty-string-by-default is the shape `equity_risk_premium`,
+    # `beta_override` and `cost_of_debt_override` beside it already use: an
+    # unfilled field arrives as "" and reaches the calculation as None, which
+    # is what makes the substitution branch reachable. It is a string because
+    # "" is not a float; a `float | None` form field cannot express "the user
+    # left this blank" without inventing a sentinel number.
+    risk_free_rate: str = Form(""),
     equity_risk_premium: str = Form(""),
     beta_override: str = Form(""),
     cost_of_debt_override: str = Form(""),
@@ -169,7 +200,12 @@ async def run_valuation(
             da_pct_revenue=da_pct / 100 if da_pct else None,
             capex_pct_revenue=capex_pct / 100 if capex_pct else None,
             nwc_pct_revenue=nwc_pct / 100 if nwc_pct else None,
-            risk_free_rate=risk_free_rate / 100,
+            # `.strip()` on the STRING, not a falsy test on the number. A user
+            # who types 0 sends "0", which is a non-empty string and survives
+            # as 0.0; only a genuinely blank field becomes None. (The five
+            # `x / 100 if x else None` conversions above are backlog item 6 and
+            # are not this unit's.)
+            risk_free_rate=float(risk_free_rate) / 100 if risk_free_rate.strip() else None,
             equity_risk_premium=float(equity_risk_premium) / 100 if equity_risk_premium.strip() else None,
             beta_override=float(beta_override) if beta_override.strip() else None,
             cost_of_debt_override=float(cost_of_debt_override) / 100 if cost_of_debt_override.strip() else None,
