@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -9,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 import config
 from analysis.capm import run_capm
 from analysis.dcf import run_dcf
+from analysis.fcff import calculate_fcff_historical
 from analysis.normalizer import normalize_financials, partition_by_confidence
 from analysis.projector import derive_assumptions, project_fcffs
 from analysis.wacc import calculate_wacc
@@ -21,23 +24,62 @@ from ingestion.claude_extractor import (
 )
 from ingestion.price_fetcher import fetch_price_data
 from models.financial_statements import FinancialStatements, NonRecurringItem
-from models.valuation import ProjectionAssumptions
+from models.valuation import (
+    AssumptionSource,
+    HistoricalFCFFYear,
+    ProjectionAssumptions,
+)
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
+
+@dataclass(frozen=True)
+class CachedExtraction:
+    """One upload's extraction, as `assumptions_page` left it.
+
+    Four NAMED fields rather than a tuple (rule 2). The cache used to hold a
+    2-tuple — the normalised statements and the excluded items — so the raw
+    pre-adjustment statements and the items that were actually APPLIED were
+    local variables in `assumptions_page` and died when it returned. The result
+    page could therefore say what had been withheld and could not say what had
+    been applied, and neither page could show a GAAP-to-non-GAAP
+    reconciliation, because the "before" side of it no longer existed. That is
+    the rule 4 gap named at `docs/2-rules/rules.md:92`.
+
+    Every field is required. None of them is defaulted, so a cache entry that
+    is missing one cannot be constructed at all, rather than being constructed
+    with an empty list that reads as "nothing was adjusted".
+    """
+
+    raw_financials: FinancialStatements
+    normalised_financials: FinancialStatements
+    applied_items: list[NonRecurringItem]
+    excluded_items: list[NonRecurringItem]
+
+
+# `HistoricalFCFFYear` used to be defined here. It is a record, so it now
+# lives in `models/valuation.py` beside `HistoricalFCFF`, which is what it
+# holds (code reviewer finding F7); it was only ever here because round 1's
+# Files in scope held one file.
+#
+# The two source-label constants that used to sit here are gone too, with the
+# two functions that built them. A label that has to distinguish a derived
+# ratio from a SUBSTITUTED one can only be produced where the evidence is —
+# inside `derive_assumptions` — so `analysis/projector.py` now returns it and
+# this route reads `assumptions["sources"]`. Finding F1.
+
 # In-memory cache: extraction results from assumptions_page are reused in run_valuation
 # so the LLM is only called once per upload.
 #
-# It carries the EXCLUDED non-recurring items alongside the normalised
-# statements, because those items are a fact about the share price this cache
-# entry will produce. Caching the statements alone is what made them
-# unreachable from the result page: the page would have had to say nothing was
-# excluded, or say nothing at all, on exactly the path a real user takes.
+# It carries the raw statements and BOTH halves of the non-recurring
+# partition alongside the normalised statements, because all four are facts
+# about the share price this cache entry will produce. Caching the normalised
+# statements alone is what made the other three unreachable from the result
+# page: the page would have had to say nothing was adjusted, or say nothing at
+# all, on exactly the path a real user takes.
 # (The module-global cache itself is backlog item 5 and is not this unit's.)
-_extraction_cache: dict[
-    str, tuple[FinancialStatements, list[NonRecurringItem]]
-] = {}
+_extraction_cache: dict[str, CachedExtraction] = {}
 
 
 def _parse_files_param(files_str: str) -> list[tuple[int, str]]:
@@ -81,6 +123,55 @@ def _extract_from_files(
     return extract_multi_year(valid, ticker, company_name, provider=provider)
 
 
+def _historical_fcff_by_year(
+    financials: FinancialStatements,
+) -> list[HistoricalFCFFYear]:
+    """One row per extracted year, computed or explicitly not computable.
+
+    `calculate_fcff_historical` (`analysis/fcff.py:47`) needs both the income
+    statement and the cash flow statement of the year. Where either is absent
+    the year still gets a row, marked absent and naming what was missing, so
+    the output can print the words instead of leaving a silent hole.
+
+    Built from whichever `FinancialStatements` the caller hands it; both call
+    sites hand it the NORMALISED statements, which is what every other figure
+    on both pages is built from.
+    """
+    rows: list[HistoricalFCFFYear] = []
+
+    for year in financials.years:
+        income_statement = financials.get_income_statement(year)
+        cash_flow = financials.get_cash_flow(year)
+
+        missing: list[str] = []
+        if income_statement is None:
+            missing.append("income statement")
+        if cash_flow is None:
+            missing.append("cash flow statement")
+
+        if income_statement is None or cash_flow is None:
+            rows.append(
+                HistoricalFCFFYear(
+                    year=year,
+                    is_computable=False,
+                    fcff=None,
+                    missing_statements=tuple(missing),
+                )
+            )
+            continue
+
+        rows.append(
+            HistoricalFCFFYear(
+                year=year,
+                is_computable=True,
+                fcff=calculate_fcff_historical(income_statement, cash_flow),
+                missing_statements=(),
+            )
+        )
+
+    return rows
+
+
 @router.get("/assumptions", response_class=HTMLResponse)
 async def assumptions_page(
     request: Request,
@@ -94,6 +185,21 @@ async def assumptions_page(
     error = None
     defaults = {}
 
+    # Set before the try, so that the failure path and the no-filing path reach
+    # the context with every key defined. An undefined name in a jinja context
+    # renders as nothing, which is how a template quietly shows an empty table
+    # on the success path as readily as on the error path.
+    #
+    # `None` and empty, never a substitute: there is no extraction on those
+    # paths, and `assumption_sources` is empty because a page that derived no
+    # ratio has no ratio to label.
+    raw_financials: FinancialStatements | None = None
+    normalised_financials: FinancialStatements | None = None
+    applied_items: list[NonRecurringItem] = []
+    excluded_items: list[NonRecurringItem] = []
+    historical_fcff: list[HistoricalFCFFYear] = []
+    assumption_sources: dict[str, AssumptionSource] = {}
+
     # Build filings list from either new multi-file or legacy single-file param
     if files:
         filings = _parse_files_param(files)
@@ -106,14 +212,29 @@ async def assumptions_page(
 
     if filings:
         try:
-            financials, non_recurring = _extract_from_files(filings, ticker, company_name)
+            raw_financials, non_recurring = _extract_from_files(filings, ticker, company_name)
             # Partition first, normalise with the applied half only. The
             # decision belongs to analysis/ (rule 1) and normalize_financials
             # keeps the signature its tests were written against.
-            applied, excluded = partition_by_confidence(non_recurring)
-            financials = normalize_financials(financials, applied)
-            _extraction_cache[cache_key] = (financials, excluded)
-            defaults = derive_assumptions(financials)
+            applied_items, excluded_items = partition_by_confidence(non_recurring)
+            # `normalize_financials` returns a NEW FinancialStatements through
+            # dataclasses.replace (`analysis/normalizer.py:245`); it does not
+            # mutate its argument. So `raw_financials` below is still the
+            # pre-adjustment extraction, and the reconciliation has both sides.
+            normalised_financials = normalize_financials(raw_financials, applied_items)
+            _extraction_cache[cache_key] = CachedExtraction(
+                raw_financials=raw_financials,
+                normalised_financials=normalised_financials,
+                applied_items=applied_items,
+                excluded_items=excluded_items,
+            )
+            defaults = derive_assumptions(normalised_financials)
+            # Rule 6, one home for the fact. `derive_assumptions` is the only
+            # place that can tell a ratio derived from three filing-years from
+            # one substituted because nothing fed it, because by the time it
+            # returns, the list it averaged is out of scope. This route reads
+            # the label; it does not re-derive it.
+            assumption_sources = defaults["sources"]
             # Format for display
             defaults["revenue_growth_display"] = [f"{g * 100:.1f}" for g in defaults["revenue_growth_rates"]]
             defaults["operating_margin_display"] = f"{defaults['operating_margin'] * 100:.1f}"
@@ -121,6 +242,14 @@ async def assumptions_page(
             defaults["da_pct_display"] = f"{defaults['da_pct_revenue'] * 100:.1f}"
             defaults["capex_pct_display"] = f"{defaults['capex_pct_revenue'] * 100:.1f}"
             defaults["nwc_pct_display"] = f"{defaults['nwc_pct_revenue'] * 100:.1f}"
+            # LAST in the try, and deliberately after `derive_assumptions`.
+            # `calculate_fcff_historical` stops on a NaN tax rate (rule 3,
+            # `analysis/fcff.py:39-44`), and at round 1 this call sat ahead of
+            # the derivation, so one NaN historical year replaced the whole
+            # defaults form with an error page — a form the reader could
+            # otherwise have used and corrected by hand. Code reviewer finding
+            # F3. Calling it last changes no number.
+            historical_fcff = _historical_fcff_by_year(normalised_financials)
         except Exception as e:
             error = str(e)
 
@@ -133,6 +262,24 @@ async def assumptions_page(
         "files": files or file_path,
         "defaults": defaults,
         "error": error,
+        # The chain, carried so a template can show it. `P8b-statements-ui`
+        # renders these six; this route only has to make them reachable, and
+        # the key names are the ones that unit is written against.
+        #
+        # `raw_financials` is the extraction as it arrived; `financials` is the
+        # same statements after the applied items landed. Both sides are here
+        # because a reconciliation needs both.
+        "raw_financials": raw_financials,
+        "financials": normalised_financials,
+        "applied_non_recurring": applied_items,
+        "excluded_non_recurring": excluded_items,
+        "historical_fcff": historical_fcff,
+        # CONTRACT: this is empty, or it holds exactly six entries — one per
+        # ratio, under the six literal keys `derive_assumptions` writes. It is
+        # never a partial dict. Empty means no ratio was derived at all
+        # (no filing named, or the extraction failed), and six labels there
+        # would describe a run that did not happen.
+        "assumption_sources": assumption_sources,
         # Rule 6, backlog item 34. The risk-free rate field is now blank by
         # default so that leaving it alone reaches `run_capm` as None and the
         # result page can say the constant was SUBSTITUTED. The reader still
@@ -192,17 +339,23 @@ async def run_valuation(
     try:
         # 1. Use cached normalized financials from assumptions_page (avoids re-calling LLM)
         if files in _extraction_cache:
-            financials, excluded_items = _extraction_cache.pop(files)
+            # Still a `.pop()`. That the cache is a module global emptied on
+            # read is backlog item 5 and is not this unit's to change.
+            cached = _extraction_cache.pop(files)
+            raw_financials = cached.raw_financials
+            financials = cached.normalised_financials
+            applied_items = cached.applied_items
+            excluded_items = cached.excluded_items
         else:
             # Fallback: extract + normalize if cache miss
             filings = _parse_files_param(files) if ":" in files else [(0, files)]
-            raw_fin, non_recurring = _extract_from_files(filings, ticker, company_name)
+            raw_financials, non_recurring = _extract_from_files(filings, ticker, company_name)
             # Same order as assumptions_page: partition, then normalise with the
-            # applied half. Both branches must produce the same two values, or
+            # applied half. Both branches must produce the same FOUR values, or
             # the page would report a different exclusion than the arithmetic
             # used depending on which one ran.
-            applied, excluded_items = partition_by_confidence(non_recurring)
-            financials = normalize_financials(raw_fin, applied)
+            applied_items, excluded_items = partition_by_confidence(non_recurring)
+            financials = normalize_financials(raw_financials, applied_items)
 
         # 2. Build assumptions (from post-adjustment financials)
         rev_growth_list = []
@@ -294,6 +447,18 @@ async def run_valuation(
         # outside this unit's Files in scope.
         extraction = resolve_provider(config.DEFAULT_EXTRACTION_PROVIDER, None)
 
+        # 7. The chain behind the figures above, for the page to show.
+        #
+        # Built from the NORMALISED statements, because that is what the DCF
+        # ran on. Computed here, after the valuation, so the order in which
+        # these lines run cannot move any figure already computed above.
+        historical_fcff = _historical_fcff_by_year(financials)
+        # Rule 6: for each of the six ratios, whether the reader supplied it,
+        # how many filing-years derived it, or that nothing fed it and a
+        # default was substituted. Read straight out of the dict that computed
+        # them — see the contract comment on the same key in `assumptions_page`.
+        assumption_sources = assumptions["sources"]
+
         # starlette 1.6.0 removed the deprecated TemplateResponse(name, context)
         # form; the signature is (request, name, context). Under the old call the
         # context dict bound to `name` and jinja raised "cannot use 'tuple' as a
@@ -308,10 +473,20 @@ async def run_valuation(
             "assumptions": assumptions,
             "current_price": price_data.current_price,
             "extraction": extraction,
+            # The statements as extracted and the same statements after the
+            # applied items landed — the two sides of the reconciliation.
+            "raw_financials": raw_financials,
+            "financials": financials,
+            # The items that WERE applied. Every figure on this page is built
+            # from statements these moved, so the page could not previously
+            # name a single adjustment behind its own share price.
+            "applied_non_recurring": applied_items,
             # The items that were NOT applied. The template says so in as many
             # words and prints the source each cited, so a reader can reverse
             # the decision by hand.
             "excluded_non_recurring": excluded_items,
+            "historical_fcff": historical_fcff,
+            "assumption_sources": assumption_sources,
         })
 
     except Exception as e:
@@ -329,5 +504,15 @@ async def run_valuation(
             # Empty rather than absent: on the error path there is no valuation
             # to exclude anything from, and an undefined name in the context is
             # how a template quietly renders nothing on the success path too.
+            #
+            # The run may have failed before the extraction, after it, or
+            # between the two, so none of these six can be reported here
+            # without claiming something this branch does not know. Every key
+            # is defined and every one is empty.
+            "raw_financials": None,
+            "financials": None,
+            "applied_non_recurring": [],
             "excluded_non_recurring": [],
+            "historical_fcff": [],
+            "assumption_sources": {},
         })

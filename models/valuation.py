@@ -55,6 +55,88 @@ BETA_RELIABILITY_NOT_ASSESSED: Final = (
 )
 
 
+# ---------------------------------------------------------------------------
+# Provenance labels for the six projection ratios — rule 6
+#
+# `analysis/projector.py` produces six ratios and a reader cannot tell them
+# apart once each is rendered as a percentage. THREE things can produce one,
+# not two:
+#
+#   supplied     — the caller typed it into the form, or passed it on the CLI.
+#   derived      — at least one filing-year fed the average or the CAGR.
+#   substituted  — NO filing-year fed it. `_historical_average([])` returns
+#                  0.0 and `_historical_cagr` returns 0.0 on a non-positive or
+#                  degenerate revenue window (backlog item 1), so a ratio can
+#                  reach the page as a confident 0.0% that nothing measured.
+#
+# Round 1 of `P8a-statements-data` had only the first two states and said
+# "derived from the filing's history" over the third. On a filing with income
+# statements and no cash flow statements that is a false claim about three
+# ratios at once, made in the same render where `historical_fcff` reports that
+# the cash flow statement was never extracted. Code reviewer finding F1.
+#
+# Two of the three sentences carry a fact about the particular run — how many
+# years fed it, or which default replaced it — so they are format templates
+# rather than finished strings. The invariant words are still written once,
+# here, beside the labels they belong to. Nothing is looked up by one of these
+# values and none of them is called: rule 2's ban is on looking up behaviour.
+# ---------------------------------------------------------------------------
+
+ASSUMPTION_ORIGIN_SUPPLIED: Final = "supplied"
+ASSUMPTION_ORIGIN_DERIVED: Final = "derived"
+ASSUMPTION_ORIGIN_SUBSTITUTED: Final = "substituted"
+
+ASSUMPTION_SOURCE_SUPPLIED: Final = (
+    "supplied by the caller — the assumptions form, or the matching CLI "
+    "option. Still an assumption, not a measurement: nothing in this platform "
+    "checks a figure you typed against the filing."
+)
+ASSUMPTION_SOURCE_DERIVED_TEMPLATE: Final = (
+    "derived from the filing: {observations} filing-year(s) of extracted data "
+    "fed it. It measures those years; that they continue is the assumption."
+)
+ASSUMPTION_SOURCE_SUBSTITUTED_TEMPLATE: Final = (
+    "ASSUMPTION — SUBSTITUTED. Nothing from the filing fed this figure — no "
+    "year contributed an observation — so {default_value} was used in place "
+    "of a derivation. It is not a measurement."
+)
+
+# Appended to whichever sentence above applies. Each names a step this
+# platform took that the filing did not, and both can land on a figure that
+# is otherwise supplied or otherwise derived, so neither is a fourth origin.
+ASSUMPTION_CLAMPED_CLAUSE_TEMPLATE: Final = (
+    " It was then CLAMPED into the {low} to {high} band this platform "
+    "imposes: {pre_clamp} fell outside it, so {post_clamp} is the figure "
+    "every calculation downstream used."
+)
+ASSUMPTION_PADDED_CLAUSE_TEMPLATE: Final = (
+    " The projection runs {projection_years} year(s) and only "
+    "{supplied_years} rate(s) reached it, so the last rate was REPEATED to "
+    "fill the remainder. The repeat is this platform's, and it is not in the "
+    "filing."
+)
+
+
+@dataclass(frozen=True)
+class AssumptionSource:
+    """Where one projection ratio came from. Rule 6.
+
+    Every field is required and nothing is defaulted. A source that cannot say
+    which of the three origins produced its ratio is not a source, and a field
+    defaulting to `derived` would be finding F1 rebuilt: the claim a reader
+    trusts least should never be the one that arrives for free.
+
+    `observations` is the number of filing-years that fed the figure. It is
+    `0` when the ratio was supplied (no filing-year fed it — the caller did)
+    and `0` when it was substituted (no filing-year fed it — a default did),
+    and `origin` is what tells those two apart.
+    """
+
+    origin: str          # exactly one of the three ASSUMPTION_ORIGIN_* constants
+    detail: str          # the sentence a reader sees
+    observations: int    # filing-years that fed it; 0 when supplied or substituted
+
+
 @dataclass
 class CAPMResult:
     """Output of CAPM calculation."""
@@ -149,6 +231,32 @@ class HistoricalFCFF:
     @property
     def fcff_margin(self) -> float:
         return self.fcff / self.revenue if self.revenue else 0.0
+
+
+@dataclass(frozen=True)
+class HistoricalFCFFYear:
+    """One extracted year's historical FCFF, or the record that it has none.
+
+    A year whose income statement or cash flow statement was not extracted is
+    carried here with `is_computable=False` and `fcff=None`, and
+    `missing_statements` names what was absent. It is NOT dropped, as
+    `cli.py:721-722` drops it with a bare `continue`, because a reader cannot
+    tell a dropped year from a year that was never extracted; and it is NOT
+    given a `HistoricalFCFF` full of zeros, because a zero that means "we do
+    not know" and a zero that means "zero" are the same bytes (rule 3).
+
+    Nothing is defaulted, so a row that cannot say whether its FCFF was
+    computable cannot be built at all.
+
+    (Written in `api/routes_valuation.py` at round 1 of `P8a-statements-data`
+    because that unit's Files in scope held one file; moved here unchanged at
+    round 2, per code reviewer finding F7. A record belongs in `models/`.)
+    """
+
+    year: int
+    is_computable: bool
+    fcff: HistoricalFCFF | None
+    missing_statements: tuple[str, ...]
 
 
 @dataclass

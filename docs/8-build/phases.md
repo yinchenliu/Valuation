@@ -137,6 +137,33 @@ Backlog items 9, 10, 13. [Rule 6](../2-rules/rules.md).
 | 2 | the resolved provider and model appear in the output | shown | manual run |
 | 3 | the D&A decision moved out of the parser, with its reasoning recorded | — | `grep` on `claude_extractor.py:479` |
 
+## Phase 8 — show the chain
+
+[Rule 4](../2-rules/rules.md), which states the gap in as many words: "the trace is true
+by reading the source, and it is not true from the output — the result page shows a
+share price and no chain."
+
+`cli.py` prints seven blocks the web app does not: the income statement, the cash flow
+statement, the balance sheet with its balance check, the non-recurring items that were
+**applied**, the GAAP to non-GAAP reconciliation, the historical FCFF table, and the
+`(override)` tag on each assumption ratio. The web app shows only the items that were
+**withheld**, which is the inversion of what a reader needs.
+
+| # | Criterion | Expected | Measured by |
+|---|---|---|---|
+| 1 | both routes carry the raw statements, the normalised statements, the applied items and the excluded items | 4 named fields | `grep -n "class CachedExtraction" api/routes_valuation.py` |
+| 2 | `GET /assumptions` renders all seven blocks | 200, every block present | `TestClient` over a stubbed extraction |
+| 3 | `POST /valuation` renders all seven blocks | 200, every block present | same |
+| 4 | a year with no extracted statement renders the words, never a zero and never a blank | `not extracted` | `grep` on the rendered body |
+
+**Constraint.** This phase must not change a number. It shows figures that already
+exist. If a displayed figure disagrees with the CLI's for the same inputs, the two paths
+disagreed before, and that disagreement is the finding.
+
+**Do not copy `cli.py`'s print layer.** It holds three rule 3 sites — `:508`, `:522-538`
+and `:593` — each a conditional zero or a blank cell standing in for a missing
+statement. A blank cell and a zero cell are the same bytes to a reader.
+
 ---
 
 ## Rules for every phase

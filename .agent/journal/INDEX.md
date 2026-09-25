@@ -42,6 +42,10 @@ edits another's.
 | 2026-09-22 | P7-low-confidence | code_reviewer, r1 | `changes_requested` — 2 major: a `.get` the rewrite carried in, and a counterfactual wrong twice | [entry](2026-09-22T2000-code_reviewer-p7-low-confidence.md) |
 | 2026-09-22 | P7-low-confidence | programmer, r2 | `ok` — **withdrew its own figure** and showed it cannot be recomputed | [entry](2026-09-22T2100-programmer-p7-low-confidence-r2.md) |
 | 2026-09-22 | P7-low-confidence | code_reviewer, r2 | **`approved`** — **withdrew its own round-1 repair suggestion** | [entry](2026-09-22T2200-code_reviewer-p7-r2.md) |
+| 2026-09-25 | P8a-statements-data | programmer, r1 | `ok` — cache widened to four named fields; six context keys | [entry](2026-09-25T1149-programmer-p8a-statements-data.md) |
+| 2026-09-25 | P8a-statements-data | code_reviewer, r1 | `changes_requested` — 1 major, **the orchestrator's error**: a two-sentence label cannot state this provenance | [entry](2026-09-25T1207-code_reviewer-p8a-statements-data.md) |
+| 2026-09-25 | P8a-statements-data | programmer, r2 | `ok` — provenance moved into `derive_assumptions`; **overturned a done-criterion the orchestrator wrote** | [entry](2026-09-25T1217-programmer-p8a-statements-data-r2.md) |
+| 2026-09-25 | P8a-statements-data | code_reviewer, r2 | **`approved`** — 2 notes. **Narrowed its own round-1 finding** after re-measuring | [entry](2026-09-25T1243-code_reviewer-p8a-r2.md) |
 
 `P2b-provider` is the first unit to take two review rounds. Round 1's `changes_requested`
 was caused by **the assignment**, not the code: its file scope excluded the two lines
