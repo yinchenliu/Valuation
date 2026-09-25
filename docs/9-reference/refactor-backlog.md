@@ -631,6 +631,39 @@ comparing one against the CLI would find a discrepancy with no explanation.
 
 **Fix.** Call the partition first, as both entry points do. `tests/` is a tester's file.
 
+## 41. `analysis/projector.py:169`'s `0.05` growth rate is unreachable · **dead**
+
+**Fact.** `rev_growth.append(rev_growth[-1] if rev_growth else 0.05)` sits inside
+`while len(rev_growth) < ov.projection_years`. `rev_growth` can only be empty when
+`projection_years <= 0`, and the `while` never runs in that case. The `P8a` reviewer
+proved it two ways at `6e58f13`: by exhausting 48 input combinations — `0.05 pad reached
+on 0 of 48` — and by construction.
+
+**What it costs.** Little today, and that is the point. It is one of the three
+`analysis/projector.py` hits in item 1's census, and **removing it cannot move a number**,
+because no input reaches it. It is the cheapest hit in that census.
+
+**It also carries a claim.** A hardcoded 5% growth rate that never fires still reads, to
+anyone auditing the file, as a default this platform is willing to assume.
+
+**Fix.** Delete the `else 0.05`. If `rev_growth` is empty at that point the loop cannot
+be running, so no branch is lost. Do it as part of item 1, not on its own.
+
+## 42. A supplied growth list longer than the projection is silently truncated · **silent**
+
+**Fact.** `analysis/projector.py:170` truncates `rev_growth` to `projection_years`.
+Measured at `6e58f13`: five supplied rates with `projection_years=2` produce `[0.1, 0.2]`
+and the `AssumptionSource` for that ratio carries **no clause saying three rates were
+discarded**. The pad case does carry one — it says the last rate was `REPEATED`.
+
+**What it costs.** The reader typed five numbers and the valuation used two. The page
+says the rates were `supplied`, which is true of the two that survived and says nothing
+about the three that did not. This is not rule 6 broken — nothing is mislabelled — but
+it is the same shape one step earlier: an input silently discarded.
+
+**Fix.** Add a truncate clause beside the pad clause, naming how many rates were
+discarded. Whoever finishes the provenance work owns it.
+
 ## 36. The same filing extracted twice gave share prices 16% apart · **silent**
 
 **This is the most consequential item on this list.** Every other defect here is a wrong

@@ -4,23 +4,32 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `7354698`, 2026-09-22**, on branch `build/phase-1-2`. **Fifteen work units
+**Measured at `6e58f13`, 2026-09-25**, on branch `build/phase-1-2`. **Sixteen work units
 accepted, and not one on its own report.** Every programmer run went to a reviewer that
-re-ran the measurements rather than reading them; three times a reviewer overturned a
-claim, twice against a programmer and once against the orchestrator. The journal is
-[.agent/journal/INDEX.md](.agent/journal/INDEX.md).
+re-ran the measurements rather than reading them; **five** times a reviewer or a
+programmer overturned a claim — twice against a programmer, **three times against the
+orchestrator**. The journal is [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
+
+**The newest of the three orchestrator errors is the instructive one.** `P8a`'s
+assignment mandated a two-sentence provenance label, supplied or derived. Review round 1
+proved by execution that two sentences cannot state this provenance: a filing with no
+cash flow statements produces a D&A ratio derived from nothing, and the two-sentence
+scheme called it "derived from the filing's history". **The assignment was the defect,
+not the code that followed it.** Round 2 then overturned one of the orchestrator's
+done-criteria as well, showing it went red against correct code.
 
 ---
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `7354698` |
+| Gate | Command | Result at `6e58f13` |
 |---|---|---|
-| Tests | `.venv/Scripts/python.exe -m pytest -q` | **146 tests. 145 pass, 1 red on purpose**, 11 s |
+| Tests | `.venv/Scripts/python.exe -m pytest -q` | **146 tests. 145 pass, 1 red on purpose**, 4 s |
 | **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **145 passed**, 0 failed |
 | Lint | `.venv/Scripts/python.exe -m ruff check .` | **5 errors**, every one `BLE001` |
 | Types | `.venv/Scripts/python.exe -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **14 errors in 4 files**, 18 files checked |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
+| **Rule 3 census** | the grep at [rules.md:65](docs/2-rules/rules.md) | **116**, unchanged since `7354698` |
 
 **There is a fourth gate now, and it is stricter than `import app` ever was.**
 
@@ -128,36 +137,50 @@ still open. `ls tests/unit/*_rule3_red.py` returns exactly that one line.
 | tests collected | 0 | **146** |
 | paid API calls during collection | attempted | **none** |
 
-### Coverage, measured at `3028627`
+### Coverage, measured at `6e58f13`
 
 ```
-analysis/capm.py         53 statements    0 missed   100%
-analysis/dcf.py          35               0          100%
-analysis/fcff.py         24               0          100%
-analysis/normalizer.py   36               0          100%
-analysis/projector.py    68               0          100%
-analysis/wacc.py         39               0          100%
-analysis/ TOTAL         255               0          100%   (80 of 80 branches)
+                          statements  missed  cover
+analysis/capm.py                  53       0   100%
+analysis/dcf.py                   35       0   100%
+analysis/fcff.py                  24       0   100%
+analysis/normalizer.py            49       6    85%
+analysis/projector.py            114       1    99%
+analysis/wacc.py                  39       0   100%
+analysis/ TOTAL                  314       7    98%
 
-api/routes_upload.py     33               0          100%
-api/routes_valuation.py  93               8           91%
-api/ TOTAL              126               8           94%
+api/routes_upload.py              33       0   100%
+api/routes_valuation.py          132      13    88%
+api/ TOTAL                       165      13    92%
+
+models/financial_statements.py   151      13    92%
+models/valuation.py              127       3    97%
 ```
 
-**`api/` went from 0 of 126 statements to 118 of 126 at `742f447`, unchanged since.** Before
-`P5b-route-tests`, coverage.py reported `Module app was never imported`. The eight
-uncovered arcs are each a fallback or a recorded backlog item the tester **refused to
-pin**: the cache-hit branch (item 5), the yfinance share-count fallback (rule 5), and
-the legacy `file_path` branch (item 26). Pinning one would lock the defect.
+**The previous revision of this table was stale, and it overstated coverage.** It read
+`analysis/ TOTAL 255 statements, 0 missed, 100%`, headed "measured at `3028627`". The
+heading was honest and the figures had not been true for two commits. `P7-low-confidence`
+added `partition_by_confidence` at `7354698`, which took `analysis/normalizer.py` from 36
+statements to 49 and left **6 of them uncovered**.
 
-**`analysis/` is complete: 255 of 255 statements and 80 of 80 branches**, against 24
-statements at `d1854fb`. The stop paths added between `ff632df` and `6cf34d3` left eight
-`raise` statements uncovered for a while, because no existing test supplied the broken
-input they catch. `P6b-wacc-fixture` closed all eight.
+**That gap is not `P8a`'s.** Measured by stashing `P8a`'s three files and re-running
+against the committed tree at `35be956`: `analysis/normalizer.py 49 6 85%`, identical.
+Read the rule this broke: a file that states a measurement names the commit it was
+measured at, **and a measurement is re-taken when a unit lands, never carried forward.**
+The second half was skipped.
+
+**`P8a-statements-data` added 46 statements to `analysis/projector.py` and 37 to
+`api/routes_valuation.py`.** One projector line is uncovered — the tax-clamp clause body
+— and the reviewer reached it twice by execution before approving. Of `api/`'s 13, four
+are the cache-hit branch (item 5) now spelled over five statements instead of one, and
+one is the dead-but-required type narrowing named in the review as F4.
 
 **The gap was never worked around.** Each unit was told in writing not to add an
 unreachable guard or restructure code to hold a percentage, and each reviewer reached
 the uncovered lines by execution to confirm none was dead.
+
+**`api/` went from 0 of 126 statements at `742f447`**; before `P5b-route-tests`,
+coverage.py reported `Module app was never imported`.
 
 **Two caveats a reader must not skip.**
 
@@ -337,6 +360,8 @@ the headline. Re-ranked at `622262b`.
 | 18 | The lint gate's rule set is unpinned | a ruff upgrade changes what the gate enforces, with no commit to point at |
 | 28 | `api/routes_upload.py:27` — `str \| None` used as a path segment | the last type error in that file |
 | 29 | `POST /valuation` with no `files` runs an extraction on the empty string | **rule 3, and never counted.** HTTP 200, the extractor receives `''`, and the word `files` appears nowhere on the page |
+| 42 | A supplied growth list longer than the projection is silently truncated | **new at `6e58f13`.** Five rates supplied, two used, and the label says `supplied` without naming the three discarded |
+| 41 | `analysis/projector.py:169`'s `0.05` growth rate is unreachable | **new at `6e58f13`.** Proved dead two ways. The **cheapest hit in item 1's census** — deleting it cannot move a number |
 
 ### Closed
 
@@ -360,8 +385,16 @@ the headline. Re-ranked at `622262b`.
 | 23b | The NaN tax clamp twin | `2ca620a` |
 | 14 | Empty `projected_fcffs` raised a bare `IndexError` | `ff632df` |
 
-**Seventeen closed, twenty-one open.** Items 19 to 28 did not exist when this build started —
-**every one of them was found by running the code**, not by reading it.
+**Seventeen closed, twenty-three open.** Items 19 to 28 did not exist when this build
+started — **every one of them was found by running the code**, not by reading it. So were
+41 and 42, both found at `6e58f13` by a reviewer exhausting inputs rather than reading
+the branch.
+
+**Item 9 needs re-reading before it is trusted.** It appears in both tables: closed at
+`6cf34d3` for the cost of debt, and open for the projection ratios. `P8a` closed the
+second half at `6e58f13` — every ratio now carries its origin — but nothing renders it
+until `P8b-statements-ui` lands. **Rule 6 asks that an assumption be visible to the user.
+Recorded is not visible.**
 
 ---
 
