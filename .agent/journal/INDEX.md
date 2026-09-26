@@ -46,6 +46,12 @@ edits another's.
 | 2026-09-25 | P8a-statements-data | code_reviewer, r1 | `changes_requested` — 1 major, **the orchestrator's error**: a two-sentence label cannot state this provenance | [entry](2026-09-25T1207-code_reviewer-p8a-statements-data.md) |
 | 2026-09-25 | P8a-statements-data | programmer, r2 | `ok` — provenance moved into `derive_assumptions`; **overturned a done-criterion the orchestrator wrote** | [entry](2026-09-25T1217-programmer-p8a-statements-data-r2.md) |
 | 2026-09-25 | P8a-statements-data | code_reviewer, r2 | **`approved`** — 2 notes. **Narrowed its own round-1 finding** after re-measuring | [entry](2026-09-25T1243-code_reviewer-p8a-r2.md) |
+| 2026-09-26 | P8b-statements-ui | programmer | `ok` — 13 of 13 criteria; seven statement blocks rendered | [entry](2026-09-26T1716-programmer-p8b-statements-ui.md) |
+| 2026-09-26 | P8b-statements-ui | code_reviewer | **`approved`** — 1 note on CapEx header. All 13 criteria verified | [entry](2026-09-26T1735-code_reviewer-p8b-statements-ui.md) |
+| 2026-09-26 | P8b-statements-ui | tester | **`pass`** — 19 tests, 100 asserts over 7 blocks. Verified Rule 3 stops and badges | [entry](2026-09-26T1740-tester-p8b-statements-ui.md) |
+
+
+
 
 `P2b-provider` is the first unit to take two review rounds. Round 1's `changes_requested`
 was caused by **the assignment**, not the code: its file scope excluded the two lines

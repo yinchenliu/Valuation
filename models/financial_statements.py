@@ -198,6 +198,10 @@ class BalanceSheet:
         return self.total_debt - self.cash_and_equivalents - self.short_term_investments
 
     @property
+    def balance_check_difference(self) -> float:
+        return self.total_assets - (self.total_liabilities + self.total_equity)
+
+    @property
     def net_working_capital(self) -> float:
         """Operating working capital (excludes cash and debt)."""
         current_operating_assets = self.accounts_receivable + self.inventory + self.other_current_assets

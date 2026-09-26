@@ -12,6 +12,102 @@
 
     <p>Review and adjust the projection assumptions below. Defaults are derived from historical financials.</p>
 
+    {% if not error and assumption_sources %}
+    <div class="section">
+        <h2>Assumptions Used</h2>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Assumption</th>
+                    <th class="num">Derived Default</th>
+                    <th>Source Statement</th>
+                    <th>Provenance</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr{% if assumption_sources.revenue_growth_rates and assumption_sources.revenue_growth_rates.origin == 'substituted' %} class="substituted-row"{% endif %}>
+                    <td>Revenue Growth Rates</td>
+                    <td class="num">{% if defaults.revenue_growth_display %}{{ defaults.revenue_growth_display | join(', ') }}%{% endif %}</td>
+                    <td>Income Statement</td>
+                    <td>
+                        {% if assumption_sources.revenue_growth_rates %}
+                        <div class="provenance">
+                            {% if assumption_sources.revenue_growth_rates.origin == 'substituted' %}<span class="substituted-marker">SUBSTITUTED</span>{% endif %}
+                            {{ assumption_sources.revenue_growth_rates.detail }}
+                        </div>
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr{% if assumption_sources.operating_margin and assumption_sources.operating_margin.origin == 'substituted' %} class="substituted-row"{% endif %}>
+                    <td>Operating Margin</td>
+                    <td class="num">{% if defaults.operating_margin_display %}{{ defaults.operating_margin_display }}%{% endif %}</td>
+                    <td>Income Statement</td>
+                    <td>
+                        {% if assumption_sources.operating_margin %}
+                        <div class="provenance">
+                            {% if assumption_sources.operating_margin.origin == 'substituted' %}<span class="substituted-marker">SUBSTITUTED</span>{% endif %}
+                            {{ assumption_sources.operating_margin.detail }}
+                        </div>
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr{% if assumption_sources.tax_rate and assumption_sources.tax_rate.origin == 'substituted' %} class="substituted-row"{% endif %}>
+                    <td>Tax Rate</td>
+                    <td class="num">{% if defaults.tax_rate_display %}{{ defaults.tax_rate_display }}%{% endif %}</td>
+                    <td>Income Statement</td>
+                    <td>
+                        {% if assumption_sources.tax_rate %}
+                        <div class="provenance">
+                            {% if assumption_sources.tax_rate.origin == 'substituted' %}<span class="substituted-marker">SUBSTITUTED</span>{% endif %}
+                            {{ assumption_sources.tax_rate.detail }}
+                        </div>
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr{% if assumption_sources.da_pct_revenue and assumption_sources.da_pct_revenue.origin == 'substituted' %} class="substituted-row"{% endif %}>
+                    <td>D&amp;A (% of Revenue)</td>
+                    <td class="num">{% if defaults.da_pct_display %}{{ defaults.da_pct_display }}%{% endif %}</td>
+                    <td>Cash Flow Statement</td>
+                    <td>
+                        {% if assumption_sources.da_pct_revenue %}
+                        <div class="provenance">
+                            {% if assumption_sources.da_pct_revenue.origin == 'substituted' %}<span class="substituted-marker">SUBSTITUTED</span>{% endif %}
+                            {{ assumption_sources.da_pct_revenue.detail }}
+                        </div>
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr{% if assumption_sources.capex_pct_revenue and assumption_sources.capex_pct_revenue.origin == 'substituted' %} class="substituted-row"{% endif %}>
+                    <td>CapEx (% of Revenue)</td>
+                    <td class="num">{% if defaults.capex_pct_display %}{{ defaults.capex_pct_display }}%{% endif %}</td>
+                    <td>Cash Flow Statement</td>
+                    <td>
+                        {% if assumption_sources.capex_pct_revenue %}
+                        <div class="provenance">
+                            {% if assumption_sources.capex_pct_revenue.origin == 'substituted' %}<span class="substituted-marker">SUBSTITUTED</span>{% endif %}
+                            {{ assumption_sources.capex_pct_revenue.detail }}
+                        </div>
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr{% if assumption_sources.nwc_pct_revenue and assumption_sources.nwc_pct_revenue.origin == 'substituted' %} class="substituted-row"{% endif %}>
+                    <td>NWC (% of Revenue)</td>
+                    <td class="num">{% if defaults.nwc_pct_display %}{{ defaults.nwc_pct_display }}%{% endif %}</td>
+                    <td>Cash Flow Statement</td>
+                    <td>
+                        {% if assumption_sources.nwc_pct_revenue %}
+                        <div class="provenance">
+                            {% if assumption_sources.nwc_pct_revenue.origin == 'substituted' %}<span class="substituted-marker">SUBSTITUTED</span>{% endif %}
+                            {{ assumption_sources.nwc_pct_revenue.detail }}
+                        </div>
+                        {% endif %}
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
     <form action="/valuation" method="post">
         <input type="hidden" name="ticker" value="{{ ticker }}">
         <input type="hidden" name="company_name" value="{{ company_name }}">
@@ -131,5 +227,10 @@
 
         <button type="submit" class="btn btn-primary">Run Valuation</button>
     </form>
+
+    {% if not error and financials %}
+    {% set statements_open = true %}
+    {% include "_statements.html" %}
+    {% endif %}
 </div>
 {% endblock %}

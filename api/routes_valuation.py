@@ -172,6 +172,77 @@ def _historical_fcff_by_year(
     return rows
 
 
+@dataclass(frozen=True)
+class EBITReconciliationYear:
+    """One year of GAAP to non-GAAP EBIT reconciliation."""
+
+    year: int
+    as_reported_ebit: float | None
+    adjusted_ebit: float | None
+    difference: float | None
+    missing_statement: str | None
+
+
+def _build_ebit_reconciliation(
+    raw: FinancialStatements | None,
+    adjusted: FinancialStatements | None,
+) -> list[EBITReconciliationYear]:
+    """Build per-year EBIT reconciliation between raw and normalised statements.
+
+    Rule 3: a year missing from either side carries a named field saying so,
+    never a zero delta.
+    """
+    if raw is None or adjusted is None:
+        return []
+
+    years = sorted(set(raw.years) | set(adjusted.years))
+    records: list[EBITReconciliationYear] = []
+    for y in years:
+        raw_is = raw.get_income_statement(y)
+        adj_is = adjusted.get_income_statement(y)
+        if raw_is is not None and adj_is is not None:
+            records.append(
+                EBITReconciliationYear(
+                    year=y,
+                    as_reported_ebit=raw_is.ebit,
+                    adjusted_ebit=adj_is.ebit,
+                    difference=adj_is.ebit - raw_is.ebit,
+                    missing_statement=None,
+                )
+            )
+        elif raw_is is None and adj_is is not None:
+            records.append(
+                EBITReconciliationYear(
+                    year=y,
+                    as_reported_ebit=None,
+                    adjusted_ebit=adj_is.ebit,
+                    difference=None,
+                    missing_statement="raw income statement",
+                )
+            )
+        elif raw_is is not None and adj_is is None:
+            records.append(
+                EBITReconciliationYear(
+                    year=y,
+                    as_reported_ebit=raw_is.ebit,
+                    adjusted_ebit=None,
+                    difference=None,
+                    missing_statement="adjusted income statement",
+                )
+            )
+        else:
+            records.append(
+                EBITReconciliationYear(
+                    year=y,
+                    as_reported_ebit=None,
+                    adjusted_ebit=None,
+                    difference=None,
+                    missing_statement="raw and adjusted income statement",
+                )
+            )
+    return records
+
+
 @router.get("/assumptions", response_class=HTMLResponse)
 async def assumptions_page(
     request: Request,
@@ -198,6 +269,7 @@ async def assumptions_page(
     applied_items: list[NonRecurringItem] = []
     excluded_items: list[NonRecurringItem] = []
     historical_fcff: list[HistoricalFCFFYear] = []
+    ebit_reconciliation: list[EBITReconciliationYear] = []
     assumption_sources: dict[str, AssumptionSource] = {}
 
     # Build filings list from either new multi-file or legacy single-file param
@@ -250,6 +322,7 @@ async def assumptions_page(
             # otherwise have used and corrected by hand. Code reviewer finding
             # F3. Calling it last changes no number.
             historical_fcff = _historical_fcff_by_year(normalised_financials)
+            ebit_reconciliation = _build_ebit_reconciliation(raw_financials, normalised_financials)
         except Exception as e:
             error = str(e)
 
@@ -274,6 +347,7 @@ async def assumptions_page(
         "applied_non_recurring": applied_items,
         "excluded_non_recurring": excluded_items,
         "historical_fcff": historical_fcff,
+        "ebit_reconciliation": ebit_reconciliation,
         # CONTRACT: this is empty, or it holds exactly six entries — one per
         # ratio, under the six literal keys `derive_assumptions` writes. It is
         # never a partial dict. Empty means no ratio was derived at all
@@ -453,6 +527,7 @@ async def run_valuation(
         # ran on. Computed here, after the valuation, so the order in which
         # these lines run cannot move any figure already computed above.
         historical_fcff = _historical_fcff_by_year(financials)
+        ebit_reconciliation = _build_ebit_reconciliation(raw_financials, financials)
         # Rule 6: for each of the six ratios, whether the reader supplied it,
         # how many filing-years derived it, or that nothing fed it and a
         # default was substituted. Read straight out of the dict that computed
@@ -486,6 +561,7 @@ async def run_valuation(
             # the decision by hand.
             "excluded_non_recurring": excluded_items,
             "historical_fcff": historical_fcff,
+            "ebit_reconciliation": ebit_reconciliation,
             "assumption_sources": assumption_sources,
         })
 
@@ -514,5 +590,6 @@ async def run_valuation(
             "applied_non_recurring": [],
             "excluded_non_recurring": [],
             "historical_fcff": [],
+            "ebit_reconciliation": [],
             "assumption_sources": {},
         })

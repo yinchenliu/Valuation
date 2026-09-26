@@ -3,11 +3,6 @@
 {% block title %}Valuation Result — {{ ticker }}{% endblock %}
 
 {% block content %}
-{# The provenance style is inline, and deliberately. static/style.css is not in
-   this unit's Files in scope, so a new class there could not be defined; an
-   inline style keeps the change inside templates/ and still renders. A later
-   unit that owns static/style.css should lift this into a `.provenance` rule. #}
-{% set PROV = "font-size:0.85em; font-weight:normal; color:#555; text-align:left; margin-top:0.35em; line-height:1.35;" %}
 <div class="card">
     <h1>DCF Valuation: {{ ticker }}{% if company_name %} — {{ company_name }}{% endif %}</h1>
 
@@ -28,7 +23,7 @@
                compute from the printed adjustments is the defect the exclusion
                exists to fix, wearing a different face. #}
             {% if excluded_non_recurring %}
-            <div style="{{ PROV }}">
+            <div class="provenance">
                 This price <strong>EXCLUDES</strong> {{ excluded_non_recurring|length }}
                 low-confidence non-recurring item(s), listed below. They were
                 <strong>not</strong> applied to the financial statements.
@@ -56,16 +51,16 @@
                  footnote and not two rows away, because a reader who reads
                  only the number is the reader the label exists for. -->
             <tr><td>Beta</td><td>{{ "%.3f"|format(capm.beta) }}</td></tr>
-            <tr><td style="{{ PROV }}">Beta — source</td><td style="{{ PROV }}">{{ capm.beta_source }}</td></tr>
-            <tr><td style="{{ PROV }}">Beta — reliability</td><td style="{{ PROV }}">{{ capm.beta_reliability }}</td></tr>
+            <tr><td class="provenance">Beta — source</td><td class="provenance">{{ capm.beta_source }}</td></tr>
+            <tr><td class="provenance">Beta — reliability</td><td class="provenance">{{ capm.beta_reliability }}</td></tr>
             <tr><td>R-squared</td><td>{{ "%.3f"|format(capm.r_squared) }}</td></tr>
             <tr><td>Std error of beta</td><td>{{ "%.3f"|format(capm.std_error) }}</td></tr>
             <tr><td>Risk-Free Rate</td><td>{{ "%.2f"|format(capm.risk_free_rate * 100) }}%</td></tr>
-            <tr><td style="{{ PROV }}">Risk-Free Rate — source</td><td style="{{ PROV }}">{{ capm.risk_free_rate_source }}</td></tr>
+            <tr><td class="provenance">Risk-Free Rate — source</td><td class="provenance">{{ capm.risk_free_rate_source }}</td></tr>
             <tr><td>Equity Risk Premium</td><td>{{ "%.2f"|format(capm.equity_risk_premium * 100) }}%</td></tr>
             <tr><td>Cost of Equity</td><td>{{ "%.2f"|format(capm.cost_of_equity * 100) }}%</td></tr>
             <tr><td>Cost of Debt (pre-tax)</td><td>{{ "%.2f"|format(wacc.cost_of_debt * 100) }}%</td></tr>
-            <tr><td style="{{ PROV }}">Cost of Debt — source</td><td style="{{ PROV }}">{{ wacc.cost_of_debt_source }}</td></tr>
+            <tr><td class="provenance">Cost of Debt — source</td><td class="provenance">{{ wacc.cost_of_debt_source }}</td></tr>
             <tr><td>Tax Rate</td><td>{{ "%.2f"|format(wacc.tax_rate * 100) }}%</td></tr>
             <tr><td>Equity Weight (E/V)</td><td>{{ "%.1f"|format(wacc.equity_weight * 100) }}%</td></tr>
             <tr><td>Debt Weight (D/V)</td><td>{{ "%.1f"|format(wacc.debt_weight * 100) }}%</td></tr>
@@ -127,12 +122,78 @@
         <table class="data-table">
             <tr><td>Projection Years</td><td>{{ assumptions.projection_years }}</td></tr>
             <tr><td>Terminal Growth Rate</td><td>{{ "%.2f"|format(assumptions.terminal_growth_rate * 100) }}%</td></tr>
-            <tr><td>Revenue Growth Rates</td><td>{% for g in assumptions.revenue_growth_rates %}{{ "%.1f"|format(g * 100) }}%{% if not loop.last %}, {% endif %}{% endfor %}</td></tr>
-            <tr><td>Operating Margin</td><td>{{ "%.1f"|format(assumptions.operating_margin * 100) }}%</td></tr>
-            <tr><td>Tax Rate</td><td>{{ "%.1f"|format(assumptions.tax_rate * 100) }}%</td></tr>
-            <tr><td>D&A (% of Revenue)</td><td>{{ "%.1f"|format(assumptions.da_pct_revenue * 100) }}%</td></tr>
-            <tr><td>CapEx (% of Revenue)</td><td>{{ "%.1f"|format(assumptions.capex_pct_revenue * 100) }}%</td></tr>
-            <tr><td>NWC (% of Revenue)</td><td>{{ "%.1f"|format(assumptions.nwc_pct_revenue * 100) }}%</td></tr>
+            <tr{% if assumption_sources.revenue_growth_rates and assumption_sources.revenue_growth_rates.origin == 'substituted' %} class="substituted-row"{% endif %}>
+                <td>Revenue Growth Rates</td>
+                <td>{% for g in assumptions.revenue_growth_rates %}{{ "%.1f"|format(g * 100) }}%{% if not loop.last %}, {% endif %}{% endfor %}</td>
+            </tr>
+            {% if assumption_sources.revenue_growth_rates %}
+            <tr class="provenance-row{% if assumption_sources.revenue_growth_rates.origin == 'substituted' %} substituted-row{% endif %}">
+                <td colspan="2" class="provenance">
+                    {% if assumption_sources.revenue_growth_rates.origin == 'substituted' %}<span class="substituted-marker">SUBSTITUTED</span>{% endif %}
+                    {{ assumption_sources.revenue_growth_rates.detail }}
+                </td>
+            </tr>
+            {% endif %}
+            <tr{% if assumption_sources.operating_margin and assumption_sources.operating_margin.origin == 'substituted' %} class="substituted-row"{% endif %}>
+                <td>Operating Margin</td>
+                <td>{{ "%.1f"|format(assumptions.operating_margin * 100) }}%</td>
+            </tr>
+            {% if assumption_sources.operating_margin %}
+            <tr class="provenance-row{% if assumption_sources.operating_margin.origin == 'substituted' %} substituted-row{% endif %}">
+                <td colspan="2" class="provenance">
+                    {% if assumption_sources.operating_margin.origin == 'substituted' %}<span class="substituted-marker">SUBSTITUTED</span>{% endif %}
+                    {{ assumption_sources.operating_margin.detail }}
+                </td>
+            </tr>
+            {% endif %}
+            <tr{% if assumption_sources.tax_rate and assumption_sources.tax_rate.origin == 'substituted' %} class="substituted-row"{% endif %}>
+                <td>Tax Rate</td>
+                <td>{{ "%.1f"|format(assumptions.tax_rate * 100) }}%</td>
+            </tr>
+            {% if assumption_sources.tax_rate %}
+            <tr class="provenance-row{% if assumption_sources.tax_rate.origin == 'substituted' %} substituted-row{% endif %}">
+                <td colspan="2" class="provenance">
+                    {% if assumption_sources.tax_rate.origin == 'substituted' %}<span class="substituted-marker">SUBSTITUTED</span>{% endif %}
+                    {{ assumption_sources.tax_rate.detail }}
+                </td>
+            </tr>
+            {% endif %}
+            <tr{% if assumption_sources.da_pct_revenue and assumption_sources.da_pct_revenue.origin == 'substituted' %} class="substituted-row"{% endif %}>
+                <td>D&A (% of Revenue)</td>
+                <td>{{ "%.1f"|format(assumptions.da_pct_revenue * 100) }}%</td>
+            </tr>
+            {% if assumption_sources.da_pct_revenue %}
+            <tr class="provenance-row{% if assumption_sources.da_pct_revenue.origin == 'substituted' %} substituted-row{% endif %}">
+                <td colspan="2" class="provenance">
+                    {% if assumption_sources.da_pct_revenue.origin == 'substituted' %}<span class="substituted-marker">SUBSTITUTED</span>{% endif %}
+                    {{ assumption_sources.da_pct_revenue.detail }}
+                </td>
+            </tr>
+            {% endif %}
+            <tr{% if assumption_sources.capex_pct_revenue and assumption_sources.capex_pct_revenue.origin == 'substituted' %} class="substituted-row"{% endif %}>
+                <td>CapEx (% of Revenue)</td>
+                <td>{{ "%.1f"|format(assumptions.capex_pct_revenue * 100) }}%</td>
+            </tr>
+            {% if assumption_sources.capex_pct_revenue %}
+            <tr class="provenance-row{% if assumption_sources.capex_pct_revenue.origin == 'substituted' %} substituted-row{% endif %}">
+                <td colspan="2" class="provenance">
+                    {% if assumption_sources.capex_pct_revenue.origin == 'substituted' %}<span class="substituted-marker">SUBSTITUTED</span>{% endif %}
+                    {{ assumption_sources.capex_pct_revenue.detail }}
+                </td>
+            </tr>
+            {% endif %}
+            <tr{% if assumption_sources.nwc_pct_revenue and assumption_sources.nwc_pct_revenue.origin == 'substituted' %} class="substituted-row"{% endif %}>
+                <td>NWC (% of Revenue)</td>
+                <td>{{ "%.1f"|format(assumptions.nwc_pct_revenue * 100) }}%</td>
+            </tr>
+            {% if assumption_sources.nwc_pct_revenue %}
+            <tr class="provenance-row{% if assumption_sources.nwc_pct_revenue.origin == 'substituted' %} substituted-row{% endif %}">
+                <td colspan="2" class="provenance">
+                    {% if assumption_sources.nwc_pct_revenue.origin == 'substituted' %}<span class="substituted-marker">SUBSTITUTED</span>{% endif %}
+                    {{ assumption_sources.nwc_pct_revenue.detail }}
+                </td>
+            </tr>
+            {% endif %}
         </table>
     </div>
 
@@ -145,7 +206,7 @@
     {% if excluded_non_recurring %}
     <div class="section">
         <h2>Non-recurring items EXCLUDED from this valuation</h2>
-        <p style="{{ PROV }}">
+        <p class="provenance">
             The {{ excluded_non_recurring|length }} item(s) below were
             <strong>NOT applied</strong> to the financial statements, so every
             figure on this page — including the implied share price — is
@@ -182,6 +243,9 @@
     </div>
     {% endif %}
 
+    {% set statements_open = false %}
+    {% include "_statements.html" %}
+
     <!-- Rule 6, gathered. The same three labels appear beside their own figures
          in the CAPM & WACC table above; this block exists for the reader who
          reads the headline number and scrolls, and it follows the pattern set
@@ -193,22 +257,22 @@
                 <td>Risk-free rate</td>
                 <td>
                     {{ "%.2f"|format(capm.risk_free_rate * 100) }}%
-                    <div style="{{ PROV }}">{{ capm.risk_free_rate_source }}</div>
+                    <div class="provenance">{{ capm.risk_free_rate_source }}</div>
                 </td>
             </tr>
             <tr>
                 <td>Beta</td>
                 <td>
                     {{ "%.3f"|format(capm.beta) }}
-                    <div style="{{ PROV }}">{{ capm.beta_source }}</div>
-                    <div style="{{ PROV }}">{{ capm.beta_reliability }}</div>
+                    <div class="provenance">{{ capm.beta_source }}</div>
+                    <div class="provenance">{{ capm.beta_reliability }}</div>
                 </td>
             </tr>
             <tr>
                 <td>Cost of debt (pre-tax)</td>
                 <td>
                     {{ "%.2f"|format(wacc.cost_of_debt * 100) }}%
-                    <div style="{{ PROV }}">{{ wacc.cost_of_debt_source }}</div>
+                    <div class="provenance">{{ wacc.cost_of_debt_source }}</div>
                 </td>
             </tr>
         </table>

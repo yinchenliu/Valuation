@@ -1,0 +1,476 @@
+<!-- Parsed Statements and Adjustments — Shared across assumptions and valuation result -->
+{% if financials %}
+
+<!-- 1. Adjusted Income Statement -->
+<div class="section">
+    <details class="statement-block" {% if statements_open %}open{% endif %}>
+        <summary><h2>Adjusted Income Statement ($M)</h2></summary>
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th class="sticky-col">Line Item ($M)</th>
+                        {% for y in financials.years %}
+                        <th class="num">{{ y }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="sticky-col">Revenue</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_income_statement(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:,.0f}".format(stmt.revenue) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <td class="sticky-col">COGS</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_income_statement(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:,.0f}".format(stmt.cost_of_revenue) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr class="highlight">
+                        <td class="sticky-col"><strong>Gross Profit</strong></td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_income_statement(y) %}
+                        <td class="num">{% if stmt is not none %}<strong>{{ "{:,.0f}".format(stmt.gross_profit) }}</strong>{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <td class="sticky-col">Gross Margin</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_income_statement(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:.1f}%".format(stmt.gross_margin * 100) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <td class="sticky-col">SG&amp;A</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_income_statement(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:,.0f}".format(stmt.sga) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <td class="sticky-col">R&amp;D</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_income_statement(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:,.0f}".format(stmt.rd_expense) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <td class="sticky-col">D&amp;A</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_income_statement(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:,.0f}".format(stmt.depreciation_amortization) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <td class="sticky-col">Other OpEx</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_income_statement(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:,.0f}".format(stmt.other_operating_expense) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr class="highlight">
+                        <td class="sticky-col"><strong>EBIT</strong></td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_income_statement(y) %}
+                        <td class="num">{% if stmt is not none %}<strong>{{ "{:,.0f}".format(stmt.ebit) }}</strong>{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <td class="sticky-col">Operating Margin</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_income_statement(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:.1f}%".format(stmt.operating_margin * 100) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <td class="sticky-col">Interest Expense</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_income_statement(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:,.0f}".format(stmt.interest_expense) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <td class="sticky-col">Other Non-Operating</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_income_statement(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:,.0f}".format(stmt.other_non_operating) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr class="highlight">
+                        <td class="sticky-col"><strong>EBT</strong></td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_income_statement(y) %}
+                        <td class="num">{% if stmt is not none %}<strong>{{ "{:,.0f}".format(stmt.ebt) }}</strong>{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <td class="sticky-col">Tax Expense</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_income_statement(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:,.0f}".format(stmt.tax_expense) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr class="highlight">
+                        <td class="sticky-col"><strong>Net Income</strong></td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_income_statement(y) %}
+                        <td class="num">{% if stmt is not none %}<strong>{{ "{:,.0f}".format(stmt.net_income) }}</strong>{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <td class="sticky-col">Effective Tax Rate</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_income_statement(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:.1f}%".format(stmt.effective_tax_rate * 100) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <td class="sticky-col">Diluted Shares (M)</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_income_statement(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:,.0f}".format(stmt.diluted_shares_outstanding) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <td class="sticky-col">EPS</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_income_statement(y) %}
+                        <td class="num">{% if stmt is not none %}${{ "{:.2f}".format(stmt.eps) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </details>
+</div>
+
+<!-- 2. Cash Flow Statement -->
+<div class="section">
+    <details class="statement-block" {% if statements_open %}open{% endif %}>
+        <summary><h2>Cash Flow Statement ($M)</h2></summary>
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th class="sticky-col">Line Item ($M)</th>
+                        {% for y in financials.years %}
+                        <th class="num">{{ y }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="sticky-col">Net Income</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_cash_flow(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:,.0f}".format(stmt.net_income) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <td class="sticky-col">D&amp;A</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_cash_flow(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:,.0f}".format(stmt.depreciation_amortization) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <td class="sticky-col">SBC</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_cash_flow(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:,.0f}".format(stmt.stock_based_compensation) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <td class="sticky-col">Change in WC</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_cash_flow(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:,.0f}".format(stmt.change_in_working_capital) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <td class="sticky-col">Other Operating</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_cash_flow(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:,.0f}".format(stmt.other_operating_activities) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr class="highlight">
+                        <td class="sticky-col"><strong>CFO</strong></td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_cash_flow(y) %}
+                        <td class="num">{% if stmt is not none %}<strong>{{ "{:,.0f}".format(stmt.cash_from_operations) }}</strong>{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <td class="sticky-col">CapEx (negative = outflow)</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_cash_flow(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:,.0f}".format(stmt.capital_expenditures) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <td class="sticky-col">Acquisitions</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_cash_flow(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:,.0f}".format(stmt.acquisitions) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <td class="sticky-col">Other Investing</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_cash_flow(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:,.0f}".format(stmt.other_investing_activities) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr class="highlight">
+                        <td class="sticky-col"><strong>CFI</strong></td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_cash_flow(y) %}
+                        <td class="num">{% if stmt is not none %}<strong>{{ "{:,.0f}".format(stmt.cash_from_investing) }}</strong>{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <td class="sticky-col">Debt Issued</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_cash_flow(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:,.0f}".format(stmt.debt_issued) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <td class="sticky-col">Debt Repaid</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_cash_flow(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:,.0f}".format(stmt.debt_repaid) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <td class="sticky-col">Shares Issued</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_cash_flow(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:,.0f}".format(stmt.shares_issued) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <td class="sticky-col">Buybacks</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_cash_flow(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:,.0f}".format(stmt.shares_repurchased) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <td class="sticky-col">Dividends</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_cash_flow(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:,.0f}".format(stmt.dividends_paid) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <td class="sticky-col">Other Financing</td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_cash_flow(y) %}
+                        <td class="num">{% if stmt is not none %}{{ "{:,.0f}".format(stmt.other_financing_activities) }}{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                    <tr class="highlight">
+                        <td class="sticky-col"><strong>CFF</strong></td>
+                        {% for y in financials.years %}
+                        {% set stmt = financials.get_cash_flow(y) %}
+                        <td class="num">{% if stmt is not none %}<strong>{{ "{:,.0f}".format(stmt.cash_from_financing) }}</strong>{% else %}not extracted{% endif %}</td>
+                        {% endfor %}
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </details>
+</div>
+
+<!-- 3. Balance Sheet -->
+<div class="section">
+    <details class="statement-block" {% if statements_open %}open{% endif %}>
+        <summary><h2>Balance Sheet ($M)</h2></summary>
+        {% set latest_y = financials.latest_year %}
+        {% set bs = financials.get_balance_sheet(latest_y) %}
+        {% if bs is not none %}
+        <div class="summary-grid" style="grid-template-columns: 1fr 1fr; gap: 1.5rem; text-align: left;">
+            <div>
+                <h3>Assets — FY{{ latest_y }} ($M)</h3>
+                <table class="data-table">
+                    <tr><td>Cash &amp; Cash Equivalents</td><td class="num">{{ "{:,.0f}".format(bs.cash_and_equivalents) }}</td></tr>
+                    <tr><td>Short-Term Investments</td><td class="num">{{ "{:,.0f}".format(bs.short_term_investments) }}</td></tr>
+                    <tr><td>Accounts Receivable</td><td class="num">{{ "{:,.0f}".format(bs.accounts_receivable) }}</td></tr>
+                    <tr><td>Inventory</td><td class="num">{{ "{:,.0f}".format(bs.inventory) }}</td></tr>
+                    <tr><td>Other Current Assets</td><td class="num">{{ "{:,.0f}".format(bs.other_current_assets) }}</td></tr>
+                    <tr class="highlight"><td><strong>Total Current Assets</strong></td><td class="num"><strong>{{ "{:,.0f}".format(bs.total_current_assets) }}</strong></td></tr>
+                    <tr><td>PP&amp;E (net)</td><td class="num">{{ "{:,.0f}".format(bs.ppe_net) }}</td></tr>
+                    <tr><td>Goodwill</td><td class="num">{{ "{:,.0f}".format(bs.goodwill) }}</td></tr>
+                    <tr><td>Intangibles</td><td class="num">{{ "{:,.0f}".format(bs.intangible_assets) }}</td></tr>
+                    <tr><td>Other Non-Current Assets</td><td class="num">{{ "{:,.0f}".format(bs.other_non_current_assets) }}</td></tr>
+                    <tr class="highlight"><td><strong>Total Assets</strong></td><td class="num"><strong>{{ "{:,.0f}".format(bs.total_assets) }}</strong></td></tr>
+                </table>
+            </div>
+            <div>
+                <h3>Liabilities &amp; Equity — FY{{ latest_y }} ($M)</h3>
+                <table class="data-table">
+                    <tr><td>Accounts Payable</td><td class="num">{{ "{:,.0f}".format(bs.accounts_payable) }}</td></tr>
+                    <tr><td>Short-Term Debt</td><td class="num">{{ "{:,.0f}".format(bs.short_term_debt) }}</td></tr>
+                    <tr><td>Current Portion of LT Debt</td><td class="num">{{ "{:,.0f}".format(bs.current_portion_lt_debt) }}</td></tr>
+                    <tr><td>Accrued Liabilities</td><td class="num">{{ "{:,.0f}".format(bs.accrued_liabilities) }}</td></tr>
+                    <tr><td>Other Current Liabilities</td><td class="num">{{ "{:,.0f}".format(bs.other_current_liabilities) }}</td></tr>
+                    <tr class="highlight"><td><strong>Total Current Liabilities</strong></td><td class="num"><strong>{{ "{:,.0f}".format(bs.total_current_liabilities) }}</strong></td></tr>
+                    <tr><td>Long-Term Debt</td><td class="num">{{ "{:,.0f}".format(bs.long_term_debt) }}</td></tr>
+                    <tr><td>Other Non-Current Liabilities</td><td class="num">{{ "{:,.0f}".format(bs.other_non_current_liabilities) }}</td></tr>
+                    <tr class="highlight"><td><strong>Total Liabilities</strong></td><td class="num"><strong>{{ "{:,.0f}".format(bs.total_liabilities) }}</strong></td></tr>
+                    <tr><td>Total Equity</td><td class="num">{{ "{:,.0f}".format(bs.total_equity) }}</td></tr>
+                    <tr class="highlight"><td><strong>Total Liabilities + Equity</strong></td><td class="num"><strong>{{ "{:,.0f}".format(bs.total_liabilities + bs.total_equity) }}</strong></td></tr>
+                </table>
+            </div>
+        </div>
+
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Balance Check &amp; Key Metrics</th>
+                    <th class="num">Amount ($M)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>Total Assets</td><td class="num">{{ "{:,.0f}".format(bs.total_assets) }}</td></tr>
+                <tr><td>Total Liabilities + Equity</td><td class="num">{{ "{:,.0f}".format(bs.total_liabilities + bs.total_equity) }}</td></tr>
+                <tr class="highlight">
+                    <td><strong>Balance Check Difference (Total Assets − [Liabilities + Equity])</strong></td>
+                    <td class="num"><strong>{{ "{:+,.0f}".format(bs.balance_check_difference) }}</strong></td>
+                </tr>
+                <tr><td>Total Debt</td><td class="num">{{ "{:,.0f}".format(bs.total_debt) }}</td></tr>
+                <tr><td>Net Debt</td><td class="num">{{ "{:,.0f}".format(bs.net_debt) }}</td></tr>
+                <tr><td>Net Working Capital</td><td class="num">{{ "{:,.0f}".format(bs.net_working_capital) }}</td></tr>
+            </tbody>
+        </table>
+        {% else %}
+        <p>not extracted</p>
+        {% endif %}
+    </details>
+</div>
+
+<!-- 4. Non-recurring items applied -->
+<div class="section">
+    <h2>Non-recurring items APPLIED — these moved the figures above</h2>
+    <p class="provenance">These items were applied to the financial statements and changed the income statement figures above.</p>
+    {% if applied_non_recurring %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Year</th>
+                <th class="num">Amount ($M)</th>
+                <th>Line item</th>
+                <th>Direction</th>
+                <th>Description</th>
+                <th>Source cited in the filing</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in applied_non_recurring %}
+            <tr>
+                <td>{{ item.year }}</td>
+                <td class="num">{{ "{:+,.0f}".format(item.adjusted_impact) }}</td>
+                <td>{{ item.line_item }}</td>
+                <td>{{ item.direction }}</td>
+                <td>{{ item.description }}</td>
+                <td>{% if item.source %}{{ item.source }}{% else %}(none cited){% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No non-recurring item was applied.</p>
+    {% endif %}
+</div>
+
+<!-- 5. GAAP to non-GAAP reconciliation -->
+<div class="section">
+    <h2>GAAP to Non-GAAP Reconciliation ($M)</h2>
+    {% set ns = namespace(has_delta=false) %}
+    {% for row in ebit_reconciliation %}
+        {% if row.difference is not none and row.difference != 0 %}
+            {% set ns.has_delta = true %}
+        {% endif %}
+    {% endfor %}
+    {% if ebit_reconciliation %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Year</th>
+                <th class="num">EBIT as reported ($M)</th>
+                <th class="num">EBIT adjusted ($M)</th>
+                <th class="num">Difference ($M)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in ebit_reconciliation %}
+            <tr>
+                <td>{{ row.year }}</td>
+                {% if row.missing_statement %}
+                <td colspan="3" class="num">not extracted: {{ row.missing_statement }}</td>
+                {% else %}
+                <td class="num">{% if row.as_reported_ebit is not none %}{{ "{:,.0f}".format(row.as_reported_ebit) }}{% else %}not extracted{% endif %}</td>
+                <td class="num">{% if row.adjusted_ebit is not none %}{{ "{:,.0f}".format(row.adjusted_ebit) }}{% else %}not extracted{% endif %}</td>
+                <td class="num">{% if row.difference is not none %}{{ "{:+,.0f}".format(row.difference) }}{% else %}not extracted{% endif %}</td>
+                {% endif %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% if not ns.has_delta %}
+    <p>No adjustment reached the income statement.</p>
+    {% endif %}
+    {% else %}
+    <p>No adjustment reached the income statement.</p>
+    {% endif %}
+</div>
+
+<!-- 6. Historical FCFF -->
+<div class="section">
+    <h2>Historical Free Cash Flow to Firm (Post-Adjustment, $M)</h2>
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Year</th>
+                    <th class="num">Revenue ($M)</th>
+                    <th class="num">CFO ($M)</th>
+                    <th class="num">After-tax interest ($M)</th>
+                    <th class="num">CapEx ($M, negative = outflow)</th>
+                    <th class="num">FCFF ($M)</th>
+                    <th class="num">FCFF margin</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in historical_fcff %}
+                <tr>
+                    <td>{{ row.year }}</td>
+                    {% if row.is_computable and row.fcff is not none %}
+                    <td class="num">{{ "{:,.0f}".format(row.fcff.revenue) }}</td>
+                    <td class="num">{{ "{:,.0f}".format(row.fcff.cfo) }}</td>
+                    <td class="num">{{ "{:,.0f}".format(row.fcff.after_tax_interest) }}</td>
+                    <td class="num">{{ "{:,.0f}".format(row.fcff.capital_expenditures) }}</td>
+                    <td class="num"><strong>{{ "{:,.0f}".format(row.fcff.fcff) }}</strong></td>
+                    <td class="num">{{ "{:.1f}%".format(row.fcff.fcff_margin * 100) }}</td>
+                    {% else %}
+                    <td class="num">not extracted{% if row.missing_statements %}: {{ row.missing_statements | join(', ') }}{% endif %}</td>
+                    <td class="num">not extracted{% if row.missing_statements %}: {{ row.missing_statements | join(', ') }}{% endif %}</td>
+                    <td class="num">not extracted{% if row.missing_statements %}: {{ row.missing_statements | join(', ') }}{% endif %}</td>
+                    <td class="num">not extracted{% if row.missing_statements %}: {{ row.missing_statements | join(', ') }}{% endif %}</td>
+                    <td class="num">not extracted{% if row.missing_statements %}: {{ row.missing_statements | join(', ') }}{% endif %}</td>
+                    <td class="num">not extracted{% if row.missing_statements %}: {{ row.missing_statements | join(', ') }}{% endif %}</td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% endif %}
