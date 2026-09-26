@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import numpy as np
 import pandas as pd
@@ -39,7 +39,13 @@ def fetch_price_data(
     Returns:
         PriceData with aligned stock and market returns.
     """
-    end_date = datetime.today()
+    # The current instant, expressed in this machine's local timezone, with the
+    # timezone then dropped. It MUST stay naive: yfinance's _parse_user_dt
+    # branches on tzinfo — a naive datetime is tz_localize'd to the exchange
+    # timezone (wall-clock numbers kept), an aware one is tz_convert'ed (instant
+    # kept, wall-clock numbers moved). Passing an aware datetime here would
+    # therefore shift the lookback window, which is a behaviour change.
+    end_date = datetime.now(UTC).astimezone().replace(tzinfo=None)
     start_date = end_date - timedelta(days=lookback_years * 365)
 
     # Fetch adjusted close prices
@@ -62,8 +68,7 @@ def fetch_price_data(
     # Resample to monthly if requested
     # "ME" (month-end) requires pandas >= 2.2; older versions use "M".
     if frequency == "monthly":
-        import pandas as _pd
-        _month = "ME" if tuple(int(x) for x in _pd.__version__.split(".")[:2]) >= (2, 2) else "M"
+        _month = "ME" if tuple(int(x) for x in pd.__version__.split(".")[:2]) >= (2, 2) else "M"
         stock_prices = stock_prices.resample(_month).last()
         market_prices = market_prices.resample(_month).last()
 

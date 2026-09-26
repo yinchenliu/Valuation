@@ -18,7 +18,10 @@ Usage:
     python cli.py 2023:10K_2023.pdf 2024:10K_2024.pdf 2025:10K_2025.pdf \\
         -t LLY -n "Eli Lilly" -p gemini --cache-dir ./cache
 
-    # Rerun from cache (skips LLM extraction)
+    # Rerun from cache (skips LLM extraction).
+    # The cache is keyed on the PDFs themselves — path, size, mtime and
+    # sha256 — plus the ticker, provider and model. Naming a DIFFERENT PDF
+    # under the same ticker is a MISS, and the miss says which file changed.
     python cli.py 10K_filings -t ABBV -p gemini --cache-dir ./cache
 
     # With overrides
@@ -28,19 +31,23 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import pickle
 import re
 import sys
+import textwrap
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 # Ensure project root is on sys.path
 sys.path.insert(0, str(Path(__file__).parent))
 
+import config
 from analysis.capm import run_capm
 from analysis.dcf import run_dcf
 from analysis.fcff import calculate_fcff_historical
-from analysis.normalizer import normalize_financials
+from analysis.normalizer import normalize_financials, partition_by_confidence
 from analysis.projector import derive_assumptions, project_fcffs
 from analysis.wacc import calculate_wacc
 from ingestion.claude_extractor import extract_financials, extract_multi_year
@@ -90,7 +97,14 @@ def parse_args() -> argparse.Namespace:
 
     # Extraction
     g = p.add_argument_group("extraction")
-    g.add_argument("-p", "--provider", default="gemini", choices=["claude", "gemini"])
+    # The default is config.DEFAULT_EXTRACTION_PROVIDER and not a literal, so the CLI
+    # and the web app cannot drift apart on which model reads a filing.
+    g.add_argument(
+        "-p", "--provider",
+        default=config.DEFAULT_EXTRACTION_PROVIDER,
+        choices=["claude", "gemini"],
+        help=f"LLM provider (default: {config.DEFAULT_EXTRACTION_PROVIDER})",
+    )
     g.add_argument("-m", "--model", default=None, help="Override LLM model ID")
     g.add_argument("--cache-dir", default=None, help="Directory for pickle cache")
     g.add_argument("--no-cache", action="store_true", help="Force re-extraction")
@@ -237,26 +251,203 @@ def build_overrides(args: argparse.Namespace) -> ProjectionAssumptions:
 # Helpers: cache
 # ---------------------------------------------------------------------------
 
+CACHE_FORMAT = "p6-inputs-keyed-v1"
+
+
+@dataclass(frozen=True)
+class InputFingerprint:
+    """What one extraction input was, precisely enough to detect a swap.
+
+    Backlog item 33. The cache used to be keyed on the ticker alone, so
+    `cli.py "…LHX_2025.pdf" -t LHX --cache-dir ./cache` returned, in two
+    seconds, a complete valuation computed from a pickle written days earlier
+    from a different document — and printed nothing to say the PDF named on the
+    command line had never been opened.
+
+    `sha256` is the authority: a file rewritten with its timestamp preserved
+    still changes it. `size_bytes` and `mtime_ns` are carried so the miss
+    message can say *how* a file differs in terms a reader can check with
+    `ls -l`, not only that its digest moved.
+    """
+
+    year: int
+    path: str
+    size_bytes: int
+    mtime_ns: int
+    sha256: str
+
+
+@dataclass(frozen=True)
+class ExtractionKey:
+    """Everything a cached extraction is an answer to.
+
+    The PDFs, and the model that read them. Provider and model are in the key
+    for the same reason the files are: `P2b-provider` made the output state
+    which model produced the figures, so serving a Gemini extraction under a
+    CLAUDE label would print a false label rather than merely a stale number.
+    """
+
+    ticker: str
+    provider: str
+    model: str
+    inputs: tuple[InputFingerprint, ...]
+
+
+def fingerprint_filings(filings: list[tuple[int, str]]) -> tuple[InputFingerprint, ...]:
+    """Hash and stat every input PDF, in a stable order.
+
+    Raises:
+        FileNotFoundError: when an input path does not exist. Rule 3 — a cache
+            decision must not be made from a file the run cannot read.
+    """
+    prints: list[InputFingerprint] = []
+    for year, raw_path in filings:
+        path = Path(raw_path)
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"extraction input {raw_path!r} is not a readable file, so its "
+                "content cannot be fingerprinted and no cache decision can be "
+                "made about it"
+            )
+        stat = path.stat()
+        digest = hashlib.sha256()
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        prints.append(
+            InputFingerprint(
+                year=year,
+                path=str(path.resolve()),
+                size_bytes=stat.st_size,
+                mtime_ns=stat.st_mtime_ns,
+                sha256=digest.hexdigest(),
+            )
+        )
+    return tuple(sorted(prints, key=lambda p: (p.year, p.path)))
+
+
+def build_extraction_key(
+    args: argparse.Namespace, filings: list[tuple[int, str]]
+) -> ExtractionKey:
+    """Assemble the key a cached extraction is stored under and compared by."""
+    return ExtractionKey(
+        ticker=args.ticker.upper(),
+        provider=args.provider,
+        model=args.model if args.model is not None else "(provider default)",
+        inputs=fingerprint_filings(filings),
+    )
+
+
+def describe_key_difference(cached: ExtractionKey, current: ExtractionKey) -> list[str]:
+    """Name every way the cached extraction's question differs from this one.
+
+    Returns an empty list when the two keys are identical, i.e. when a cache
+    hit is honest. Otherwise one line per difference, each naming the file or
+    the setting — "a cache miss happened" is not enough for a reader to know
+    whether the extraction about to be paid for is necessary.
+    """
+    differences: list[str] = []
+
+    if cached.ticker != current.ticker:
+        differences.append(f"ticker: cached {cached.ticker!r}, now {current.ticker!r}")
+    if cached.provider != current.provider:
+        differences.append(
+            f"provider: cached {cached.provider!r}, now {current.provider!r}"
+        )
+    if cached.model != current.model:
+        differences.append(f"model: cached {cached.model!r}, now {current.model!r}")
+
+    cached_by_path = {p.path: p for p in cached.inputs}
+    current_by_path = {p.path: p for p in current.inputs}
+
+    for path in current_by_path:
+        if path not in cached_by_path:
+            differences.append(f"NEW input, not in the cached extraction: {path}")
+    for path in cached_by_path:
+        if path not in current_by_path:
+            differences.append(
+                f"the cached extraction was built from a file NOT supplied this "
+                f"run: {path}"
+            )
+    for path, now in current_by_path.items():
+        was = cached_by_path.get(path)
+        if was is None:
+            continue
+        if was.sha256 != now.sha256:
+            differences.append(
+                f"CONTENT CHANGED: {path}\n"
+                f"      sha256 {was.sha256[:16]}… -> {now.sha256[:16]}…, "
+                f"{was.size_bytes:,} -> {now.size_bytes:,} bytes"
+            )
+        elif was.year != now.year:
+            differences.append(
+                f"fiscal year re-assigned for {path}: {was.year} -> {now.year}"
+            )
+
+    return differences
+
+
 def _cache_path(args: argparse.Namespace) -> Path | None:
+    """Where this ticker's cached extraction lives.
+
+    Still one file per ticker, deliberately: the key is compared on *read*, not
+    encoded in the filename, because a filename-encoded key can only produce a
+    silent miss. Comparing on read is what lets the miss say which file changed
+    and what it changed from.
+
+    The `_inputs` suffix is not decoration. `.cache_{ticker}_extraction.pkl` is
+    the old, ticker-only-keyed name, and two such files predating this build sit
+    in `cache/`. Unpickling executes code in the pickle, so they must not be
+    opened even to reject them; a new name means they are never a candidate
+    path at all.
+    """
     if not args.cache_dir:
         return None
     d = Path(args.cache_dir)
     d.mkdir(parents=True, exist_ok=True)
-    return d / f".cache_{args.ticker.lower()}_extraction.pkl"
+    return d / f".cache_{args.ticker.lower()}_extraction_inputs.pkl"
 
 
-def _load_cache(path: Path) -> tuple[FinancialStatements, list[NonRecurringItem]]:
+def _load_cache(
+    path: Path,
+) -> tuple[ExtractionKey, FinancialStatements, list[NonRecurringItem]]:
+    """Read a cache entry and its key.
+
+    Raises:
+        ValueError: when the file is not a cache entry in this format. It is
+            not treated as a miss and silently overwritten: a file under this
+            exact name that this code did not write is a fact the user needs,
+            and re-extracting costs real money.
+    """
     with open(path, "rb") as f:
-        return pickle.load(f)
+        payload = pickle.load(f)
+
+    if (
+        not isinstance(payload, tuple)
+        or len(payload) != 4
+        or payload[0] != CACHE_FORMAT
+        or not isinstance(payload[1], ExtractionKey)
+    ):
+        raise ValueError(
+            f"{path} is not a cache entry written by this CLI (expected format "
+            f"marker {CACHE_FORMAT!r}). Delete the file, or run with "
+            f"--no-cache, or point --cache-dir elsewhere. It is not being "
+            f"overwritten automatically, because that would silently discard "
+            f"an extraction that cost money to produce."
+        )
+
+    _marker, key, financials, non_recurring = payload
+    return key, financials, non_recurring
 
 
 def _save_cache(
     path: Path,
+    key: ExtractionKey,
     financials: FinancialStatements,
     non_recurring: list[NonRecurringItem],
 ) -> None:
     with open(path, "wb") as f:
-        pickle.dump((financials, non_recurring), f)
+        pickle.dump((CACHE_FORMAT, key, financials, non_recurring), f)
 
 
 # ---------------------------------------------------------------------------
@@ -417,14 +608,22 @@ def print_non_recurring_items(
     items: list[NonRecurringItem],
     provider: str,
 ) -> None:
-    _section(f"NON-RECURRING ITEMS (identified by {provider.upper()})")
+    """Print the items that WILL be applied to the statements.
+
+    `items` is the applied half of `partition_by_confidence`, never the raw Pass 2
+    list. The heading says so, because a list printed under "non-recurring items"
+    that is not the list the arithmetic used is the defect this unit closes
+    wearing a different face. The excluded half is printed by
+    print_excluded_non_recurring_items, below.
+    """
+    _section(f"NON-RECURRING ITEMS APPLIED (identified by {provider.upper()})")
     if not items:
-        print("  None found.")
+        print("  None applied.")
         return
 
     total_add = sum(i.amount for i in items if i.direction == "add_back")
     total_rem = sum(i.amount for i in items if i.direction == "remove")
-    print(f"  Found {len(items)} items  |  "
+    print(f"  Applying {len(items)} items  |  "
           f"Total add-backs: {total_add:,.0f}M  |  Total removals: {total_rem:,.0f}M\n")
 
     for item in items:
@@ -434,6 +633,43 @@ def print_non_recurring_items(
         print(f"         {item.description}")
         if item.source:
             print(f"         Source: {item.source}")
+        print()
+
+
+def print_excluded_non_recurring_items(items: list[NonRecurringItem]) -> None:
+    """Print the items that were NOT applied, with everything needed to reverse it.
+
+    The user's decision, 2026-09-22: "For low confidence, just leave a note and
+    document, but don't need to adjust the F/S." Documenting it means the year,
+    the amount, the line item, the direction, the description and the source the
+    model cited — a reader who disagrees can apply any one of these by hand from
+    this block alone.
+
+    The wording says "NOT applied" in as many words. A list printed without that
+    sentence reads as a summary of what was done, which is the opposite of what
+    it is.
+    """
+    _section("NON-RECURRING ITEMS EXCLUDED — NOT applied to the F/S")
+    if not items:
+        print("  None. Every item the model identified was applied.")
+        return
+
+    total_add = sum(i.amount for i in items if i.direction == "add_back")
+    total_rem = sum(i.amount for i in items if i.direction == "remove")
+    print(f"  {len(items)} item(s) the model tagged LOW confidence were NOT applied")
+    print("  to the financial statements, so the valuation below does not "
+          "include them.")
+    print(f"  Add-backs withheld: {total_add:,.0f}M  |  "
+          f"Removals withheld: {total_rem:,.0f}M")
+    print("  To apply one, re-read the note it cites and treat it by hand.\n")
+
+    for item in items:
+        sign = "+" if item.direction == "add_back" else "-"
+        print(f"  [{item.year}] {sign}{item.amount:,.0f}M  {item.category.upper()}  "
+              f"({item.confidence} confidence — EXCLUDED)  "
+              f"line_item={item.line_item}  direction={item.direction}")
+        print(f"         {item.description}")
+        print(f"         Source: {item.source if item.source else '(none cited)'}")
         print()
 
 
@@ -519,16 +755,38 @@ def print_assumptions(assumptions: dict, overrides: ProjectionAssumptions) -> No
 # Print: CAPM
 # ---------------------------------------------------------------------------
 
+def _wrap_label(text: str, indent: str = "      ") -> str:
+    """Wrap a provenance sentence under the figure it qualifies.
+
+    Rule 6 asks for the assumption to be *visible*, which on a terminal means
+    it has to sit beside its number rather than run off the right margin.
+    """
+    return textwrap.fill(
+        text,
+        width=W + 20,
+        initial_indent=indent,
+        subsequent_indent=indent,
+    )
+
+
 def print_capm(capm_result, price_data, args: argparse.Namespace) -> None:
     _section("CAPM")
     print(f"  Ticker:               {args.ticker}")
     print(f"  Lookback:             {args.lookback_years} years, {args.frequency} returns")
     print(f"  Observations:         {len(price_data.stock_returns)}")
-    beta_src = "(override)" if args.beta is not None else "(regression)"
-    print(f"\n  Beta:                 {capm_result.beta:.3f}  {beta_src}")
+
+    # Rule 6, backlog item 35. The verdict sits on the line under the beta, not
+    # two lines away past the diagnostics, because the reader who stops at the
+    # beta is exactly the reader this label exists for.
+    print(f"\n  Beta:                 {capm_result.beta:.3f}")
+    print(_wrap_label(f"source: {capm_result.beta_source}"))
+    print(_wrap_label(f"reliability: {capm_result.beta_reliability}"))
     print(f"  R-squared:            {capm_result.r_squared:.3f}")
     print(f"  Std error:            {capm_result.std_error:.3f}")
+
+    # Rule 6, backlog item 34.
     print(f"\n  Risk-free rate:       {capm_result.risk_free_rate:.2%}")
+    print(_wrap_label(f"source: {capm_result.risk_free_rate_source}"))
     print(f"  Equity risk premium:  {capm_result.equity_risk_premium:.2%}")
     print(f"  Cost of equity:       {capm_result.cost_of_equity:.2%}")
 
@@ -547,6 +805,8 @@ def print_wacc(wacc_result, market_cap: float, total_debt: float) -> None:
     print(f"  Debt weight:          {wacc_result.debt_weight:.1%}")
     print(f"  Cost of equity:       {wacc_result.cost_of_equity:.2%}")
     print(f"  Cost of debt (pre-t): {wacc_result.cost_of_debt:.2%}")
+    # Rule 6, backlog item 9.
+    print(_wrap_label(f"source: {wacc_result.cost_of_debt_source}"))
     print(f"  Tax rate:             {wacc_result.tax_rate:.1%}")
     print(f"\n  WACC:                 {wacc_result.wacc:.2%}")
 
@@ -604,11 +864,50 @@ def main() -> None:
         raise SystemExit(f"ERROR: {exc}") from exc
 
     # ===== STAGE 1: EXTRACTION (LLM) ========================================
+    #
+    # Backlog item 33. The cache is keyed on the PDFs themselves — path, size,
+    # mtime and sha256 — plus the ticker, provider and model. A hit therefore
+    # means "these exact files, read by this exact model", and it is safe to
+    # skip the extraction. Anything else is a miss that names what changed.
     cache = _cache_path(args)
+    current_key = build_extraction_key(args, filings)
+    cache_label = ""
+
+    cached_payload: tuple[FinancialStatements, list[NonRecurringItem]] | None = None
     if cache and cache.exists() and not args.no_cache:
+        cached_key, cached_financials, cached_adjustments = _load_cache(cache)
+        differences = describe_key_difference(cached_key, current_key)
+        if differences:
+            _step(1, "Cached extraction REJECTED — the inputs changed")
+            _section(f"CACHE MISS: {cache.name} answers a different question")
+            print("  The cached extraction was NOT used. What differs:")
+            for line in differences:
+                print(f"    - {line}")
+            print(
+                "\n  A cached extraction is only reused when the files, the "
+                "ticker, the provider\n  and the model all match. Re-extracting "
+                "from the files named on the command line."
+            )
+            sys.stdout.flush()
+        else:
+            cached_payload = (cached_financials, cached_adjustments)
+
+    if cached_payload is not None and cache is not None:
         _step(1, "Loading cached extraction")
         _section(f"LOADING CACHED EXTRACTION: {cache.name}")
-        financials, adjustments = _load_cache(cache)
+        print("  Reused because every input matches the run that produced it:")
+        for fp in current_key.inputs:
+            print(
+                f"    - {Path(fp.path).name}  sha256 {fp.sha256[:16]}…  "
+                f"{fp.size_bytes:,} bytes"
+            )
+        print(f"    - read by {current_key.provider} / {current_key.model}")
+        print("  No PDF was opened and no extraction was paid for on this run.")
+        financials, adjustments = cached_payload
+        cache_label = (
+            f"cached extraction reused from {cache.name}, "
+            f"keyed on the {len(current_key.inputs)} file(s) above"
+        )
     else:
         _step(1, f"Extracting financials via {args.provider.upper()} — {len(filings)} PDF(s)")
         _section(f"EXTRACTING via {args.provider.upper()} "
@@ -646,9 +945,12 @@ def main() -> None:
                     debug=True,
                 )
 
+        cache_label = "live extraction of " + ", ".join(
+            Path(fp.path).name for fp in current_key.inputs
+        )
         if cache:
-            _save_cache(cache, financials, adjustments)
-            print(f"  Cached to {cache.name}")
+            _save_cache(cache, current_key, financials, adjustments)
+            print(f"  Cached to {cache.name}, keyed on the file(s) just read")
 
     years = financials.years
     print(f"  Ticker: {financials.ticker}  |  Company: {financials.company_name}")
@@ -660,11 +962,16 @@ def main() -> None:
 
     # ===== STAGE 3: NON-RECURRING ITEMS (Pass 2 output) =====================
     _step(3, "Displaying non-recurring items")
-    print_non_recurring_items(adjustments, args.provider)
+    # The partition happens BEFORE normalisation and outside it: rule 1 puts the
+    # decision in analysis/, and normalize_financials keeps the signature its
+    # tests were written against. Only `applied` reaches the arithmetic.
+    applied, excluded = partition_by_confidence(adjustments)
+    print_non_recurring_items(applied, args.provider)
+    print_excluded_non_recurring_items(excluded)
 
     # ===== STAGE 4: NORMALIZE (GAAP -> Non-GAAP) ============================
     _step(4, "Normalizing financials (GAAP -> Non-GAAP)")
-    adjusted = normalize_financials(financials, adjustments)
+    adjusted = normalize_financials(financials, applied)
     print_normalization(financials, adjusted)
 
     # ===== STAGE 5: HISTORICAL FCFF =========================================
@@ -739,10 +1046,60 @@ def main() -> None:
     print(f"  Company:            {args.company_name}")
     print(f"  Current Price:      ${price_data.current_price:>11.2f}")
     print(f"  Implied Price:      ${dcf_result.implied_share_price:>11.2f}")
-    
+    # The headline figure says what it excludes, beside itself. A share price
+    # that silently differs from the one a reader would compute from the printed
+    # adjustments is the defect this exclusion exists to fix, wearing a
+    # different face.
+    if excluded:
+        withheld = sum(i.adjusted_impact for i in excluded)
+        print(f"  This price EXCLUDES {len(excluded)} low-confidence "
+              f"non-recurring item(s)")
+        print(f"  worth {withheld:+,.0f}M of earnings adjustment in total "
+              f"(listed in full above).")
+
     direction = "UPSIDE" if dcf_result.upside_downside >= 0 else "DOWNSIDE"
     print(f"  Valuation:          {direction} of {dcf_result.upside_downside:>+10.1f}%")
     print(f"  {'=' * 42}")
+
+    # Rule 6, gathered. The three numbers above that were neither read from the
+    # filing nor derived by formula from one, plus where the filing figures
+    # themselves came from on this run. Each is printed in full beside its own
+    # figure earlier; this block exists so that a reader who scrolls to the
+    # answer still meets them.
+    _section("WHAT IN THIS VALUATION WAS NOT MEASURED")
+    print("  Extraction source")
+    print(_wrap_label(cache_label, indent="    "))
+    print("\n  Risk-free rate")
+    print(_wrap_label(f"{capm_result.risk_free_rate:.2%} — "
+                      f"{capm_result.risk_free_rate_source}", indent="    "))
+    print("\n  Beta")
+    print(_wrap_label(f"{capm_result.beta:.3f} — {capm_result.beta_source}",
+                      indent="    "))
+    print(_wrap_label(f"reliability: {capm_result.beta_reliability}", indent="    "))
+    print("\n  Cost of debt (pre-tax)")
+    print(_wrap_label(f"{wacc_result.cost_of_debt:.2%} — "
+                      f"{wacc_result.cost_of_debt_source}", indent="    "))
+    # What was left out is as much a fact about this price as what was assumed,
+    # so it is repeated here for the reader who scrolled past stage 3 to the
+    # answer. Same reason the three labels above are repeated.
+    print("\n  Non-recurring items excluded")
+    if excluded:
+        print(_wrap_label(
+            f"{len(excluded)} item(s) the model tagged LOW confidence were NOT "
+            f"applied to the financial statements, on the user's decision of "
+            f"2026-09-22. Each is listed above with its year, amount, line "
+            f"item, direction, description and cited source.", indent="    "))
+        for item in excluded:
+            print(_wrap_label(
+                f"[{item.year}] {item.adjusted_impact:+,.0f}M on "
+                f"{item.line_item} — {item.description} "
+                f"(source: {item.source if item.source else 'none cited'})",
+                indent="    "))
+    else:
+        print(_wrap_label(
+            "none — every item the model identified carried medium or high "
+            "confidence and was applied.", indent="    "))
+    print(f"\n  {'=' * 42}")
     # Done
     elapsed = time.time() - _t0
     m, s = divmod(int(elapsed), 60)
