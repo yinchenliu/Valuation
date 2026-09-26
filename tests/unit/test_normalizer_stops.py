@@ -1,4 +1,4 @@
-"""The two rule-3 stops `analysis/normalizer.py` owes its caller.
+"""The three rule-3 stops `analysis/normalizer.py` owes its caller.
 
 **These two tests were written red and they are now green.** They lived in
 `tests/unit/test_normalizer_rule3_red.py` until this unit moved them here and
@@ -45,7 +45,7 @@ from __future__ import annotations
 
 import pytest
 
-from analysis.normalizer import apply_adjustments
+from analysis.normalizer import apply_adjustments, partition_by_confidence
 from models.financial_statements import IncomeStatement, NonRecurringItem
 
 # Revenue 1000, COGS 400, SG&A 200 -> EBIT = 1000 - 600 = 400, margin 0.40.
@@ -127,3 +127,94 @@ def test_an_unrecognised_direction_stops_the_run() -> None:
     assert "direction" in message   # the field
     assert "addback" in message     # the offending value
     assert "2021" in message        # which item, of the several
+
+
+def test_an_unrecognised_confidence_stops_the_run() -> None:
+    """`analysis/normalizer.py:137`, added at `7354698` and untested until now.
+
+    Found while verifying `P8a-statements-data`: `partition_by_confidence` was
+    at 0 covered statements in its loop body, so the one decision that says
+    whether a non-recurring item moves the valuation or is withheld from it had
+    no test at all. It is the function `api/routes_valuation.py:219` calls
+    before it normalises anything.
+
+    Requirement, from rule 3 and from the function's own docstring: an item this
+    engine cannot rank is an input it does not have. It must stop and name the
+    offending value, the year and the item — and it must **not** be read as
+    `high`, because defaulting an unknown to the strongest reading is the same
+    guess as defaulting a missing number to zero, in the direction that silently
+    maximises the adjustment.
+
+    This test asserts the stop. It does not assert any partition of the
+    unrecognised item into either list, which is what pinning the old default
+    would look like.
+    """
+    item = NonRecurringItem(
+        year=2021,
+        description="Restructuring charge",
+        amount=50.0,
+        line_item="sga",
+        direction="add_back",
+        category="restructuring",
+        confidence="probably",
+    )
+
+    with pytest.raises(ValueError) as excinfo:
+        partition_by_confidence([item])
+
+    message = str(excinfo.value)
+    assert "confidence" in message              # the field
+    assert "probably" in message                # the offending value
+    assert "2021" in message                    # which item, of the several
+    assert "Restructuring charge" in message    # and which one, within the year
+
+
+def test_case_and_space_around_a_confidence_are_folded_not_rejected() -> None:
+    """`"  HIGH "` is `high` shouted, not an unknown label.
+
+    The control for the stop above: a stop that fired on every capitalisation
+    would reject valid extractions, and a reader would see the rule-3 message
+    for an item the model tagged correctly. One high item and one low item,
+    both oddly cased, must partition one each way.
+    """
+    loud_high = NonRecurringItem(
+        year=2021, description="Restructuring", amount=50.0, line_item="sga",
+        direction="add_back", category="restructuring", confidence="  HIGH ",
+    )
+    loud_low = NonRecurringItem(
+        year=2021, description="Litigation", amount=10.0, line_item="sga",
+        direction="add_back", category="litigation", confidence="Low",
+    )
+
+    applied, excluded = partition_by_confidence([loud_high, loud_low])
+
+    assert applied == [loud_high]
+    assert excluded == [loud_low]
+
+
+def test_medium_confidence_is_applied_and_low_is_withheld() -> None:
+    """The partition itself, from the docstring's contract at `:99-104`.
+
+    applied  — `high` and `medium`; these move the income statement.
+    excluded — `low`; these move nothing.
+
+    Order within each list is the order the items arrived, so a reader can put a
+    withheld one back by hand against the source it cited.
+    """
+    high = NonRecurringItem(
+        year=2021, description="A", amount=1.0, line_item="sga",
+        direction="add_back", category="restructuring", confidence="high",
+    )
+    medium = NonRecurringItem(
+        year=2021, description="B", amount=2.0, line_item="sga",
+        direction="add_back", category="restructuring", confidence="medium",
+    )
+    low = NonRecurringItem(
+        year=2021, description="C", amount=3.0, line_item="sga",
+        direction="add_back", category="litigation", confidence="low",
+    )
+
+    applied, excluded = partition_by_confidence([high, low, medium])
+
+    assert applied == [high, medium]
+    assert excluded == [low]
