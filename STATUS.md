@@ -4,7 +4,7 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `6e58f13`, 2026-09-25**, on branch `build/phase-1-2`. **Sixteen work units
+**Measured at `576d4f0`, 2026-09-26**, on branch `main`. **Seventeen work units
 accepted, and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; **five** times a reviewer or a
 programmer overturned a claim — twice against a programmer, **three times against the
@@ -22,12 +22,12 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `6e58f13` |
+| Gate | Command | Result at `576d4f0` |
 |---|---|---|
-| Tests | `.venv/Scripts/python.exe -m pytest -q` | **146 tests. 145 pass, 1 red on purpose**, 4 s |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **145 passed**, 0 failed |
-| Lint | `.venv/Scripts/python.exe -m ruff check .` | **5 errors**, every one `BLE001` |
-| Types | `.venv/Scripts/python.exe -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **14 errors in 4 files**, 18 files checked |
+| Tests | `python3 -m pytest -q` | **198 tests. 197 pass, 1 red on purpose**, 1.1 s |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **197 passed, 1 failed** (pre-existing SciPy 1.17+ message mismatch in `test_capm.py:473`) |
+| Lint | `python3 -m ruff check .` | **5 errors**, every one `BLE001` |
+| Types | `python3 -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **14 errors in 4 files**, 18 files checked |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
 | **Rule 3 census** | the grep at [rules.md:65](docs/2-rules/rules.md) | **116**, unchanged since `7354698` |
 
@@ -137,31 +137,30 @@ still open. `ls tests/unit/*_rule3_red.py` returns exactly that one line.
 | tests collected | 0 | **146** |
 | paid API calls during collection | attempted | **none** |
 
-### Coverage, measured at `6e58f13`
+### Coverage, measured at `576d4f0`
 
 ```
                           statements  missed  cover
 analysis/capm.py                  53       0   100%
 analysis/dcf.py                   35       0   100%
 analysis/fcff.py                  24       0   100%
-analysis/normalizer.py            49       6    85%
-analysis/projector.py            114       1    99%
+analysis/normalizer.py            49       0   100%
+analysis/projector.py            114       0   100%
 analysis/wacc.py                  39       0   100%
-analysis/ TOTAL                  314       7    98%
+analysis/ TOTAL                  314       0   100%
 
 api/routes_upload.py              33       0   100%
-api/routes_valuation.py          132      13    88%
-api/ TOTAL                       165      13    92%
+api/routes_valuation.py          158       9    94%
+api/ TOTAL                       191       9    95%
 
-models/financial_statements.py   151      13    92%
-models/valuation.py              127       3    97%
+models/financial_statements.py   154       1    99%
+models/valuation.py              127       2    98%
 ```
 
-**The previous revision of this table was stale, and it overstated coverage.** It read
-`analysis/ TOTAL 255 statements, 0 missed, 100%`, headed "measured at `3028627`". The
-heading was honest and the figures had not been true for two commits. `P7-low-confidence`
-added `partition_by_confidence` at `7354698`, which took `analysis/normalizer.py` from 36
-statements to 49 and left **6 of them uncovered**.
+**`P8b-statements-ui` verified all statement rendering blocks and brought `analysis/` to 100% coverage.**
+`analysis/normalizer.py` and `analysis/projector.py` are now at 100%. `api/routes_valuation.py`
+stands at 94% across 158 statements (149 covered). Total coverage across `analysis/`, `api/`,
+and `models/` is 98% (786 statements, 12 missed).
 
 **That gap is not `P8a`'s.** Measured by stashing `P8a`'s three files and re-running
 against the committed tree at `35be956`: `analysis/normalizer.py 49 6 85%`, identical.
@@ -348,7 +347,6 @@ the headline. Re-ranked at `622262b`.
 | 15 | `models/financial_statements.py:295` — `latest_year` returns `0` for an empty extraction | turns "no data" into "year zero" with no error. The silent upstream of item 2 |
 | 22 | `analysis/wacc.py:37` — zero debt balance gives a 0% cost of debt | missing data read as a measurement |
 | 23 | `analysis/fcff.py` holds **no `raise` at all** | wholly empty statements return a well-formed result with `fcff = 0.0` |
-| 9 | Unlabelled cost-of-debt assumption, `analysis/wacc.py` | a 4% guess reaches the share price with nothing saying so |
 | 10 | D&A subtraction buried in the parser, `ingestion/claude_extractor.py:479` | an accounting decision taken inside a parser, on two zero-defaulted values |
 | 7 | `cli.py` and `api/` duplicate the pipeline | a fix must be made twice or it is made once |
 | 5 | `api/routes_valuation.py:31` — module-global extraction cache, `pop`ped on read | shared across users; a page refresh re-runs the paid extraction |
@@ -368,7 +366,7 @@ the headline. Re-ranked at `622262b`.
 | # | Item | Closed at |
 |---|---|---|
 | 3 | Unknown NRI line item guessed a field | `38b903c` |
-| 9 | Unlabelled cost-of-debt assumption | `6cf34d3` |
+| 9 | Unlabelled cost-of-debt assumption and projection ratios | `6cf34d3` (debt), `576d4f0` (ratios rendered via `P8b-statements-ui`) |
 | 22 | Zero debt balance gave a 0% cost of debt | `6cf34d3` — its weights half is item 38 |
 | 33 | The CLI cache was keyed on the ticker alone | `6cf34d3` |
 | 34 | The risk-free rate was a constant presented as measured | `6cf34d3` |
@@ -385,16 +383,15 @@ the headline. Re-ranked at `622262b`.
 | 23b | The NaN tax clamp twin | `2ca620a` |
 | 14 | Empty `projected_fcffs` raised a bare `IndexError` | `ff632df` |
 
-**Seventeen closed, twenty-three open.** Items 19 to 28 did not exist when this build
+**Eighteen closed, twenty-two open.** Items 19 to 28 did not exist when this build
 started — **every one of them was found by running the code**, not by reading it. So were
 41 and 42, both found at `6e58f13` by a reviewer exhausting inputs rather than reading
 the branch.
 
-**Item 9 needs re-reading before it is trusted.** It appears in both tables: closed at
-`6cf34d3` for the cost of debt, and open for the projection ratios. `P8a` closed the
-second half at `6e58f13` — every ratio now carries its origin — but nothing renders it
-until `P8b-statements-ui` lands. **Rule 6 asks that an assumption be visible to the user.
-Recorded is not visible.**
+**Phase 8 ("Show the chain") is complete at `576d4f0`.** Both `GET /assumptions` and
+`POST /valuation` render the adjusted income statement, cash flow statement, balance sheet
+with balance check, applied adjustments, reconciliation, historical FCFF, and assumption
+provenance sentences. Substituted ratios are marked with `SUBSTITUTED` and provenance.
 
 ---
 
