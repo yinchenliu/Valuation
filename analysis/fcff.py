@@ -16,12 +16,32 @@ PROJECTED (EBIT-based) — built from income statement assumptions:
 
 from __future__ import annotations
 
+import math
+
 from models.financial_statements import (
-    BalanceSheet,
     CashFlowStatement,
     IncomeStatement,
 )
 from models.valuation import HistoricalFCFF, ProjectedFCFF
+
+
+def _require_finite(value: float, field: str) -> None:
+    """Stop when an FCFF input is NaN, naming the field it arrived in.
+
+    Rule 3: a missing input stops the run and names the field. NaN is the shape
+    a missing input takes once it has been through a float calculation, and
+    **no comparison can detect it** — `nan <= x`, `nan > x` and `nan == nan`
+    are all False. `math.isnan` is the only reliable test. This is the same
+    helper, and the same reasoning, as `analysis/wacc.py:_require_finite`; it
+    is repeated here rather than imported because the message it raises names
+    FCFF, not WACC.
+    """
+    if math.isnan(value):
+        raise ValueError(
+            f"{field} is NaN, so FCFF cannot be computed from it. A NaN here "
+            "means an input was absent or degenerate further up the chain. "
+            "Supply the missing input; it is not substituted with a default."
+        )
 
 
 def calculate_fcff_historical(
@@ -42,6 +62,15 @@ def calculate_fcff_historical(
         HistoricalFCFF with full breakdown for audit.
     """
     tax_rate = tax_rate_override if tax_rate_override is not None else income_statement.effective_tax_rate
+    # Checked BEFORE the clamp below. `max(0.0, min(nan, 0.50))` is 0.0, not
+    # nan: every comparison against nan is False, so both builtins fall
+    # through to their first argument and a NaN tax rate would be silently
+    # read as a 0% rate. Here that means a full, untaxed interest add-back,
+    # which *raises* FCFF and so raises the valuation. After the clamp the
+    # evidence is gone, because the NaN has already become a plausible 0.0.
+    _require_finite(
+        tax_rate, "tax_rate (tax_rate_override or income_statement.effective_tax_rate)"
+    )
     tax_rate = max(0.0, min(tax_rate, 0.50))
 
     cfo = cash_flow.cash_from_operations

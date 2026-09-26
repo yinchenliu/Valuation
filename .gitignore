@@ -8,5 +8,29 @@ dist/
 build/
 .venv/
 venv/
-CLAUDE.md
 10K_filings/
+
+# Tool caches, created by running a gate
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.coverage
+
+# The seal's dispatch snapshot, written by .claude/hooks/seal_baseline.py
+.agent/.seal-baseline.json
+
+# Pickled extraction output. Untracked deliberately: loading a pickle executes
+# the code inside it, so a committed pickle is an executable stored as data
+# (STATUS.md section 6, trap 2). The files stay on disk — they were untracked
+# with `git rm --cached`, never `git rm`.
+# NOTE: tests/*.pkl is NOT covered here. Three scripts under tests/ read those,
+# and they remain tracked.
+cache/
+
+# macOS
+.DS_Store
+
+# NOTE: `CLAUDE.md` used to be listed here, but the file is tracked, so the line
+# did nothing except mislead — git does not ignore a tracked file. CLAUDE.md is
+# now the entry point to docs/INDEX.md and is deliberately tracked.
+# To untrack it instead: `git rm --cached CLAUDE.md` and re-add the line.
