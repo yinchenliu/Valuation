@@ -70,6 +70,7 @@ from pathlib import Path
 from typing import Any
 
 from ingestion.claude_extractor import (
+    _NRI_SCHEMA,
     PASS1_BALANCE_SHEET_FIELDS,
     PASS1_YEAR_FIELDS,
     FilingPlan,
@@ -86,6 +87,12 @@ from ingestion.filings import fingerprint_filings, parse_pdf_args
 from models.financial_statements import FinancialStatements, NonRecurringItem
 
 SESSION_FORMAT = "session-extraction-v1"
+
+# Every key a Pass 2 item must carry, read from the schema route A's Pass 2 prompt is
+# built from, so the two cannot drift. `claude_extractor.py` exports no public name
+# for it, as it does for Pass 1 (PASS1_YEAR_FIELDS); this unit may not edit that file,
+# so the private name is imported. The P9d entry asks for a public one.
+_PASS2_ITEM_FIELDS: tuple[str, ...] = tuple(_NRI_SCHEMA["non_recurring_items"][0])
 
 # The widest page range `text` prints in one call. A 10-K runs to 100-200 pages; a
 # session that loads all of them by accident spends its context on boilerplate.
@@ -465,12 +472,18 @@ def _pass1_problems(where: str, plan: FilingPlan, pass1: object) -> list[str]:
             "'pass1.latest_balance_sheet' is empty.",
         )
         return problems
-    if "year" not in balance or not _is_int(balance["year"]) or balance["year"] <= 0:
+    # The balance sheet's year is read only after a presence test: an absent year and
+    # a wrong one are reported in different words, and neither falls back to a value.
+    bs_label = "balance sheet"
+    if "year" not in balance:
+        problems.append(f"{where}, balance sheet: key 'year' is absent.")
+    elif not _is_int(balance["year"]) or balance["year"] <= 0:
         problems.append(
             f"{where}, balance sheet: 'year' must be a positive integer, got "
-            f"{balance.get('year', '(absent)')!r}.",  # diagnostic text only
+            f"{balance['year']!r}.",
         )
-    bs_label = f"balance sheet {balance['year']}" if _is_int(balance.get("year")) else "balance sheet"
+    if "year" in balance and _is_int(balance["year"]):
+        bs_label = f"balance sheet {balance['year']}"
     for key in PASS1_BALANCE_SHEET_FIELDS:
         if key == "year":
             continue
@@ -486,12 +499,75 @@ def _pass1_problems(where: str, plan: FilingPlan, pass1: object) -> list[str]:
     return problems
 
 
+def _pass2_item_label(position: int, item: dict[str, Any]) -> str:
+    """'pass2.non_recurring_items[i] (year Y, 'description')' — whichever are present.
+
+    The index always names the item. The year and the description are added when the
+    item carries them, because they are what a reader looks for in the filing. Both
+    are read only after a presence test, and only into this label.
+    """
+    found: list[str] = []
+    if "year" in item:
+        found.append(f"year {item['year']}")
+    if "description" in item:
+        found.append(repr(item["description"]))
+    suffix = f" ({', '.join(found)})" if found else ""
+    return f"pass2.non_recurring_items[{position}]{suffix}"
+
+
+def _pass2_shape_problems(where: str, pass2: dict[str, Any]) -> list[str]:
+    """Pass 2's shape, checked as strictly as Pass 1's before route A's parser runs.
+
+    Route A's parser (`_parse_nri_response`) is not changed: it is route A's too. It
+    raises AttributeError on a `non_recurring_items` that is not a list, converts an
+    `amount` of "12" to 12.0, accepts an `amount` of NaN, and names neither the item
+    nor its year when one of six keys is absent. Each of those is checked here
+    instead, so the stop names the filing and the item (rule 3).
+
+    An absent `non_recurring_items` is left to the parser, whose message already
+    explains why an absent list and an empty one are not the same answer.
+    """
+    if "non_recurring_items" not in pass2:
+        return []
+    items = pass2["non_recurring_items"]
+    if not isinstance(items, list):
+        return [(
+            f"{where}: 'pass2.non_recurring_items' must be a list (an empty list "
+            f"means none were found), got {type(items).__name__} {items!r}."
+        )]
+    problems: list[str] = []
+    for position, item in enumerate(items):
+        if not isinstance(item, dict):
+            problems.append(
+                f"{where}, pass2.non_recurring_items[{position}]: must be a JSON "
+                f"object, got {type(item).__name__} {item!r}.",
+            )
+            continue
+        label = _pass2_item_label(position, item)
+        for key in _PASS2_ITEM_FIELDS:
+            if key not in item:
+                problems.append(f"{where}, {label}: key '{key}' is absent.")
+        if "year" in item and not _is_int(item["year"]):
+            problems.append(
+                f"{where}, {label}: 'year' must be an integer, got {item['year']!r}.",
+            )
+        if "amount" in item and not _is_number(item["amount"]):
+            problems.append(
+                f"{where}, {label}: 'amount' must be a finite JSON number, got "
+                f"{item['amount']!r}.",
+            )
+    return problems
+
+
 def _pass2_problems(where: str, pass2: object) -> list[str]:
-    """Pass 2 must be written, and route A's parser must accept it."""
+    """Pass 2 must be written, well-formed, and accepted by route A's parser."""
     if pass2 is None:
         return [f"{where}: 'pass2' is null — Pass 2 has not been written."]
     if not isinstance(pass2, dict):
         return [f"{where}: 'pass2' must be a JSON object, not {type(pass2).__name__}."]
+    shape_problems = _pass2_shape_problems(where, pass2)
+    if shape_problems:
+        return shape_problems
     try:
         parse_pass2(json.dumps(pass2))
     except (ValueError, KeyError, TypeError) as exc:
