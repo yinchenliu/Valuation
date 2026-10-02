@@ -4,9 +4,9 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `be1c077`, 2026-10-02**, on branch `main`, **on the macOS machine**
+**Measured at `6db180c`, 2026-10-02**, on branch `main`, **on the macOS machine**
 (`.venv/bin/python`, Python 3.11.6). Every figure before `cde33cb` was measured on the
-Windows machine. **Twenty work units accepted, and not one on its own report.** Every programmer run went to a reviewer that
+Windows machine. **Twenty-two work units accepted, and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; **five** times a reviewer or a
 programmer overturned a claim — twice against a programmer, **three times against the
 orchestrator**. The journal is [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
@@ -23,10 +23,10 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `be1c077` (macOS) |
+| Gate | Command | Result at `6db180c` (macOS) |
 |---|---|---|
-| Tests | `.venv/bin/python -m pytest -q` | **359 tests. 353 pass, 6 fail**: 5 red on purpose in three `*_rule3_red.py` files, and the CAPM test below |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **353 passed, 1 failed**: `test_capm.py:473`. SciPy 1.17.1 raises its own message first. Backlog item 45, **held by the user** |
+| Tests | `.venv/bin/python -m pytest -q` | **383 tests. 379 pass, 4 fail**: 3 red on purpose, and the CAPM test below. **3 more pass inside a red file and the gate skips them** (trap 5); a tester moves them next |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **376 passed, 1 failed**: `test_capm.py:473`. SciPy 1.17.1 raises its own message first. Backlog item 45, **held by the user** |
 | Lint | `.venv/bin/python -m ruff check .` | **5 errors**, every one `BLE001` |
 | Types | `.venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **10 errors in 4 files**, 20 files checked |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
@@ -124,14 +124,16 @@ same branch produced 21 bytes of `Internal Server Error`.
 `pytest` no longer makes a paid API call during collection. It needs no key, no PDF
 and no network.
 
-**Five test cases fail deliberately.** `ls tests/unit/*_rule3_red.py` returns three files:
+**Three test cases fail deliberately.** `ls tests/unit/*_rule3_red.py` returns four files:
 
 - `test_dcf_rule3_red.py`: `run_dcf` must stop when the balance sheet is absent.
   Backlog item 2, still open.
 - `test_projector_rule3_red.py`: `analysis/projector.py` raises a bare `IndexError` on
   an empty revenue list. Written at `80febe1`, the twin of closed item 14.
-- `test_session_extraction_rule3_red.py`, 3 cases: the session loader does not yet check
-  the shape of Pass 2 or reject a `NaN` amount. The `P9a` review's F1. `P9d` is assigned.
+- `test_session_extraction_rule3_red.py`, 3 cases: **green since `33afced`** (`P9d`). They
+  must move out of the red file, or the gate never runs them. A tester run is next.
+- `test_routes_session_rule3_red.py`, 1 case: a cache hit ignores `files` sent with
+  `session_file`. Backlog item 52.
 
 **On macOS one more test fails**, `test_capm.py:473`, because of the SciPy version
 (item 45, held). **A failure other than those three is a real regression.**
@@ -165,19 +167,19 @@ api/ TOTAL                       191       9    95%
 models/financial_statements.py   154       1    99%
 models/valuation.py              127       2    98%
 
-ingestion/claude_extractor.py    438     134    69%     22% at ad52e1a
+ingestion/claude_extractor.py    438     133    70%     22% at ad52e1a
 ingestion/filings.py              65      19    71%     new at ad52e1a
-ingestion/session_extraction.py  474      73    85%     new at ad52e1a
+ingestion/session_extraction.py  510      81    84%     new at ad52e1a
 ingestion/price_fetcher.py        37      21    43%
-api/routes_upload.py              48      11    77%     at be1c077
-api/routes_valuation.py          197      24    88%     at be1c077
+api/routes_upload.py              48       0   100%     at 6db180c
+api/routes_valuation.py          197       8    96%     at 6db180c
 ```
 
 **`ingestion/` is measured for the first time at `ad52e1a`, and tested since `92549f8`.**
 `P9c-parse-tests` added 156 tests for the parse layer both routes share. The uncovered
 parts are route A's retry loops, `locate`, `text` and the PDF helpers, which need a real
-PDF. **The `api/` figures fell** because `P9b` added the session path, and its route
-tests are not written yet. The `P9b` tester is next.
+PDF. **`api/` is back to 97%** since `5294a73`, when the `P9b` tester added 23 route
+tests for the session path.
 
 **`P8b-statements-ui` verified all statement rendering blocks and brought `analysis/` to 100% coverage.**
 `analysis/normalizer.py` and `analysis/projector.py` are now at 100%. `api/routes_valuation.py`
@@ -382,6 +384,8 @@ the headline. Re-ranked at `622262b`.
 | 50 | Route A returns `[]` when Pass 2 cannot be parsed twice | **new, found by `P9c`.** "Nothing was read" looks like "none found" |
 | 52 | A cache hit ignores `files` sent with `session_file` | **new, found by the `P9b` review.** Hand-built requests only |
 | 51 | The arithmetic check's `WARN` branch is dead | **new, found by `P9c`** |
+| 53 | The session loader imports `_NRI_SCHEMA` by its private name | **new, the `P9d` review's F1, minor** |
+| 54 | `GET /assumptions` with no filing shows an empty form and no message | **new, found by the `P9b` tester** |
 | 36 | **The same filing extracted twice gave share prices 16% apart** — $343.15 against $296.01 | **half closed at `7354698`.** On the user's decision, `low`-confidence items are now withheld and listed. **The variance itself is still unmeasured** — one pair is an observation, not a range, and the single occurrence that prompted it cannot be sized: three cached extractions hold **zero** `low` items between them |
 | 39 | `models/financial_statements.py:28` defaults `confidence` to `"high"` | the last place absence becomes the strongest reading. **No live path reaches it**, so the decision is in force today; it is a type-level gap |
 | 40 | Five dev scripts produce a price neither entry point would | **created by `7354698`.** They apply `low` items both entry points withhold, and print no excluded block |
@@ -433,16 +437,16 @@ the headline. Re-ranked at `622262b`.
 | 14 | Empty `projected_fcffs` raised a bare `IndexError` | `ff632df` |
 | 29 | `POST /valuation` with no filing ran an extraction on an empty path | `be1c077` |
 
-**Nineteen closed, thirty-one open.** Items 19 to 28 did not exist when this build
+**Nineteen closed, thirty-three open.** Items 19 to 28 did not exist when this build
 started — **every one of them was found by running the code**, not by reading it. So were
 41 and 42, both found at `6e58f13` by a reviewer exhausting inputs rather than reading
 the branch.
 
 **Phase 9 ("two extraction routes, one parser") is in progress.** Route B works from the
 CLI since `ad52e1a` and from the web app since `be1c077`. The parse layer both routes
-share is tested since `92549f8`. Two units remain: `P9d` closes the `P9a` review's F1
-(Pass 2 shape and `NaN` amounts in the session loader), and the `P9b` tester writes the
-route tests for the session path.
+share is tested since `92549f8`, the web routes since `5294a73`, and the session loader
+checks Pass 2 as strictly as Pass 1 since `33afced`. **Remaining:** a tester run moves
+`P9d`'s three green tests out of the red file.
 
 **Phase 8 ("Show the chain") is complete at `576d4f0`.** Both `GET /assumptions` and
 `POST /valuation` render the adjusted income statement, cash flow statement, balance sheet
@@ -465,8 +469,8 @@ Things that have already misled a reader of this repository.
    nothing at all. "It ran" is not evidence. Name an input that came from a filing.
 3. **`cli.py` and the web app can disagree.** They build assumptions by separate code
    paths. A figure verified in one is not verified in the other.
-4. **Five test cases are red on purpose.** On macOS `pytest -q` reports `6 failed, 353
-   passed`: the five cases in three `*_rule3_red.py` files and the held CAPM test. That is the expected
+4. **Three test cases are red on purpose.** On macOS `pytest -q` reports `4 failed, 379
+   passed`: three red cases and the held CAPM test. That is the expected
    state. Do not fix it by weakening it; fix backlog item 2. The gate
    form that excludes it is `pytest -q --ignore-glob="*_rule3_red.py"`.
 5. **A green test inside `*_rule3_red.py` is invisible to the gate.** That happened
