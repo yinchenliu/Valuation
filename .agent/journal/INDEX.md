@@ -49,6 +49,8 @@ edits another's.
 | 2026-09-26 | P8b-statements-ui | programmer | `ok` — 13 of 13 criteria; seven statement blocks rendered | [entry](2026-09-26T1716-programmer-p8b-statements-ui.md) |
 | 2026-09-26 | P8b-statements-ui | code_reviewer | **`approved`** — 1 note on CapEx header. All 13 criteria verified | [entry](2026-09-26T1735-code_reviewer-p8b-statements-ui.md) |
 | 2026-09-26 | P8b-statements-ui | tester | **`pass`** — 19 tests, 100 asserts over 7 blocks. Verified Rule 3 stops and badges | [entry](2026-09-26T1740-tester-p8b-statements-ui.md) |
+| 2026-10-02 | P9a-session-route | programmer | `ok` — 12 of 12 criteria; same JSON gives equal statements and byte-equal prompts by both routes; mypy 14 → 10. **One possible paid API call** in a probe, because `.env` overrides `env -u` | [entry](2026-10-02T1630-programmer-p9a-session-route.md) |
+| 2026-10-02 | P9a-session-route | code_reviewer | **`approved`** — round 1. Re-ran every criterion; loaded the `cde33cb` extractor beside the new one and found route A equal in 4 cases. F1 minor: Pass 2 shape and `NaN` amount not checked by the loader (→ `P9d`). Recorded the silent PDF drop as backlog item 49 | [entry](2026-10-02T1654-code_reviewer-p9a-session-route.md) |
 
 
 

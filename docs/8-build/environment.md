@@ -170,6 +170,14 @@ ANTHROPIC_API_KEY=...
 GEMINI_API_KEY=...
 ```
 
+### Warning: `.env` wins over the environment
+
+`config.py` loads `.env` with `override=True`. So a key in `.env` replaces the same
+variable in the environment, and `env -u ANTHROPIC_API_KEY …` does **not** remove it.
+**Never rely on unsetting a variable to prevent a paid API call while `.env` holds the
+key.** To run with no credential, replace `ingestion.claude_extractor._call_llm` with a
+stub, or move `.env` aside. Backlog item 46.
+
 ### What happens when nothing resolves
 
 `resolve_provider` raises `ValueError` **before any network call**, naming both
@@ -242,6 +250,22 @@ outside it, and a scratch file inside it dirties the tree and can trip the seal.
 repository.
 
 Set `PYTHONDONTWRITEBYTECODE=1` so a script leaves no `__pycache__` behind.
+
+## 6b. Reading a PDF page in a Claude Code session
+
+Route B of the extraction (`docs/3-architecture/extraction.md`) has the session read the
+filing. Claude Code's Read tool renders a PDF page only when `pdftoppm`, from the
+poppler package, is installed.
+
+**On the macOS machine it is not, and it cannot be installed as things stand.** Measured
+2026-10-02: `brew install poppler` fails before it starts, because Homebrew 4.4.6 stops
+with `unknown or unsupported macOS version: "27.0"`. Updating Homebrew is a change to
+the machine outside this repository, so it is the user's decision.
+
+**Route B does not need it.** `python -m ingestion.session_extraction text` prints a
+page's text layer through `pdfplumber`, which the venv already has. On a text-based 10-K
+that is enough, and it costs a session fewer tokens than a page image. Only a scanned
+page needs the image.
 
 ## 7. What is gitignored, and one thing that is not
 

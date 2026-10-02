@@ -27,6 +27,11 @@ venv/
 # and they remain tracked.
 cache/
 
+# Claude Code session files (ingestion/session_extraction.py). Each holds one
+# company's figures as read from its filings, so it is DATA, like 10K_filings/ and
+# cache/, and docs/ never holds data (docs/INDEX.md). Untracked for the same reason.
+extractions/
+
 # macOS
 .DS_Store
 

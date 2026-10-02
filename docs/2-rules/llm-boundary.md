@@ -10,24 +10,46 @@ reviewing a change that adds a field to an extraction prompt.
 
 ## The line, in code
 
+There are two sources of model text, and they meet at the parser.
+
 ```
-PDF bytes ──► claude_extractor.py ──► FinancialStatements + list[NonRecurringItem]
-             ▲                      ▲
-             │                      │
-      the model works here    the line is here
-                                    │
-                                    ▼
+ route A                                     route B
+ PDF bytes ──► API call                      PDF ──► Claude Code session
+ (claude_extractor.py)                       (reads pages via `locate` / `text`)
+        │                                           │
+        │ Pass 1 / Pass 2 JSON text                 │ the same JSON, stored in a
+        │                                           │ session file (session_extraction.py)
+        ▼                                           ▼
+        └──────────────► parse_pass1 / parse_pass2 ◄┘
+                         (claude_extractor.py)
+                                 │   ▲
+                                 │   the line is here
+                                 ▼
+          merge_filing_extractions ──► FinancialStatements + list[NonRecurringItem]
+                                 │
+                                 ▼
              everything downstream is deterministic Python
 ```
 
+Above the line, a model reads a page — over the API in route A, inside a Claude Code
+session in route B. Both answer the same prompts (`pass1_prompts`, `pass2_prompts`) with
+the same JSON, and both are parsed by the same two functions. **The boundary is the same
+line in both routes.** A session is bound by rule 1 exactly as the API model is.
+
 `ingestion/claude_extractor.py` is the **only** file that may hold a model client, a
-prompt, or an API key. Nothing under `analysis/`, `models/` or `api/` imports
-`anthropic` or `google.genai`.
+prompt, or an API key. `ingestion/session_extraction.py` holds none of them: it gets the
+prompts from the wrappers and parses through them. Nothing under `analysis/`, `models/`
+or `api/` imports `anthropic` or `google.genai`.
+
+Route B's loader is stricter than route A's parser about absence: a key the schema names
+must be present in the session file (an explicit `0` is accepted). Route A's parser still
+reads an absent key as zero (backlog item 1).
 
 ## What the model may return
 
 Only values that are **printed on a page of the filing**, plus the locator that says
-where.
+where. In route B the locator is recorded: `pages_read` names the 1-based PDF pages read
+for each pass, and is printed beside the figures, never computed from.
 
 | Pass | Returns | Source in the PDF |
 |---|---|---|

@@ -111,11 +111,21 @@ Provider = Literal["claude", "gemini"]
 
 # How the request reaches the provider. NOT a third provider — the model served over
 # "foundry" is the same Claude served over "anthropic-direct".
-Transport = Literal["foundry", "anthropic-direct", "gemini-direct"]
+#
+# "claude-code-session" is the same reasoning carried one step further: the figures
+# were read by Claude inside a Claude Code session and stored in a session file
+# (ingestion/session_extraction.py). The model is still Claude, so the provider is
+# still "claude"; only the road the PDF took to the model changed, and on this road
+# no API request is made at all. docs/8-build/environment.md section 3.
+Transport = Literal[
+    "foundry", "anthropic-direct", "gemini-direct", "claude-code-session",
+]
 
 # Which credential the transport carries. The kind, never the value.
+# "claude-code-session" carries none: the session file is read from disk.
 CredentialKind = Literal[
     "foundry-api-key", "entra-token", "anthropic-api-key", "gemini-api-key",
+    "claude-code-session",
 ]
 
 
@@ -151,54 +161,66 @@ _DEFAULT_MODELS: dict[str, str] = {
 # PASS 1: Financial Statement Extraction — schema & prompt
 # ===========================================================================
 
+# One historical year of Pass 1. Named on its own so the session route can require
+# every key it names (PASS1_YEAR_FIELDS, below) without importing a private name,
+# and so the two cannot drift: the prompt's schema text is built from this dict.
+_FINANCIALS_YEAR_SCHEMA: dict[str, str] = {
+    "year": "int — fiscal year (e.g. 2024)",
+    "revenue": "float — total net revenue / net sales",
+    "cost_of_revenue": "float — COGS / cost of goods sold / cost of services",
+    "gross_profit": "float — revenue minus cost_of_revenue (for validation)",
+    "sga": "float — SG&A combined (selling + general + admin). Positive.",
+    "rd_expense": "float — R&D / research and development. Positive.",
+    "depreciation_amortization": "float — D&A from cash flow statement operating section",
+    "other_operating_expense": "float — all other operating cost lines not listed above",
+    "operating_income": "float — EBIT, income from operating activities, this should be from income statement",
+    "interest_expense": "float — gross interest expense on debt. POSITIVE. Use footnote breakout if I/S shows only net interest.",
+    "interest_income": "float — interest / investment income. POSITIVE.",
+    "other_non_operating": "float — net other income/expense below operating line (signed)",
+    "tax_expense": "float — income tax provision. POSITIVE.",
+    "net_income": "float — TOTAL CONSOLIDATED net income (net income INCLUDING noncontrolling interests, i.e. EBT minus tax_expense, BEFORE any allocation to noncontrolling interests). Do NOT use 'net income attributable to common shareholders' or 'attributable to the parent'.",
+    "diluted_shares": "float — diluted weighted-avg shares (same units as F/S)",
+    "cfo": "float — net cash provided by operating activities",
+    "capex": "float — SUM of 'Purchases of PP&E' PLUS 'Acquisitions and intangible asset purchases' from investing section. Do NOT include securities. POSITIVE.",
+    "sbc": "float — stock-based compensation (from CFS operating section)",
+    "change_in_working_capital": "float — total 'Changes in assets and liabilities' from Cash Flow Statement operating section. SIGNED: negative = WC increase (cash outflow), positive = WC decrease (cash inflow).",
+}
+
+# The one balance sheet Pass 1 returns when the plan asks for it.
+_FINANCIALS_BALANCE_SHEET_SCHEMA: dict[str, str] = {
+    "year": "int — the most recent fiscal year in the filing",
+    "cash": "float — cash and cash equivalents (period-end)",
+    "short_term_investments": "float — marketable securities / short-term investments",
+    "accounts_receivable": "float",
+    "inventory": "float — 0 if not applicable",
+    "other_current_assets": "float — ALL other current assets not listed above",
+    "ppe_net": "float — PP&E net of accumulated depreciation",
+    "goodwill": "float",
+    "intangible_assets": "float — intangibles other than goodwill",
+    "other_non_current_assets": "float — CATCH-ALL for all non-current assets not listed above. Includes non-marketable securities, deferred income taxes (asset), operating lease ROU assets, equity method investments, etc.",
+    "accounts_payable": "float",
+    "accrued_liabilities": "float — accrued expenses / compensation",
+    "other_current_liabilities": "float — CATCH-ALL for all current liabilities not listed above. Includes deferred revenue, accrued revenue share, etc.",
+    "short_term_debt": "float — current portion of LT debt + notes payable + commercial paper",
+    "long_term_debt": "float — long-term debt beyond 1 year",
+    "other_non_current_liabilities": "float — CATCH-ALL for all non-current liabilities not listed above. Includes operating lease liabilities, pension, deferred tax liabilities, etc.",
+    "total_equity": "float — total stockholders equity",
+}
+
 _FINANCIALS_SCHEMA = {
     "ticker": "string",
     "company_name": "string",
     "currency": "string (e.g. 'USD')",
     "units": "string (e.g. 'Millions')",
-    "historical_years": [
-        {
-            "year": "int — fiscal year (e.g. 2024)",
-            "revenue": "float — total net revenue / net sales",
-            "cost_of_revenue": "float — COGS / cost of goods sold / cost of services",
-            "gross_profit": "float — revenue minus cost_of_revenue (for validation)",
-            "sga": "float — SG&A combined (selling + general + admin). Positive.",
-            "rd_expense": "float — R&D / research and development. Positive.",
-            "depreciation_amortization": "float — D&A from cash flow statement operating section",
-            "other_operating_expense": "float — all other operating cost lines not listed above",
-            "operating_income": "float — EBIT, income from operating activities, this should be from income statement",
-            "interest_expense": "float — gross interest expense on debt. POSITIVE. Use footnote breakout if I/S shows only net interest.",
-            "interest_income": "float — interest / investment income. POSITIVE.",
-            "other_non_operating": "float — net other income/expense below operating line (signed)",
-            "tax_expense": "float — income tax provision. POSITIVE.",
-            "net_income": "float — TOTAL CONSOLIDATED net income (net income INCLUDING noncontrolling interests, i.e. EBT minus tax_expense, BEFORE any allocation to noncontrolling interests). Do NOT use 'net income attributable to common shareholders' or 'attributable to the parent'.",
-            "diluted_shares": "float — diluted weighted-avg shares (same units as F/S)",
-            "cfo": "float — net cash provided by operating activities",
-            "capex": "float — SUM of 'Purchases of PP&E' PLUS 'Acquisitions and intangible asset purchases' from investing section. Do NOT include securities. POSITIVE.",
-            "sbc": "float — stock-based compensation (from CFS operating section)",
-            "change_in_working_capital": "float — total 'Changes in assets and liabilities' from Cash Flow Statement operating section. SIGNED: negative = WC increase (cash outflow), positive = WC decrease (cash inflow).",
-        }
-    ],
-    "latest_balance_sheet": {
-        "year": "int — the most recent fiscal year in the filing",
-        "cash": "float — cash and cash equivalents (period-end)",
-        "short_term_investments": "float — marketable securities / short-term investments",
-        "accounts_receivable": "float",
-        "inventory": "float — 0 if not applicable",
-        "other_current_assets": "float — ALL other current assets not listed above",
-        "ppe_net": "float — PP&E net of accumulated depreciation",
-        "goodwill": "float",
-        "intangible_assets": "float — intangibles other than goodwill",
-        "other_non_current_assets": "float — CATCH-ALL for all non-current assets not listed above. Includes non-marketable securities, deferred income taxes (asset), operating lease ROU assets, equity method investments, etc.",
-        "accounts_payable": "float",
-        "accrued_liabilities": "float — accrued expenses / compensation",
-        "other_current_liabilities": "float — CATCH-ALL for all current liabilities not listed above. Includes deferred revenue, accrued revenue share, etc.",
-        "short_term_debt": "float — current portion of LT debt + notes payable + commercial paper",
-        "long_term_debt": "float — long-term debt beyond 1 year",
-        "other_non_current_liabilities": "float — CATCH-ALL for all non-current liabilities not listed above. Includes operating lease liabilities, pension, deferred tax liabilities, etc.",
-        "total_equity": "float — total stockholders equity",
-    },
+    "historical_years": [_FINANCIALS_YEAR_SCHEMA],
+    "latest_balance_sheet": _FINANCIALS_BALANCE_SHEET_SCHEMA,
 }
+
+# Every key a Pass 1 answer must carry, per historical year and in the balance sheet.
+# Route A's parser does not require them (it reads an absent field as zero, backlog item 1).
+# The session route's loader does, on purpose; see ingestion/session_extraction.py.
+PASS1_YEAR_FIELDS: tuple[str, ...] = tuple(_FINANCIALS_YEAR_SCHEMA)
+PASS1_BALANCE_SHEET_FIELDS: tuple[str, ...] = tuple(_FINANCIALS_BALANCE_SHEET_SCHEMA)
 
 _FINANCIALS_SCHEMA_STR = json.dumps(_FINANCIALS_SCHEMA, indent=2)
 
@@ -436,6 +458,17 @@ def _build_claude_client(resolution: ProviderResolution) -> anthropic.Anthropic:
     gone missing since.
     """
     import anthropic
+
+    # A session resolution labels figures already read and stored in a session
+    # file. It names no credential, so building a client from it would fall
+    # through to ANTHROPIC_API_KEY below and make a paid call under a label that
+    # says no call was made. Stop instead.
+    if resolution.transport == "claude-code-session":
+        raise ValueError(
+            "This ProviderResolution labels a Claude Code session file "
+            f"({resolution.transport_label}). It carries no API credential and "
+            "cannot be used to call the API.",
+        )
 
     if resolution.credential == "entra-token":
         return anthropic.AnthropicFoundry(azure_ad_token_provider=_entra_token_provider())
@@ -845,6 +878,32 @@ def _build_nri_prompt(
     )
 
 
+def _pass1_prompt_pair(
+    target_years: list[int] | None,
+    include_bs: bool,
+) -> tuple[str, str]:
+    """The (system, user) prompt pair for Pass 1. The ONE place it is assembled.
+
+    `_run_financials_pass` (route A) and `pass1_prompts` (route B) both call this,
+    so the prompt the API receives and the prompt a session is shown cannot differ.
+    """
+    return _FINANCIALS_SYSTEM_PROMPT, _build_financials_prompt(target_years, include_bs)
+
+
+def _pass2_prompt_pair(
+    financials: FinancialStatements,
+    target_years: list[int] | None,
+) -> tuple[str, str]:
+    """The (system, user) prompt pair for Pass 2. The ONE place it is assembled.
+
+    `financials` is that filing's own Pass 1 result, before any merge: route A's
+    `_run_nri_pass` receives exactly that, and the session route parses that
+    filing's stored Pass 1 answer to get it.
+    """
+    is_summary = _build_is_summary(financials, target_years)
+    return _NRI_SYSTEM_PROMPT, _build_nri_prompt(is_summary, target_years)
+
+
 # ---------------------------------------------------------------------------
 # Pass 1: Financial Statement Extraction (with retry)
 # ---------------------------------------------------------------------------
@@ -859,14 +918,16 @@ def _run_financials_pass(
     debug: bool = False,
 ) -> FinancialStatements:
     """Execute Pass 1: extract I/S, C/F, and optionally B/S."""
-    user_prompt = _build_financials_prompt(target_years, include_bs)
+    # The same builder `pass1_prompts` calls, so the prompt sent here and the one
+    # the session route prints for the same plan are one string, not two copies.
+    system_prompt, user_prompt = _pass1_prompt_pair(target_years, include_bs)
 
     year_label = f"for {sorted(target_years)}" if target_years else "(all years)"
     bs_label = " + B/S" if include_bs else ""
     print(f"  [Pass 1] Extracting financials {year_label}{bs_label}...")
 
     raw, in_tok, out_tok = _call_llm(
-        _FINANCIALS_SYSTEM_PROMPT, user_prompt, resolution,
+        system_prompt, user_prompt, resolution,
         pdf_bytes=pdf_bytes,
     )
     if in_tok or out_tok:
@@ -899,7 +960,7 @@ def _run_financials_pass(
                 + json_str
             )
             raw2, _, _ = _call_llm(
-                _FINANCIALS_SYSTEM_PROMPT, fix_prompt, resolution,
+                system_prompt, fix_prompt, resolution,
             )
             json_str = _extract_json(raw2)
             continue
@@ -930,7 +991,7 @@ def _run_financials_pass(
             + json_str
         )
         raw2, in2, out2 = _call_llm(
-            _FINANCIALS_SYSTEM_PROMPT, fix_prompt, resolution,
+            system_prompt, fix_prompt, resolution,
         )
         if in2 or out2:
             print(f"  [Pass 1] Retry tokens — input: {in2:,}  output: {out2:,}")
@@ -955,14 +1016,14 @@ def _run_nri_pass(
     Receives the extracted FinancialStatements from Pass 1 so it can build
     an I/S summary as context for the LLM.
     """
-    is_summary = _build_is_summary(financials, target_years)
-    user_prompt = _build_nri_prompt(is_summary, target_years)
+    # The same builder `pass2_prompts` calls; see _run_financials_pass.
+    system_prompt, user_prompt = _pass2_prompt_pair(financials, target_years)
 
     year_label = f"for {sorted(target_years)}" if target_years else ""
     print(f"  [Pass 2] Analyzing non-recurring items {year_label}...")
 
     raw, in_tok, out_tok = _call_llm(
-        _NRI_SYSTEM_PROMPT, user_prompt, resolution,
+        system_prompt, user_prompt, resolution,
         pdf_bytes=pdf_bytes,
     )
     if in_tok or out_tok:
@@ -983,7 +1044,7 @@ def _run_nri_pass(
             "with no markdown fences.\n\n" + json_str
         )
         raw2, _, _ = _call_llm(
-            _NRI_SYSTEM_PROMPT, fix_prompt, resolution,
+            system_prompt, fix_prompt, resolution,
         )
         try:
             nri = _parse_nri_response(_extract_json(raw2))
@@ -1178,6 +1239,156 @@ def describe_resolution(resolution: ProviderResolution) -> str:
 
 
 # ===========================================================================
+# Shared by both extraction routes: the plan, the merge, the prompts, the parsers
+# ===========================================================================
+#
+# Route A (this file's API calls) and route B (a Claude Code session writing a
+# session file, ingestion/session_extraction.py) meet here. Each job below has
+# exactly one implementation, and both routes call it, so a fix to the plan or the
+# merge cannot land in one route and miss the other (the shape of backlog item 7).
+
+@dataclass(frozen=True)
+class FilingPlan:
+    """What one filing is asked for: which years, and whether its balance sheet.
+
+    `target_years` is None for "every year the filing presents". A tuple, not a
+    list, so the plan is hashable and cannot be mutated after `plan_filings`
+    produced it.
+    """
+
+    fiscal_year: int
+    pdf_path: str
+    target_years: tuple[int, ...] | None
+    include_bs: bool
+
+
+def plan_filings(filings: list[tuple[int, str | Path]]) -> list[FilingPlan]:
+    """Decide which years and which balance sheet come from which filing.
+
+    One filing: every year it presents, and its balance sheet. Several, sorted
+    ascending by fiscal year: the oldest gives every year it presents and no
+    balance sheet, each middle one gives its own year only and no balance sheet,
+    and the newest gives its own year and the balance sheet.
+
+    Raises:
+        ValueError: when `filings` is empty.
+    """
+    if not filings:
+        raise ValueError("filings list is empty")
+
+    if len(filings) == 1:
+        fiscal_year, pdf_path = filings[0]
+        return [FilingPlan(
+            fiscal_year=fiscal_year,
+            pdf_path=str(pdf_path),
+            target_years=None,
+            include_bs=True,
+        )]
+
+    filings_sorted = sorted(filings, key=lambda x: x[0])  # ascending by year
+    oldest_year = filings_sorted[0][0]
+    newest_year = filings_sorted[-1][0]
+    return [
+        FilingPlan(
+            fiscal_year=fiscal_year,
+            pdf_path=str(pdf_path),
+            target_years=None if fiscal_year == oldest_year else (fiscal_year,),
+            include_bs=fiscal_year == newest_year,
+        )
+        for fiscal_year, pdf_path in filings_sorted
+    ]
+
+
+def _plan_target_years(plan: FilingPlan) -> list[int] | None:
+    """The plan's target years in the list form the prompt builders take."""
+    if plan.target_years is None:
+        return None
+    return list(plan.target_years)
+
+
+def merge_filing_extractions(
+    extractions: list[tuple[FilingPlan, FinancialStatements, list[NonRecurringItem]]],
+    ticker: str,
+    company_name: str,
+) -> tuple[FinancialStatements, list[NonRecurringItem]]:
+    """Merge per-filing results into one set of statements and one item list.
+
+    `extractions` is in plan order (ascending fiscal year), as `plan_filings`
+    returns it. For each statement year, the statement from the filing whose
+    `fiscal_year` equals that year is preferred; otherwise the first one seen is
+    kept. Non-recurring items are deduplicated on (year, amount, direction),
+    first seen kept.
+    """
+    all_income: dict[int, IncomeStatement] = {}
+    all_balance: dict[int, BalanceSheet] = {}
+    all_cashflow: dict[int, CashFlowStatement] = {}
+    all_nri: list[NonRecurringItem] = []
+    nri_keys: set[tuple[int, float, str]] = set()
+
+    for plan, fin, nri in extractions:
+        fiscal_year = plan.fiscal_year
+
+        # Merge: prefer the "primary" filing (where fiscal_year matches the year)
+        for income in fin.income_statements:
+            y = income.year
+            if y not in all_income or y == fiscal_year:
+                all_income[y] = income
+        for balance in fin.balance_sheets:
+            y = balance.year
+            if y not in all_balance or y == fiscal_year:
+                all_balance[y] = balance
+        for cashflow in fin.cash_flow_statements:
+            y = cashflow.year
+            if y not in all_cashflow or y == fiscal_year:
+                all_cashflow[y] = cashflow
+
+        # Dedupe NRIs by (year, amount, direction)
+        for item in nri:
+            key = (item.year, item.amount, item.direction)
+            if key not in nri_keys:
+                all_nri.append(item)
+                nri_keys.add(key)
+
+    merged = FinancialStatements(
+        ticker=ticker,
+        company_name=company_name,
+        income_statements=sorted(all_income.values(), key=lambda x: x.year),
+        balance_sheets=sorted(all_balance.values(), key=lambda x: x.year),
+        cash_flow_statements=sorted(all_cashflow.values(), key=lambda x: x.year),
+    )
+    return merged, all_nri
+
+def pass1_prompts(plan: FilingPlan) -> tuple[str, str]:
+    """The (system, user) prompt route A sends for this plan's Pass 1."""
+    return _pass1_prompt_pair(_plan_target_years(plan), plan.include_bs)
+
+
+def pass2_prompts(
+    plan: FilingPlan,
+    financials: FinancialStatements,
+) -> tuple[str, str]:
+    """The (system, user) prompt route A sends for this plan's Pass 2.
+
+    `financials` must be this filing's own Pass 1 result, unmerged.
+    """
+    return _pass2_prompt_pair(financials, _plan_target_years(plan))
+
+
+def parse_pass1(
+    json_str: str,
+    ticker: str,
+    company_name: str,
+) -> tuple[FinancialStatements, list[str]]:
+    """Parse a Pass 1 answer into statements plus arithmetic validation errors."""
+    return _parse_financials_response(json_str, ticker, company_name)
+
+
+def parse_pass2(json_str: str) -> list[NonRecurringItem]:
+    """Parse a Pass 2 answer into non-recurring items."""
+    return _parse_nri_response(json_str)
+
+
+# ===========================================================================
 # Public API
 # ===========================================================================
 
@@ -1272,92 +1483,54 @@ def extract_multi_year(
     Returns:
         Merged (FinancialStatements, list[NonRecurringItem]) across all filings.
     """
-    if not filings:
-        raise ValueError("filings list is empty")
+    plans = plan_filings(filings)  # raises on an empty list
 
-    if len(filings) == 1:
-        # Single filing — just extract everything
-        _, pdf_path = filings[0]
+    if len(plans) == 1:
+        # Single filing — just extract everything. Deliberately NOT passed through
+        # merge_filing_extractions: the merge re-sorts and replaces the parsed
+        # ticker, and a single filing's result is returned exactly as parsed.
+        plan = plans[0]
         return extract_financials(
-            pdf_path=pdf_path,
+            pdf_path=plan.pdf_path,
             ticker=ticker, company_name=company_name,
-            provider=provider, model=model, debug=debug,
+            provider=provider, model=model,
+            target_years=_plan_target_years(plan), include_bs=plan.include_bs,
+            debug=debug,
         )
-
-    filings_sorted = sorted(filings, key=lambda x: x[0])  # ascending by year
-    oldest_year = filings_sorted[0][0]
-    newest_year = filings_sorted[-1][0]
 
     # Print extraction plan
     print(f"\n{'='*65}")
     print(f"MULTI-YEAR EXTRACTION PLAN — {ticker or 'Unknown'}")
     print(f"{'='*65}")
-    for fiscal_year, pdf_path in filings_sorted:
-        if fiscal_year == oldest_year:
-            plan = "all years (oldest filing)"
+    for plan in plans:
+        if plan.target_years is None:
+            plan_text = "all years (oldest filing)"
         else:
-            plan = f"year {fiscal_year} only"
-        bs = " + B/S" if fiscal_year == newest_year else ""
-        print(f"  {Path(pdf_path).name} -> {plan}{bs}")
+            plan_text = f"year {plan.fiscal_year} only"
+        bs = " + B/S" if plan.include_bs else ""
+        print(f"  {Path(plan.pdf_path).name} -> {plan_text}{bs}")
     print(f"{'='*65}")
 
-    # Execute extraction for each filing
-    all_income: dict[int, IncomeStatement] = {}
-    all_balance: dict[int, BalanceSheet] = {}
-    all_cashflow: dict[int, CashFlowStatement] = {}
-    all_nri: list[NonRecurringItem] = []
-    nri_keys: set[tuple[int, float, str]] = set()
-
-    for fiscal_year, pdf_path in filings_sorted:
-        is_oldest = fiscal_year == oldest_year
-        is_newest = fiscal_year == newest_year
-
-        target_years = None if is_oldest else [fiscal_year]
-        include_bs = is_newest
-
+    # Execute extraction for each filing, in plan order
+    extractions: list[tuple[FilingPlan, FinancialStatements, list[NonRecurringItem]]] = []
+    for plan in plans:
         print(f"\n{'='*65}")
-        print(f"EXTRACTING: {Path(pdf_path).name}  (fiscal {fiscal_year})")
+        print(f"EXTRACTING: {Path(plan.pdf_path).name}  (fiscal {plan.fiscal_year})")
         print(f"{'='*65}")
 
         fin, nri = extract_financials(
-            pdf_path=pdf_path,
+            pdf_path=plan.pdf_path,
             ticker=ticker,
             company_name=company_name,
             provider=provider,
             model=model,
-            target_years=target_years,
-            include_bs=include_bs,
+            target_years=_plan_target_years(plan),
+            include_bs=plan.include_bs,
             debug=debug,
         )
+        extractions.append((plan, fin, nri))
 
-        # Merge: prefer the "primary" filing (where fiscal_year matches the year)
-        for stmt in fin.income_statements:
-            y = stmt.year
-            if y not in all_income or y == fiscal_year:
-                all_income[y] = stmt
-        for stmt in fin.balance_sheets:
-            y = stmt.year
-            if y not in all_balance or y == fiscal_year:
-                all_balance[y] = stmt
-        for stmt in fin.cash_flow_statements:
-            y = stmt.year
-            if y not in all_cashflow or y == fiscal_year:
-                all_cashflow[y] = stmt
-
-        # Dedupe NRIs by (year, amount, direction)
-        for item in nri:
-            key = (item.year, item.amount, item.direction)
-            if key not in nri_keys:
-                all_nri.append(item)
-                nri_keys.add(key)
-
-    merged = FinancialStatements(
-        ticker=ticker,
-        company_name=company_name,
-        income_statements=sorted(all_income.values(), key=lambda x: x.year),
-        balance_sheets=sorted(all_balance.values(), key=lambda x: x.year),
-        cash_flow_statements=sorted(all_cashflow.values(), key=lambda x: x.year),
-    )
+    merged, all_nri = merge_filing_extractions(extractions, ticker, company_name)
 
     print(f"\n{'='*65}")
     print(f"MERGED: {len(merged.years)} years {merged.years}, "

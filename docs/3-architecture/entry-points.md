@@ -65,11 +65,40 @@ and re-run the valuation without paying for extraction again.
 | Piece | Lines |
 |---|---|
 | `parse_args` | `:69` |
-| `_discover_filings` | `:126` — finds PDFs for a ticker in a directory |
+| `_discover_filings` | **moved** to `ingestion/filings.py` as `discover_filings` by `P9a-session-route`, with `parse_pdf_args`, `InputFingerprint` and `fingerprint_filings`. `cli.py` imports them |
 | `build_overrides` | `:214` — argparse → `ProjectionAssumptions` |
 | `_cache_path` / `_load_cache` / `_save_cache` | `:240-259` |
 | `print_*` — one per stage | `:286-591` |
 | `main` | `:596` |
+
+### `--session-file FILE` — the session route
+
+Added by `P9a-session-route`. Reads the extraction from a Claude Code session file
+(`ingestion/session_extraction.py`; format and stop list in
+[extraction.md](extraction.md), "Two routes, one parser") instead of calling an API.
+
+```bash
+.venv/bin/python cli.py --session-file extractions/CMG.json
+```
+
+- **No PDF arguments.** The file names its PDFs and each is verified by sha256. Giving
+  both, or neither, is an `argparse` error. The positional is `nargs="*"`.
+- **The ticker and company come from the file.** `-t` and `-n` are optional; one that
+  differs from the file stops the run.
+- **`-p`, `-m`, `--cache-dir` and `--no-cache` are refused**, not ignored: they belong to
+  the API route. No pickle is read or written; the session file is the stored
+  extraction. (`-p`'s argparse default is `None` so that it can be refused; without
+  `--session-file` it resolves to `config.DEFAULT_EXTRACTION_PROVIDER` as before.)
+- **No credential is needed.** No API call is made on this route.
+- **Stage 1 prints `describe_resolution` of the session label**, then each PDF with its
+  sha256 prefix, size and the pages read for each pass, then any arithmetic validation
+  errors as warnings.
+- **Every later place that named the provider names the route.** Stage 3's heading reads
+  `identified by a Claude Code session, model <id> as declared` instead of `CLAUDE`, and
+  the closing "not measured" block names the session file and says no API call was made.
+
+Stage 1 is two functions, `_extract_via_api` (the old stage 1, moved unchanged) and
+`_extract_from_session_file`. Stages 2 to 10 are the same code for both.
 
 > **Warning.** The cache is a **pickle**. Loading a pickle executes code inside it. Do
 > not load a `.pkl` from anywhere but your own machine, and note that five are committed

@@ -7,7 +7,7 @@ fix applied to half the program.
 Every phase names its done-criteria as **measurements**. A criterion that cannot be
 measured by a command is not a criterion.
 
-**Nothing below has been assigned.** Measured state is in [STATUS.md](../../STATUS.md);
+Measured state is in [STATUS.md](../../STATUS.md);
 the defects are in
 [9-reference/refactor-backlog.md](../9-reference/refactor-backlog.md).
 
@@ -163,6 +163,32 @@ disagreed before, and that disagreement is the finding.
 **Do not copy `cli.py`'s print layer.** It holds three rule 3 sites — `:508`, `:522-538`
 and `:593` — each a conditional zero or a blank cell standing in for a missing
 statement. A blank cell and a zero cell are the same bytes to a reader.
+
+## Phase 9 — two extraction routes, one parser
+
+**Decided by the user on 2026-10-02.** Every extraction today is a paid API call: two
+per filing, so six for three 10-Ks, plus up to two retries per filing. The user wants a
+second route. A Claude Code session reads the PDF in the chat, writes the same two JSON
+answers the API would return, and saves them to a file. The pipeline then reads that
+file instead of calling the API.
+
+**Both routes must meet at the parser.** The same schema, the same
+`_parse_financials_response` and `_parse_nri_response`, the same arithmetic check, the
+same multi-filing plan and the same merge. A route with its own parser is a second
+pipeline, which is the shape of backlog item 7.
+
+| # | Criterion | Expected | Measured by |
+|---|---|---|---|
+| 1 | one plan and one merge, used by both routes | 1 definition each | `grep -n "def plan_filings\|def merge_filing_extractions" ingestion/` |
+| 2 | the same JSON gives the same statements by either route | equal dataclasses | a test feeding identical JSON through both |
+| 3 | the CLI values a company from a session file with no API credential set | a DCF result | `cli.py --session-file …` with every key unset |
+| 4 | the web app values a company from an uploaded session file | 200, the result page | `TestClient` and a manual run |
+| 5 | the output names the route | transport `Claude Code session` shown | CLI output and the result page |
+| 6 | a session file whose PDF changed on disk stops and names the file | raises | a test |
+| 7 | a session file missing a schema key stops and names the filing, year and key | raises | a test |
+
+**Constraint.** Route A must not change a number. A test that held before this phase
+holds after it.
 
 ---
 

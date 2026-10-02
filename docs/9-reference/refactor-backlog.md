@@ -75,6 +75,13 @@ rather than lying.
 | 40 | Five dev scripts now produce a price neither entry point would | — | `tests/` | **new, and created by `7354698`** |
 | 37 | `analysis/wacc.py`'s new stop states an inference as a fact | — | `analysis/wacc.py` | **new.** Message only; 23 of 23 wacc tests stay green with the rewrite |
 | 38 | `analysis/wacc.py` fabricates a 100% equity weighting when market cap and debt are both zero | **silent** | `analysis/wacc.py` | **new.** Item 22's weights half. Verified unblocked |
+| 43 | The fiscal year comes from the filename's date, not from the filing | **silent** | `cli.py` (moving to `ingestion/filings.py`), `api/routes_upload.py` | **new at `cde33cb`.** Wrong for every 52/53-week filer whose year ends in early January |
+| 44 | The `units` field is extracted and then ignored | **silent**, latent | `ingestion/claude_extractor.py`, `api/routes_valuation.py` | **new at `cde33cb`.** A filing in thousands is labelled `M`; one fallback mixes scales |
+| 45 | `calculate_beta` checks for a constant market series only after SciPy has already raised | stopping | `analysis/capm.py` | **new at `cde33cb`.** SciPy 1.17.1 raises first, so the stop does not name `market_returns`. **Held by the user, 2026-10-02** |
+| 46 | `.env` overrides the environment, so unsetting a key does not stop a paid call | **silent** | `config.py` | **new at `cde33cb`.** Found by `P9a-session-route`, after it caused one possibly billed API call |
+| 47 | The income statement shown on both pages has no interest income row, so EBT does not add up from the rows shown | — | `cli.py`, `templates/_statements.html` | **new at `cde33cb`.** Display only: the figure is in EBT, but a reader cannot see it |
+| 48 | The equity bridge does not subtract noncontrolling interest | **silent** | `analysis/dcf.py`, `models/`, the Pass 1 schema | **new at `cde33cb`.** Walmart fiscal 2026: 6,563 of noncontrolling interest, about $0.82 a share |
+| 49 | Given several PDFs, the API route drops any PDF with no fiscal year and says nothing | **silent** | `cli.py`, `api/routes_valuation.py` | **new at `P9a`.** Route B stops on the same input, so the two routes now differ on it |
 
 ---
 
@@ -663,6 +670,138 @@ it is the same shape one step earlier: an input silently discarded.
 
 **Fix.** Add a truncate clause beside the pad clause, naming how many rates were
 discarded. Whoever finishes the provenance work owns it.
+
+## 43. The fiscal year comes from the filename's date, not from the filing · **silent**
+
+**Fact.** `_discover_filings` (`cli.py:140`, moving to `ingestion/filings.py` in
+`P9a-session-route`) takes the first year after a `10-K` marker in the filename. The
+filenames in `10K_filings/` carry the period-end date. L3Harris ends its fiscal year on
+the Friday nearest 31 December:
+
+| File | Year inferred | Fiscal year in the filing |
+|---|---|---|
+| `L3Harris Technologies Inc._10-K_2023-12-29_English.pdf` | 2023 | 2023 |
+| `L3Harris Technologies Inc._10-K_2025-01-03_English.pdf` | **2025** | 2024 |
+| `L3Harris Technologies Inc._10-K_2026-01-02_English.pdf` | **2026** | 2025 |
+
+So the multi-filing plan asks the 2025-01-03 filing for "fiscal year 2025 ONLY". That
+filing holds 2024, 2023 and 2022. `api/routes_upload.py:_guess_fiscal_year` uses a
+different pattern with the same result.
+
+**Cost.** Silent. The model is asked for a year the filing does not contain. It may
+return the latest year under the wrong label, or nothing, and the merge then keys
+statements on the wrong year. Walmart and Okta are not affected: they name the fiscal
+year by the calendar year in which it ends, so the date and the label agree.
+
+**Fix, when assigned.** Read the fiscal year from the filing's cover page, or require it
+from the user, and stop when the filename and the filing disagree.
+
+## 44. The `units` field is extracted and then ignored · **silent**, latent
+
+**Fact.** `_FINANCIALS_SCHEMA` asks for `"units"` (`claude_extractor.py:158`), and the
+prompt says to keep the source's units. `_parse_financials_response` never reads the
+field. `docs/4-conventions/units-and-signs.md` says every figure is in millions.
+
+Chipotle reports in thousands. A Chipotle extraction therefore holds thousands, and the
+CLI prints them with an `M` suffix. The equity bridge still gives the right price per
+share, because the money and the share count are both in thousands. **One path mixes
+scales:** when `diluted_shares_outstanding` is missing, `api/routes_valuation.py:482`
+substitutes yfinance's `sharesOutstanding / 1e6`, which is millions.
+
+**Fix, when assigned.** Read `units` in the parser and either convert to millions once,
+or stop on anything other than millions.
+
+## 45. The constant-market stop in `calculate_beta` is reached only on older SciPy · stopping
+
+**Fact.** `analysis/capm.py:81` calls `stats.linregress`, then checks the result for NaN
+at `:86`. SciPy 1.17.1 (macOS, `docs/8-build/environment.md`) raises its own
+`ValueError` for a constant regressor first: "Cannot calculate a linear regression if
+all x values are identical". So the repository's message, which names `market_returns`
+and its variance, never appears.
+
+`tests/unit/test_capm.py::test_beta_stops_when_the_market_series_has_no_variation`
+fails on macOS for that reason. It is the one failure in the test gate there.
+
+**Cost.** Low. The run still stops. It names SciPy's reason, not the input.
+
+**Fix, when assigned.** Check `np.var(market_returns) == 0` before calling
+`linregress`. **Held by the user on 2026-10-02.**
+
+## 46. `.env` overrides the environment, so unsetting a key does not stop a paid call · **silent**
+
+**Fact.** `config.py:15` is `load_dotenv(BASE_DIR / ".env", override=True)`. Its comment
+says "System env vars still work; .env just provides a convenient local override". The
+code does the opposite of the usual order: a value in `.env` replaces a value already
+in the environment, and it also restores a variable that the caller removed.
+
+**Measured by accident on 2026-10-02.** `P9a-session-route` ran
+`env -u ANTHROPIC_API_KEY … cli.py 10K_filings/Chipotle -t CMG` to show that the API
+route stops with no credential. It did not stop. The run printed
+`Credential: ANTHROPIC_API_KEY (environment)` and started Pass 1 on the Chipotle 2023
+10-K. It is not known whether that call was billed.
+
+**Cost.** Silent, and it costs money. Any instruction of the form "unset the key to make
+sure no API call is made" is false while `.env` holds the key. The label then also says
+`(environment)` for a key that came from the file.
+
+**Fix, when assigned.** `override=False`, so the environment wins and `env -u` works.
+Then `credential_source` can name the file or the environment truthfully.
+
+## 47. The income statement shown has no interest income row · display
+
+**Fact.** `IncomeStatement.ebt` is `ebit - interest_expense + interest_income +
+other_non_operating` (`models/financial_statements.py:91`). The income statement block
+in `cli.py` and in `templates/_statements.html` shows Interest Expense and Other
+Non-Operating, and no Interest Income.
+
+**Measured on the first real session extraction, 2026-10-02.** Walmart fiscal 2026:
+EBIT 29,825 − interest expense 2,799 + other non-operating 2,075 = 29,101 from the rows
+shown. The EBT row shows 29,469. The difference is interest income of 368, which is in
+the session file and in EBT, and on no page.
+
+**Cost.** No figure is wrong. A reader who checks the column by hand finds a gap of 368
+and cannot close it from the page. That is rule 4.
+
+**Fix, when assigned.** Add an Interest Income row between Interest Expense and Other
+Non-Operating, in both places, in the same unit.
+
+## 48. The equity bridge does not subtract noncontrolling interest · **silent**
+
+**Fact.** The Pass 1 schema asks for **consolidated** net income, including the share
+that belongs to noncontrolling interests, and for total equity including them. So the
+projected cash flows value the whole group. `analysis/dcf.py` then goes from enterprise
+value to equity value by subtracting net debt only. The share of that value that belongs
+to minority holders is never subtracted, and the schema has no field to hold it.
+
+**Measured on the first real session extraction, 2026-10-02.** Walmart, 2026-01-31
+balance sheet (PDF page 22): nonredeemable noncontrolling interest 6,270 plus
+redeemable noncontrolling interest 293 = 6,563. Divided by 8,022 diluted shares, that
+is about $0.82 of the $28.84 implied price.
+
+**Cost.** Silent. The implied price is overstated for every company with
+noncontrolling interests, by their book value at least.
+
+**Fix, when assigned.** This adds a field the model is asked to read, so it changes the
+LLM boundary and must go to the user first (`AGENTS.md`, "Escalate"). Then subtract it
+in the bridge, beside net debt, with its own label.
+
+## 49. Given several PDFs, the API route drops any PDF with no fiscal year · **silent**
+
+**Fact.** With more than one filing, `cli.py` (`_extract_via_api`, the line
+`valid = [(y, p) for y, p in filings if y > 0]`) and `api/routes_valuation.py`
+(`_extract_from_files`) keep only the filings with a year greater than zero. A PDF whose
+name holds no year is dropped, and nothing is printed. When every filing lacks a year,
+both fall back to extracting the first one alone.
+
+Found by `P9a-session-route` and confirmed by its review. Route B's `plan` and loader
+stop on the same input and name the file, so the two routes now behave differently on
+it.
+
+**Cost.** Silent. A year the user supplied a filing for is missing from the valuation,
+and the output does not say a file was ignored.
+
+**Fix, when assigned.** Stop and name the file, as route B does. Make the change in both
+entry points, or after item 7 in one place.
 
 ## 36. The same filing extracted twice gave share prices 16% apart · **silent**
 

@@ -26,14 +26,17 @@ Usage:
 
     # With overrides
     python cli.py 10K.pdf -t AAPL --terminal-growth 0.03 --beta 1.1
+
+    # From a Claude Code session file: no API call, no credential, no pickle.
+    # The ticker, company and PDFs come from the file (see
+    # `python -m ingestion.session_extraction --help`).
+    python cli.py --session-file extractions/CMG.json
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import pickle
-import re
 import sys
 import textwrap
 import time
@@ -50,8 +53,14 @@ from analysis.fcff import calculate_fcff_historical
 from analysis.normalizer import normalize_financials, partition_by_confidence
 from analysis.projector import derive_assumptions, project_fcffs
 from analysis.wacc import calculate_wacc
-from ingestion.claude_extractor import extract_financials, extract_multi_year
+from ingestion.claude_extractor import (
+    describe_resolution,
+    extract_financials,
+    extract_multi_year,
+)
+from ingestion.filings import InputFingerprint, fingerprint_filings, parse_pdf_args
 from ingestion.price_fetcher import fetch_price_data
+from ingestion.session_extraction import load_session_extraction
 from models.financial_statements import FinancialStatements, NonRecurringItem
 from models.valuation import ProjectionAssumptions
 
@@ -82,11 +91,12 @@ def parse_args() -> argparse.Namespace:
 
     p.add_argument(
         "pdfs",
-        nargs="+",
+        nargs="*",
         help=(
             "A folder of 10-K PDFs (years inferred from filenames), a ticker "
             "folder, PDF path(s), or YEAR:PATH entries "
-            "(e.g. 10K_filings/, LLY/, 10K.pdf, or 2023:10K.pdf)"
+            "(e.g. 10K_filings/, LLY/, 10K.pdf, or 2023:10K.pdf). "
+            "Omit when --session-file is given"
         ),
     )
     p.add_argument(
@@ -99,15 +109,28 @@ def parse_args() -> argparse.Namespace:
     g = p.add_argument_group("extraction")
     # The default is config.DEFAULT_EXTRACTION_PROVIDER and not a literal, so the CLI
     # and the web app cannot drift apart on which model reads a filing.
+    #
+    # argparse's default is None, and the configured default is applied after
+    # parsing, so that -p given alongside --session-file can be refused rather than
+    # silently ignored. Without --session-file the resolved value is the same
+    # constant as before.
     g.add_argument(
         "-p", "--provider",
-        default=config.DEFAULT_EXTRACTION_PROVIDER,
+        default=None,
         choices=["claude", "gemini"],
         help=f"LLM provider (default: {config.DEFAULT_EXTRACTION_PROVIDER})",
     )
     g.add_argument("-m", "--model", default=None, help="Override LLM model ID")
     g.add_argument("--cache-dir", default=None, help="Directory for pickle cache")
     g.add_argument("--no-cache", action="store_true", help="Force re-extraction")
+    g.add_argument(
+        "--session-file", default=None, metavar="FILE",
+        help=(
+            "Read the extraction from a Claude Code session file "
+            "(ingestion/session_extraction.py) instead of calling an API. "
+            "Replaces the PDF arguments; the ticker comes from the file"
+        ),
+    )
 
     # Valuation overrides (all decimals)
     g = p.add_argument_group("valuation overrides (decimals)")
@@ -128,6 +151,32 @@ def parse_args() -> argparse.Namespace:
     g.add_argument("--frequency", default="monthly", choices=["daily", "monthly"])
 
     args = p.parse_args()
+
+    if args.session_file is not None:
+        if args.pdfs:
+            p.error(
+                "--session-file and PDF arguments cannot be combined: the session "
+                "file names its own PDFs and verifies each by sha256"
+            )
+        if args.provider is not None or args.model is not None:
+            p.error(
+                "-p/--provider and -m/--model choose the API route. A session file "
+                "records the model that read it; they do not apply"
+            )
+        if args.cache_dir is not None or args.no_cache:
+            p.error(
+                "--cache-dir and --no-cache apply to the API route. The session "
+                "file is the stored extraction; no pickle cache is read or written"
+            )
+        if args.ticker:
+            args.ticker = args.ticker.upper()
+        return args
+
+    if not args.pdfs:
+        p.error("give the 10-K PDF(s) to extract, or --session-file FILE")
+    if args.provider is None:
+        args.provider = config.DEFAULT_EXTRACTION_PROVIDER
+
     if args.ticker:
         args.ticker = args.ticker.upper()
     elif len(args.pdfs) == 1 and Path(args.pdfs[0]).is_dir():
@@ -135,94 +184,6 @@ def parse_args() -> argparse.Namespace:
     else:
         p.error("-t/--ticker is required unless the single input is a ticker folder")
     return args
-
-
-def _discover_filings(directory: Path, ticker: str) -> list[tuple[int, str]]:
-    """Discover 10-K PDFs in a directory, inferring fiscal year from each filename.
-
-    The prefix does not matter — the ticker, the full company name, or anything
-    else may lead the filename. Each PDF only needs to contain a 4-digit fiscal
-    year, ideally as part of a filing date. Examples that all work:
-
-        ABBV_10K_2024.pdf
-        ABBV_10-K_2024-12-31.pdf
-        AbbVie Inc._10-K_2024-12-31_English.pdf
-        Eli Lilly and Company_10-K_2024-12-31_English_237118761_1.pdf
-
-    The year is taken from a date/year token following a '10-K'/'10K' marker
-    when present, otherwise from the first 4-digit year found in the name.
-    """
-    # Prefer a year that follows the 10-K marker; fall back to any year token.
-    marker_pattern = re.compile(r"10[-_ ]?K[^0-9]*((?:19|20)\d{2})", re.IGNORECASE)
-    year_pattern = re.compile(r"(?:19|20)\d{2}")
-
-    filings_by_year: dict[int, Path] = {}
-    skipped: list[str] = []
-
-    for path in sorted(directory.iterdir(), key=lambda item: item.name.lower()):
-        if not path.is_file() or path.suffix.lower() != ".pdf":
-            continue
-
-        marker = marker_pattern.search(path.name)
-        if marker:
-            fiscal_year = int(marker.group(1))
-        else:
-            year_match = year_pattern.search(path.name)
-            if not year_match:
-                skipped.append(path.name)
-                continue
-            fiscal_year = int(year_match.group(0))
-
-        if fiscal_year in filings_by_year:
-            other = filings_by_year[fiscal_year].name
-            raise ValueError(
-                f"Multiple 10-K PDFs resolve to fiscal year {fiscal_year}: "
-                f"{other!r} and {path.name!r}"
-            )
-        filings_by_year[fiscal_year] = path.resolve()
-
-    if skipped:
-        names = ", ".join(repr(name) for name in skipped)
-        raise ValueError(
-            f"Could not infer a fiscal year from PDF filename(s): {names}. "
-            f"Include a 4-digit year in the filename, e.g. "
-            f"'{ticker}_10-K_2024-12-31.pdf' or '{ticker}_10K_2024.pdf'."
-        )
-    if not filings_by_year:
-        raise ValueError(
-            f"No 10-K PDFs found in {directory}. Add PDF filings whose names "
-            f"contain a fiscal year, e.g. '{ticker}_10-K_2024-12-31.pdf'."
-        )
-
-    return [
-        (year, str(filings_by_year[year]))
-        for year in sorted(filings_by_year)
-    ]
-
-
-def parse_pdf_args(
-    pdf_strings: list[str], ticker: str | None = None
-) -> list[tuple[int, str]]:
-    """Resolve a ticker folder, 'YEAR:path', or bare PDF path.
-
-    A bare path (no year prefix) returns [(0, path)] — year=0 signals
-    'extract all years automatically'.
-    """
-    if len(pdf_strings) == 1 and Path(pdf_strings[0]).is_dir():
-        directory = Path(pdf_strings[0])
-        resolved_ticker = (ticker or directory.resolve().name).upper()
-        return _discover_filings(directory, resolved_ticker)
-
-    filings: list[tuple[int, str]] = []
-    for s in pdf_strings:
-        if Path(s).is_dir():
-            raise ValueError("A ticker folder must be the only PDF input")
-        m = re.match(r"^(\d{4}):(.+)$", s)
-        if m:
-            filings.append((int(m.group(1)), m.group(2)))
-        else:
-            filings.append((0, s))
-    return filings
 
 
 def build_overrides(args: argparse.Namespace) -> ProjectionAssumptions:
@@ -255,29 +216,6 @@ CACHE_FORMAT = "p6-inputs-keyed-v1"
 
 
 @dataclass(frozen=True)
-class InputFingerprint:
-    """What one extraction input was, precisely enough to detect a swap.
-
-    Backlog item 33. The cache used to be keyed on the ticker alone, so
-    `cli.py "…LHX_2025.pdf" -t LHX --cache-dir ./cache` returned, in two
-    seconds, a complete valuation computed from a pickle written days earlier
-    from a different document — and printed nothing to say the PDF named on the
-    command line had never been opened.
-
-    `sha256` is the authority: a file rewritten with its timestamp preserved
-    still changes it. `size_bytes` and `mtime_ns` are carried so the miss
-    message can say *how* a file differs in terms a reader can check with
-    `ls -l`, not only that its digest moved.
-    """
-
-    year: int
-    path: str
-    size_bytes: int
-    mtime_ns: int
-    sha256: str
-
-
-@dataclass(frozen=True)
 class ExtractionKey:
     """Everything a cached extraction is an answer to.
 
@@ -291,39 +229,6 @@ class ExtractionKey:
     provider: str
     model: str
     inputs: tuple[InputFingerprint, ...]
-
-
-def fingerprint_filings(filings: list[tuple[int, str]]) -> tuple[InputFingerprint, ...]:
-    """Hash and stat every input PDF, in a stable order.
-
-    Raises:
-        FileNotFoundError: when an input path does not exist. Rule 3 — a cache
-            decision must not be made from a file the run cannot read.
-    """
-    prints: list[InputFingerprint] = []
-    for year, raw_path in filings:
-        path = Path(raw_path)
-        if not path.is_file():
-            raise FileNotFoundError(
-                f"extraction input {raw_path!r} is not a readable file, so its "
-                "content cannot be fingerprinted and no cache decision can be "
-                "made about it"
-            )
-        stat = path.stat()
-        digest = hashlib.sha256()
-        with open(path, "rb") as handle:
-            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                digest.update(chunk)
-        prints.append(
-            InputFingerprint(
-                year=year,
-                path=str(path.resolve()),
-                size_bytes=stat.st_size,
-                mtime_ns=stat.st_mtime_ns,
-                sha256=digest.hexdigest(),
-            )
-        )
-    return tuple(sorted(prints, key=lambda p: (p.year, p.path)))
 
 
 def build_extraction_key(
@@ -606,7 +511,7 @@ def print_extracted_financials(financials: FinancialStatements) -> None:
 
 def print_non_recurring_items(
     items: list[NonRecurringItem],
-    provider: str,
+    identified_by: str,
 ) -> None:
     """Print the items that WILL be applied to the statements.
 
@@ -615,8 +520,13 @@ def print_non_recurring_items(
     that is not the list the arithmetic used is the defect this unit closes
     wearing a different face. The excluded half is printed by
     print_excluded_non_recurring_items, below.
+
+    `identified_by` names who read the filing, as the caller states it: the
+    provider for the API route, or the Claude Code session and its declared model
+    for the session route. A heading that said CLAUDE with no route would hide
+    which of the two produced these items (rule 6).
     """
-    _section(f"NON-RECURRING ITEMS APPLIED (identified by {provider.upper()})")
+    _section(f"NON-RECURRING ITEMS APPLIED (identified by {identified_by})")
     if not items:
         print("  None applied.")
         return
@@ -849,15 +759,14 @@ def print_dcf_result(dcf) -> None:
     print(f"  {'=' * 42}")
 
 
-# ---------------------------------------------------------------------------
-# Main pipeline
-# ---------------------------------------------------------------------------
+def _extract_via_api(
+    args: argparse.Namespace,
+) -> tuple[FinancialStatements, list[NonRecurringItem], str]:
+    """Stage 1 on the API route: the pickle cache, or a paid extraction.
 
-def main() -> None:
-    global _t0
-    _t0 = time.time()
-
-    args = parse_args()
+    Returns the statements, the non-recurring items, and the label that says where
+    they came from. Moved out of main() unchanged when the session route was added.
+    """
     try:
         filings = parse_pdf_args(args.pdfs, args.ticker)
     except ValueError as exc:
@@ -952,6 +861,89 @@ def main() -> None:
             _save_cache(cache, current_key, financials, adjustments)
             print(f"  Cached to {cache.name}, keyed on the file(s) just read")
 
+    return financials, adjustments, cache_label
+
+
+def _extract_from_session_file(
+    args: argparse.Namespace,
+) -> tuple[FinancialStatements, list[NonRecurringItem], str, str]:
+    """Stage 1 on the session route: read a Claude Code session file. No API call.
+
+    Returns the statements, the non-recurring items, the extraction-source label for
+    the closing summary, and the "identified by" label for stage 3. The ticker and
+    company name come from the file; a -t or -n that differs from it stops the run.
+    No pickle cache is read or written: the session file is the stored extraction.
+    """
+    _step(1, "Reading the extraction from a Claude Code session file")
+    _section(f"EXTRACTION FROM SESSION FILE: {Path(args.session_file).name}")
+    try:
+        session = load_session_extraction(args.session_file)
+    except ValueError as exc:
+        raise SystemExit(f"ERROR: {exc}") from exc
+
+    file_ticker = session.financials.ticker
+    if args.ticker and args.ticker != file_ticker.upper():
+        raise SystemExit(
+            f"ERROR: -t {args.ticker} differs from the session file's ticker "
+            f"{file_ticker!r}. Omit -t; the ticker comes from the file."
+        )
+    file_company = session.financials.company_name
+    if args.company_name and args.company_name != file_company:
+        raise SystemExit(
+            f"ERROR: -n {args.company_name!r} differs from the session file's "
+            f"company name {file_company!r}. Omit -n; the name comes from the file."
+        )
+    args.ticker = file_ticker.upper()
+    args.company_name = file_company
+
+    resolution = session.resolution
+    print(f"  {describe_resolution(resolution)}")
+    print("  Filings, each verified against the sha256 recorded when it was planned:")
+    for record in session.filings:
+        pages1 = ", ".join(str(n) for n in record.pages_pass1)
+        pages2 = ", ".join(str(n) for n in record.pages_pass2)
+        print(
+            f"    - [{record.index}] {Path(record.plan.pdf_path).name}  "
+            f"sha256 {record.pdf_sha256[:16]}…  {record.size_bytes:,} bytes"
+        )
+        print(f"        pages read: pass 1 {pages1}; pass 2 {pages2}")
+    if session.validation_errors:
+        print("\n  [WARN] Arithmetic validation errors in the session file. Route A "
+              "keeps its figures\n  with the same warning after its last retry:")
+        for error in session.validation_errors:
+            print(f"    {error}")
+    print("  No API call was made and no pickle cache was read or written.")
+
+    source_label = (
+        f"Claude Code session file {session.session_file}. The figures were read "
+        f"by {resolution.model} (as the session declared it; the model ID cannot "
+        f"be verified) in a Claude Code session, from "
+        + ", ".join(Path(r.plan.pdf_path).name for r in session.filings)
+        + ", each verified against its recorded sha256. No API call was made."
+    )
+    identified_by = (
+        f"a Claude Code session, model {resolution.model} as declared"
+    )
+    return session.financials, session.non_recurring, source_label, identified_by
+
+
+# ---------------------------------------------------------------------------
+# Main pipeline
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    global _t0
+    _t0 = time.time()
+
+    args = parse_args()
+    if args.session_file is not None:
+        financials, adjustments, cache_label, identified_by = (
+            _extract_from_session_file(args)
+        )
+    else:
+        financials, adjustments, cache_label = _extract_via_api(args)
+        identified_by = args.provider.upper()
+
     years = financials.years
     print(f"  Ticker: {financials.ticker}  |  Company: {financials.company_name}")
     print(f"  Years extracted: {years}")
@@ -966,7 +958,7 @@ def main() -> None:
     # decision in analysis/, and normalize_financials keeps the signature its
     # tests were written against. Only `applied` reaches the arithmetic.
     applied, excluded = partition_by_confidence(adjustments)
-    print_non_recurring_items(applied, args.provider)
+    print_non_recurring_items(applied, identified_by)
     print_excluded_non_recurring_items(excluded)
 
     # ===== STAGE 4: NORMALIZE (GAAP -> Non-GAAP) ============================
