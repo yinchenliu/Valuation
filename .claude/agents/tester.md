@@ -90,7 +90,7 @@ A test that states a requirement the code does not yet meet goes in a file named
 `tests/unit/test_<module>_rule3_red.py`. That pattern is what the gate excludes:
 
 ```
-.venv/Scripts/python.exe -m pytest -q --ignore-glob="*_rule3_red.py"
+.venv/bin/python -m pytest -q --ignore-glob="*_rule3_red.py"
 ```
 
 **When the defect is fixed and the test goes green, move it into the module's normal
@@ -117,7 +117,7 @@ a measurement until you say 12 of what, out of how many.
 Measure coverage, do not estimate it:
 
 ```
-.venv/Scripts/python.exe -m pytest -q --cov=analysis --cov=models --cov-report=term-missing
+.venv/bin/python -m pytest -q --cov=analysis --cov=models --cov-report=term-missing
 ```
 
 ## What you may never do
@@ -188,14 +188,16 @@ field takes the same string.
 A denial is the permission answering, not a defect to work around. If the work needs a
 file outside your scope, stop and say so in your entry.
 
-Paths outside the repository are not guarded. Use `c:/tmp/` for scratch runs.
+Paths outside the repository are not guarded. Use `/tmp/` for scratch runs, or
+`c:/tmp/` on Windows.
 
 **3. Use the pinned interpreter. Never a bare `python`.**
-This is Windows. The interpreter lives under `Scripts`, not `bin`.
+The venv puts it under `bin` on macOS and Linux, and under `Scripts` on Windows. The
+commands below use the macOS form. On Windows, write `.venv/Scripts/python.exe` instead.
 ```
-.venv/Scripts/python.exe -m pytest -q
-.venv/Scripts/python.exe -m ruff check .
-.venv/Scripts/python.exe -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports
+.venv/bin/python -m pytest -q
+.venv/bin/python -m ruff check .
+.venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports
 ```
 
 **Use that command exactly.** A shorter form was printed here until 2026-09-22 and it

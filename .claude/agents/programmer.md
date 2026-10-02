@@ -122,14 +122,16 @@ a write outside your scope: everything except `tests/`. A denial is the permissi
 answering, not a defect to work around. If the work needs a file outside your scope,
 stop and say so in your entry.
 
-Paths outside the repository are not guarded. Use `c:/tmp/` for scratch runs.
+Paths outside the repository are not guarded. Use `/tmp/` for scratch runs, or
+`c:/tmp/` on Windows.
 
 **3. Use the pinned interpreter. Never a bare `python`.**
-This is Windows. The interpreter lives under `Scripts`, not `bin`.
+The venv puts it under `bin` on macOS and Linux, and under `Scripts` on Windows. The
+commands below use the macOS form. On Windows, write `.venv/Scripts/python.exe` instead.
 ```
-.venv/Scripts/python.exe -m pytest -q
-.venv/Scripts/python.exe -m ruff check .
-.venv/Scripts/python.exe -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports
+.venv/bin/python -m pytest -q
+.venv/bin/python -m ruff check .
+.venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports
 ```
 
 **Use that command exactly.** A shorter form was printed here until 2026-09-22 and it

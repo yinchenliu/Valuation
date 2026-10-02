@@ -20,8 +20,10 @@ The LLM is strictly an extraction layer — it reads numbers from PDFs. All proj
 
 ### Installation
 
-This is a Windows project, so the interpreter lives under `Scripts`, not `bin`. Every
-command below uses the virtual environment path. **Never a bare `python`.**
+This project runs on Windows and macOS. The interpreter lives under `.venv/Scripts/` on
+Windows and under `.venv/bin/` on macOS. Every command below uses the Windows path. On
+macOS, replace `.venv/Scripts/python.exe` with `.venv/bin/python`. **Never a bare
+`python`.**
 [docs/8-build/environment.md](docs/8-build/environment.md) owns the setup and the gates.
 
 ```bash

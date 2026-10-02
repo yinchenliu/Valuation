@@ -8,7 +8,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR}/.venv/Scripts/python.exe ${CLAUDE_PROJECT_DIR}/.claude/hooks/guard_paths.py",
+            "command": "sh \"${CLAUDE_PROJECT_DIR}/.claude/hooks/run_hook.sh\" guard_paths.py",
             "timeout": 15,
             "statusMessage": "Checking the unit's file scope"
           }
@@ -19,7 +19,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR}/.venv/Scripts/python.exe ${CLAUDE_PROJECT_DIR}/.claude/hooks/seal_baseline.py",
+            "command": "sh \"${CLAUDE_PROJECT_DIR}/.claude/hooks/run_hook.sh\" seal_baseline.py",
             "timeout": 15,
             "statusMessage": "Snapshotting the orchestrator's records"
           }
@@ -31,7 +31,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR}/.venv/Scripts/python.exe ${CLAUDE_PROJECT_DIR}/.claude/hooks/seal_check.py",
+            "command": "sh \"${CLAUDE_PROJECT_DIR}/.claude/hooks/run_hook.sh\" seal_check.py",
             "timeout": 30,
             "statusMessage": "Checking the seal"
           }

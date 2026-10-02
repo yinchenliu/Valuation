@@ -9,7 +9,8 @@ It seals three things:
 
   .agent/journal/INDEX.md   the orchestrator is its only writer (AGENTS.md)
   STATUS.md                 the orchestrator's measurement of the build
-  .claude/hooks/*.py        the guard a subagent must not be able to disarm
+  .claude/hooks/*.py, *.sh  the guard a subagent must not be able to disarm,
+                            and run_hook.sh, which starts every hook
 
 All three are compared against the snapshot `.claude/hooks/seal_baseline.py`
 took at dispatch, not against HEAD. HEAD is the wrong baseline for the first
@@ -67,12 +68,12 @@ def digest(path: Path) -> str | None:
 
 
 def tree_digest(directory: Path) -> str | None:
-    """sha256 over the sorted (name, bytes) pairs of every .py in `directory`.
+    """sha256 over the sorted (name, bytes) pairs of every .py and .sh in `directory`.
 
     Must stay byte-identical to seal_baseline.tree_digest.
     """
     try:
-        files = sorted(directory.glob("*.py"))
+        files = sorted([*directory.glob("*.py"), *directory.glob("*.sh")])
     except OSError:
         return None
     if not files:

@@ -11,6 +11,7 @@ of the CLO_AUP build's setup, adapted to this repository.
 │   ├── code-reviewer.md   writes its review entry only
 │   └── tester.md          writes tests/ and its entry only
 ├── hooks/
+│   ├── run_hook.sh        starts each hook with the venv interpreter, on Windows or macOS
 │   ├── guard_paths.py     PreToolUse  — the per-agent write scope
 │   ├── seal_baseline.py   PreToolUse on Agent/Task/SendMessage — snapshots the sealed files
 │   └── seal_check.py      SubagentStop — the seal
@@ -25,10 +26,13 @@ of the CLO_AUP build's setup, adapted to this repository.
 Verify the guard after any edit to `hooks/guard_paths.py`:
 
 ```
-.venv/Scripts/python.exe .claude/check_guard.py
+.venv/Scripts/python.exe .claude/check_guard.py    # Windows
+.venv/bin/python .claude/check_guard.py            # macOS
 ```
 
-→ `48/48 guard cases correct`, measured 2026-09-20.
+→ `48/48 guard cases correct`, measured 2026-09-20 on Windows and 2026-10-02 on macOS.
+The four scratch-path cases use `c:/tmp` on Windows and `/tmp` elsewhere: `c:/tmp` is a
+relative path on macOS, so it gave 44/48 there.
 
 It is not a pytest file and is not named like one. `STATUS.md` records the suite count
 as a measurement, so nothing here may join it.
@@ -42,8 +46,8 @@ as a measurement, so nothing here may join it.
 | seals `benchmark/` against HEAD | seals `hooks/` against the dispatch snapshot | `.claude/` is new and uncommitted; a HEAD comparison would fire on every run |
 | `permissions.deny` on `benchmark/**` | dropped | no such directory |
 | programmer denied `tests/` and `benchmark/` | denied `tests/` only | same reason |
-| `.venv/bin/python3` | `.venv/Scripts/python.exe` | **this is Windows.** The interpreter is under `Scripts` |
-| `/private/tmp/claude-501/…` scratch | `c:/tmp/` | same |
+| `.venv/bin/python3` | `run_hook.sh` picks `.venv/bin/python` or `.venv/Scripts/python.exe` | **this repository runs on Windows and macOS.** See the last section |
+| `/private/tmp/claude-501/…` scratch | `c:/tmp/` on Windows, `/tmp/` on macOS | same |
 | the six CLO rules | six rules rewritten for this codebase | `docs/2-rules/rules.md`. Each one names the defect here that forced it |
 
 The three agent prompts keep the CLO_AUP structure — startup order, the five rejections,
@@ -98,11 +102,30 @@ nothing, and that is the right answer.
 A missing snapshot falls back to the HEAD comparison for the two tracked files, and skips
 `hooks/`. Blunter, never a hole.
 
-## The hooks call the venv interpreter explicitly
+## The hooks start through `run_hook.sh`
 
-`settings.json` invokes `${CLAUDE_PROJECT_DIR}/.venv/Scripts/python.exe` rather than
-relying on a shebang. Windows does not honour `#!/usr/bin/env python3`, and a bare
-`python` would resolve to whatever is first on `PATH`.
+`settings.json` runs every hook as `sh "${CLAUDE_PROJECT_DIR}/.claude/hooks/run_hook.sh"
+<hook>.py`. The launcher runs the hook with `.venv/bin/python` if it exists, else with
+`.venv/Scripts/python.exe`. It never uses a shebang or a bare `python`: Windows does not
+honour `#!/usr/bin/env python3`, and a bare `python` resolves to whatever is first on
+`PATH`. Claude Code runs hooks in Git Bash on Windows, so `sh` exists on both machines.
 
-**So the hooks do not work until `.venv` exists.** See
-[docs/8-build/environment.md](../docs/8-build/environment.md).
+**Until 2026-10-02 `settings.json` named `.venv/Scripts/python.exe` directly.** On macOS
+that file does not exist. The hook could not start, Claude Code treats that as a
+non-blocking error, and every tool call went through. The guard and the seal were both
+off on that machine, and nothing said so. `.agent/.seal-baseline.json` had never been
+written there, which is how it was found.
+
+**So a missing interpreter now fails closed where it matters.** If neither interpreter
+exists and a subagent role is running, `run_hook.sh guard_paths.py` exits 2. Claude Code
+then blocks the tool call and shows the agent the reason. The orchestrator is only
+warned (exit 1), because it is unguarded by design and must stay able to create the
+venv. The two seal hooks only warn: a blocked SubagentStop would wedge the subagent, and
+the guard has already refused every write it could have made.
+
+**The seal covers the launcher.** Both seal hooks hash every `.py` and `.sh` file in
+`hooks/`. A subagent that disarmed `run_hook.sh` would disarm every hook at once.
+
+**Claude Code reads hook settings when a session starts.** After you edit
+`settings.json`, start a new session, or review the change in `/hooks`, before you rely
+on it.

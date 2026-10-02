@@ -27,7 +27,8 @@ Three things are sealed:
 
   .agent/journal/INDEX.md   the orchestrator is its only writer
   STATUS.md                 the orchestrator's measurement of the build
-  .claude/hooks/*.py        the guard a subagent must not be able to disarm
+  .claude/hooks/*.py, *.sh  the guard a subagent must not be able to disarm,
+                            and run_hook.sh, which starts every hook
 
 The baseline is a hash, not a copy. A subagent that changes a file and changes it
 back has changed nothing, and that is the right answer.
@@ -61,13 +62,13 @@ def digest(path: Path) -> str | None:
 
 
 def tree_digest(directory: Path) -> str | None:
-    """sha256 over the sorted (name, bytes) pairs of every .py in `directory`.
+    """sha256 over the sorted (name, bytes) pairs of every .py and .sh in `directory`.
 
     Sorted so the result does not depend on directory order, and the name is
     hashed alongside the bytes so a rename is a change.
     """
     try:
-        files = sorted(directory.glob("*.py"))
+        files = sorted([*directory.glob("*.py"), *directory.glob("*.sh")])
     except OSError:
         return None
     if not files:

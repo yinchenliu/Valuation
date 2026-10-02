@@ -23,11 +23,14 @@ Python does everything after that.
 ## The one command you need
 
 ```bash
-.venv/Scripts/python.exe -m uvicorn app:app --reload
+.venv/Scripts/python.exe -m uvicorn app:app --reload    # Windows
+.venv/bin/python -m uvicorn app:app --reload            # macOS
 ```
 
-**Never a bare `python`.** This is Windows; the interpreter is under `Scripts`, not
-`bin`. [8-build/environment.md](8-build/environment.md) owns the gates and the setup.
+**Never a bare `python`.** The repository runs on a Windows machine and a macOS machine,
+and the venv puts the interpreter under `Scripts` on one and `bin` on the other.
+[8-build/environment.md](8-build/environment.md) owns the interpreter, the gates and the
+setup.
 
 ## Four facts that change how you read the code
 

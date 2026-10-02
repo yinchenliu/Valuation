@@ -1,36 +1,60 @@
 # The environment
 
-**Measured 2026-09-20 at `bc19431`.** Re-measure when you change a dependency.
+**Measured 2026-09-20 at `bc19431` on Windows, and 2026-10-02 at `5dc28a0` on macOS.**
+Re-measure when you change a dependency.
 
 ---
 
 ## 1. The interpreter
 
-```
-.venv/Scripts/python.exe
-```
+**This repository runs on two machines, and the venv puts the interpreter in a different
+place on each.**
 
-**Never a bare `python`.** This is Windows, so the interpreter is under `Scripts`, not
-`bin` — a command copied from a Linux or macOS project will not run.
+| Machine | Interpreter | Python | Built from | Created |
+|---|---|---|---|---|
+| Windows | `.venv/Scripts/python.exe` | **3.14.4** | `D:\Software\Python.Python.3.14\python.exe` | 2026-09-20 |
+| macOS | `.venv/bin/python` | **3.11.6** | `/opt/homebrew/opt/python@3.11/bin/python3.11` | before 2026-09-26 |
 
-| | |
-|---|---|
-| Version | Python **3.14.4** |
-| Built from | `D:\Software\Python.Python.3.14\python.exe` |
-| Created | 2026-09-20 |
+**Never a bare `python`.** A bare `python` resolves to whatever is first on `PATH`.
+Use the row for the machine you are on. A command copied from the other row fails with
+"no such file", which is the fastest sign you are on the other machine.
+
+**Most commands in these docs use the Windows form.** On macOS, replace
+`.venv/Scripts/python.exe` with `.venv/bin/python`. The three agent role files in
+`.claude/agents/` use the macOS form and say the same in reverse.
+
+**The hooks find the interpreter themselves.** `.claude/settings.json` starts every hook
+through `.claude/hooks/run_hook.sh`, which tries `bin` and then `Scripts`. Until
+2026-10-02 it named the Windows path only. On macOS no hook could start, Claude Code
+treated that as a non-blocking error, and the write guard and the seal were both off
+with no message. See [`.claude/README.md`](../../.claude/README.md).
+
+**The two machines run different Python versions.** `ruff.toml` sets
+`target-version = "py314"`, so ruff can suggest syntax that Python 3.11 cannot run.
+Run the test gate on macOS before accepting such a suggestion.
 
 **The path in the old `CLAUDE.md` was wrong.** It named
 `C:\Users\yinchenliu\Python3\python-3.14.2\python.exe`. That user directory does not
-exist on this machine — note `yinchenliu` against the actual `LiuYinchen`. Every
+exist on the Windows machine — note `yinchenliu` against the actual `LiuYinchen`. Every
 command in these docs uses the venv path instead, which is correct on any machine that
 ran the setup below.
 
 ## 2. Creating it from scratch
 
+Windows:
+
 ```bash
 "D:/Software/Python.Python.3.14/python.exe" -m venv .venv
 .venv/Scripts/python.exe -m pip install --upgrade pip
 .venv/Scripts/python.exe -m pip install -r requirements-dev.txt
+```
+
+macOS:
+
+```bash
+/opt/homebrew/opt/python@3.11/bin/python3.11 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install -r requirements-dev.txt
 ```
 
 `requirements-dev.txt` includes `requirements.txt`, so that one command installs both
@@ -42,8 +66,22 @@ the runtime dependencies and the gates.
 .venv/Scripts/python.exe -c "import fastapi, pandas, numpy, scipy, yfinance, pdfplumber, anthropic; from google import genai; print('ok')"
 ```
 
-Installed versions at the time of writing: pandas **3.0.6**, numpy **2.5.3**,
-scipy **1.18.1**, pytest **9.1.1**, ruff **0.16.8**, mypy **2.3.1**.
+`requirements.txt` pins no versions, so the two machines differ:
+
+| Package | Windows, 2026-09-20 | macOS, 2026-10-02 |
+|---|---|---|
+| pandas | 3.0.6 | 3.0.6 |
+| numpy | 2.5.3 | 2.4.6 |
+| scipy | 1.18.1 | **1.17.1** |
+| starlette | 1.6.0 | 1.7.0 |
+| pytest | 9.1.1 | 9.1.1 |
+| ruff | 0.16.8 | 0.16.9 |
+| mypy | 2.3.1 | 2.3.1 |
+
+**One test result depends on that difference.** On macOS, at `5dc28a0`,
+`tests/unit/test_capm.py::test_beta_stops_when_the_market_series_has_no_variation`
+fails. SciPy 1.17.1 raises its own `ValueError` for a constant regressor, before
+`analysis/capm.py` reaches the check that names `market_returns`.
 
 > **Warning — pandas 3.0 is a major version and no valuation has been run against it.**
 > `ingestion/price_fetcher.py:66` branches on the pandas version to pick `"ME"` over
@@ -52,8 +90,11 @@ scipy **1.18.1**, pytest **9.1.1**, ruff **0.16.8**, mypy **2.3.1**.
 
 ## 3. The extraction credential
 
-Extraction needs one. Nothing else does. **On this machine it is not a key** — it is
-an Entra ID sign-in. Read the whole of this section before setting anything.
+Extraction needs one. Nothing else does. **On the Windows machine it is not a key** — it
+is an Entra ID sign-in. **On macOS it is a key.** No Foundry variable is set there and
+`az` is not installed, so Claude is reached over the public API with
+`ANTHROPIC_API_KEY` from `.env` (measured 2026-10-02). Read the whole of this section
+before setting anything.
 
 ### The default
 
@@ -77,7 +118,7 @@ Foundry is **not a third provider**, and `Provider` stays
 `Literal["claude", "gemini"]`. Adding a third value would be wrong: the model did not
 change, only the road to it did.
 
-### Setup on this machine (Foundry + Entra ID)
+### Setup on the Windows machine (Foundry + Entra ID)
 
 `ANTHROPIC_FOUNDRY_BASE_URL` is already set in the environment. There is **no API
 key** and there will not be one. Two steps:
@@ -192,9 +233,13 @@ way to iterate on `analysis/`. See
 Write scratch files **outside the repository**. The write guard does not police paths
 outside it, and a scratch file inside it dirties the tree and can trip the seal.
 
-```
-c:/tmp/
-```
+| Machine | Scratch |
+|---|---|
+| Windows | `c:/tmp/` |
+| macOS | `/tmp/` |
+
+**Never write `c:/tmp/` on macOS.** It is a relative path there, so it lands inside the
+repository.
 
 Set `PYTHONDONTWRITEBYTECODE=1` so a script leaves no `__pycache__` behind.
 

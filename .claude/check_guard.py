@@ -6,7 +6,8 @@ measurement recorded in STATUS.md, so nothing here may join it.
 
 Run it after any edit to .claude/hooks/guard_paths.py:
 
-    .venv/Scripts/python.exe .claude/check_guard.py
+    .venv/bin/python .claude/check_guard.py           # macOS, Linux
+    .venv/Scripts/python.exe .claude/check_guard.py   # Windows
 
 Exit 0 = every case correct. Exit 1 = the failures, printed.
 """
@@ -14,12 +15,19 @@ Exit 0 = every case correct. Exit 1 = the failures, printed.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 GUARD = ROOT / ".claude" / "hooks" / "guard_paths.py"
+
+# Scratch space outside the repository. It must be an absolute path on the
+# machine running the check: `c:/tmp` is relative on macOS, so it resolves
+# inside the repository there, and four allow cases went red for that reason
+# alone. Measured 2026-10-02: 44/48 on macOS with `c:/tmp` everywhere.
+SCRATCH = "c:/tmp" if os.name == "nt" else "/tmp"
 
 # (role, tool, tool_input, expected, label)
 CASES: list[tuple[str, str, dict, str, str]] = [
@@ -49,20 +57,20 @@ CASES: list[tuple[str, str, dict, str, str]] = [
     ("tester", "Edit", {"file_path": "analysis/wacc.py"}, "deny", "tester may not edit analysis"),
     ("tester", "Edit", {"file_path": "models/financial_statements.py"}, "deny", "tester may not edit models"),
     ("tester", "Edit", {"file_path": "config.py"}, "deny", "tester may not edit config"),
-    ("tester", "Write", {"file_path": "c:/tmp/scratch/x.py"}, "allow", "scratch space is not guarded"),
+    ("tester", "Write", {"file_path": f"{SCRATCH}/scratch/x.py"}, "allow", "scratch space is not guarded"),
     # --- Bash, denied forms ---
     ("tester", "Bash", {"command": 'sed -i "" "s/a/b/" analysis/dcf.py'}, "deny", "sed -i on analysis"),
     ("tester", "Bash", {"command": "echo hi > analysis/x.py"}, "deny", "redirect into analysis"),
     ("tester", "Bash", {"command": "cat f >> models/valuation.py"}, "deny", "append into models"),
     ("tester", "Bash", {"command": "rm analysis/wacc.py"}, "deny", "rm in analysis"),
     ("programmer", "Bash", {"command": "echo x | tee tests/test_x.py"}, "deny", "tee into tests"),
-    ("programmer", "Bash", {"command": "cp c:/tmp/a STATUS.md"}, "deny", "cp over STATUS.md"),
+    ("programmer", "Bash", {"command": f"cp {SCRATCH}/a STATUS.md"}, "deny", "cp over STATUS.md"),
     ("programmer", "Bash", {"command": "rm -rf .claude/hooks"}, "deny", "rm of the hooks"),
     ("code-reviewer", "Bash", {"command": "git restore analysis/dcf.py"}, "deny", "git restore of analysis"),
     # --- Bash, forms that must stay allowed ---
-    ("tester", "Bash", {"command": ".venv/Scripts/python.exe -m pytest -q tests/ > c:/tmp/o.txt"}, "allow", "pytest redirected to scratch"),
-    ("tester", "Bash", {"command": 'sed -i "" "s/a/b/" c:/tmp/s/x.py'}, "allow", "sed -i on a scratch file"),
-    ("tester", "Bash", {"command": 'sed -i.bak "s/a/b/" c:/tmp/s/x.py'}, "allow", "sed -i.bak on a scratch file"),
+    ("tester", "Bash", {"command": f".venv/Scripts/python.exe -m pytest -q tests/ > {SCRATCH}/o.txt"}, "allow", "pytest redirected to scratch"),
+    ("tester", "Bash", {"command": f'sed -i "" "s/a/b/" {SCRATCH}/s/x.py'}, "allow", "sed -i on a scratch file"),
+    ("tester", "Bash", {"command": f'sed -i.bak "s/a/b/" {SCRATCH}/s/x.py'}, "allow", "sed -i.bak on a scratch file"),
     ("tester", "Bash", {"command": 'sed -i "" "s/a/b/" tests/test_x.py'}, "allow", "tester may sed its own tests"),
     ("tester", "Bash", {"command": 'grep -rn "kwargs" analysis/'}, "allow", "grep is not a write"),
     ("code-reviewer", "Bash", {"command": "git diff HEAD -- analysis/dcf.py"}, "allow", "git diff is not a write"),
