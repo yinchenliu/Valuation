@@ -54,6 +54,9 @@ edits another's.
 | 2026-10-02 | P9b-session-web | programmer | `ok` — 8 of 8; `/upload-session`, the label recorded at extraction time in a fifth cache field, one `_run_extraction`; closed backlog item 29 at no extra cost | [entry](2026-10-02T1658-programmer-p9b-session-web.md) |
 | 2026-10-02 | P9c-parse-tests | tester | `fail` **about the code, not the tests** — 156 new tests pass in the gate; 3 red cases lock review F1 for `P9d`. Six mutations each turned 1 to 11 tests red. Found items 50 and 51 | [entry](2026-10-02T1658-tester-p9c-parse-tests.md) |
 | 2026-10-02 | P9b-session-web | code_reviewer | **`approved`** — round 1, all 8 criteria re-run with every paid call stubbed. F1 minor: a cache hit ignores `files` sent with `session_file` (backlog item 52) | [entry](2026-10-02T1710-code_reviewer-p9b-session-web.md) |
+| 2026-10-02 | P9d-pass2-checks | programmer | `ok` — 3 red cases pass; the loader checks Pass 2 shape, 8 keys, finite numeric `amount`, integer `year`; F2's two `.get` reads removed | [entry](2026-10-02T1713-programmer-p9d-pass2-checks.md) |
+| 2026-10-02 | P9b-route-tests | tester | `fail` **about the code** — 23 route tests pass; `api/` 86% → 97%; 11 mutations each turned a test red. 1 red test locks backlog item 52 | [entry](2026-10-02T1713-tester-p9b-route-tests.md) |
+| 2026-10-02 | P9d-pass2-checks | code_reviewer | **`approved`** — round 1; failing-test sets compared against `dce8d42`; 19 malformed Walmart copies probed. F1 minor: `_NRI_SCHEMA` imported by its private name (backlog item 53) | [entry](2026-10-02T1720-code_reviewer-p9d-pass2-checks.md) |
 
 
 

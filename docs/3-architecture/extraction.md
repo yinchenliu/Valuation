@@ -223,6 +223,11 @@ key where one applies, when:
   years in `pass1` differ from it;
 - `include_bs` is true and `latest_balance_sheet` is empty or has no positive `year`,
   or it is false and `latest_balance_sheet` is not `{}`;
+- `pass2.non_recurring_items` is not a list, an item is not an object, an item lacks
+  any key `_NRI_SCHEMA` names, its `amount` is not a finite JSON number (`NaN`, `"12"`,
+  `true` and `null` all stop), or its `year` is not a JSON integer. Each problem names
+  the item by its index, year and description. Added by `P9d-pass2-checks`; route A's
+  parser still coerces `"12"` to 12.0 and `2025.7` to 2025 (backlog item 1);
 - route A's Pass 2 parser rejects `pass2` (for example an item with no `confidence`);
 - `pages_read` for a written pass is absent or empty.
 

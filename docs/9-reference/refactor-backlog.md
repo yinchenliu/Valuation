@@ -85,6 +85,8 @@ rather than lying.
 | 50 | Route A returns `[]` when Pass 2 cannot be parsed twice, so "nothing was read" looks like "none found" | **silent** | `ingestion/claude_extractor.py` | **new, found by `P9c`.** The twin of item 8 inside the extractor |
 | 51 | The arithmetic check's `WARN` branch can never run | — | `ingestion/claude_extractor.py` | **new, found by `P9c`.** Dead code |
 | 52 | On a cache hit, `POST /valuation` ignores `files` sent together with `session_file`; a cache miss stops on the same form | — | `api/routes_valuation.py` | **new, found by the `P9b` review.** Reachable only by a hand-built request; moves no figure or label |
+| 53 | `ingestion/session_extraction.py` imports `_NRI_SCHEMA` by its private name | — | `ingestion/` | **new, the `P9d` review's F1, minor.** Export `PASS2_ITEM_FIELDS` from `claude_extractor.py` as `P9a` did for Pass 1, and remove the comment at `session_extraction.py:91-94` |
+| 54 | `GET /assumptions` with no filing named shows an empty form and no message | — | `api/routes_valuation.py` | **new, found by the `P9b` tester.** No extraction runs and no figure is shown; the page just does not say why it is empty |
 
 ---
 

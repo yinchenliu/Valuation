@@ -113,6 +113,9 @@ with a 2026 date. If a year is wrong, stop and tell the user.
    valuation and listed. Flag only an item whose amount the filing prints.
    `{"non_recurring_items": []}` is a valid answer.
 
+   Write `amount` as a JSON number, never a string, and `year` as an integer. Give every
+   item all eight schema keys. `check` stops on anything else and names the item.
+
 ### 4. Label and check
 
 1. Set `extracted_by.model` to your model ID, and `extracted_by.date` to today's date.
