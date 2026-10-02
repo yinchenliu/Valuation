@@ -89,6 +89,18 @@ filing index or PDF name, and, where it applies, the year and the key.
 Add one that the list implies: an explicit `0` for a schema key is **accepted**. A stop
 on absence must not turn into a stop on zero.
 
+**Two requirements the loader does not meet yet.** The `P9a` review (finding F1) found
+them. Write both in `tests/unit/test_session_extraction_rule3_red.py`, where the gate
+excludes them, with the review entry as the source:
+
+- a `pass2` whose `non_recurring_items` is not a list must stop with `ValueError`,
+  naming the file and the filing. Today it raises `AttributeError`;
+- a Pass 2 item whose `amount` is `NaN` must stop, naming the filing, the year and the
+  description. Today it loads, and the run stops only at the DCF with a message that
+  names no item.
+
+`P9d` will make them pass. Its tester moves them out of the red file.
+
 ### 7. The route label
 
 A session extraction's `ProviderResolution` has `transport == "claude-code-session"`,
@@ -100,6 +112,11 @@ and `describe_resolution` of it names the session route and the declared model.
 - `tests/unit/test_<module>_rule3_red.py`, only for a requirement the code does not yet
   meet
 - your journal entry under `.agent/journal/`
+
+**Never let a test reach the API.** `config.py` loads `.env` with `override=True`, so
+`monkeypatch.delenv` on a key can be undone by a later `load_dotenv`. Replace
+`ingestion.claude_extractor._call_llm` in every route A test, and make the stub raise if
+it is called with anything it was not given.
 
 ## Out of scope
 

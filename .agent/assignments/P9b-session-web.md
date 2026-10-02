@@ -90,7 +90,17 @@ written. Find the code by name.
    must know which route produced them.
 
 8. **`docs/3-architecture/entry-points.md`:** add the new route to the routes table, and
-   update "The flow" for the session file.
+   update "The flow" for the session file. While you are in the file, refresh the
+   `cli.py` line table under "The CLI". The `P9a` review found it stale (finding F5).
+
+**Added after `P9a` was accepted at `ad52e1a`.** The loader's real interface is in
+`ingestion/session_extraction.py` and in `P9a`'s programmer entry. `SessionExtraction`
+has six fields, including `filings`, which holds each PDF's sha256 and pages read. Use
+it if you show the session's filings on a page. **Warning:** `config.py` loads `.env`
+with `override=True`, so `env -u ANTHROPIC_API_KEY` does not remove the key on this
+machine (backlog item 46). For criterion 4, set and unset the variable inside the
+script after `config` is imported, and replace `ingestion.claude_extractor._call_llm`
+with a stub so route A can never make a real call.
 
 ## Files in scope
 
