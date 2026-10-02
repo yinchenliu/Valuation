@@ -11,41 +11,68 @@ Two programs run the same eight steps. **They are separate implementations**, wh
 .venv/Scripts/python.exe -m uvicorn app:app --reload
 ```
 
-FastAPI, three routes, Jinja2 templates, no JavaScript framework.
+FastAPI, five routes, Jinja2 templates, no JavaScript. Line numbers measured at
+`P9b-session-web`; the function names are the stable reference.
 
-| Route | Method | File | Renders |
+| Route | Method | Function | Renders |
 |---|---|---|---|
-| `/` | GET | `api/routes_upload.py:35` | `upload.html` |
-| `/upload` | POST | `api/routes_upload.py:41` | 303 → `/assumptions` |
-| `/assumptions` | GET | `api/routes_valuation.py:60` | `assumptions.html` |
-| `/valuation` | POST | `api/routes_valuation.py:109` | `valuation_result.html` |
+| `/` | GET | `upload_page`, `api/routes_upload.py:66` | `upload.html`: two forms, PDFs (route A) and a session file (route B) |
+| `/upload` | POST | `upload_files`, `api/routes_upload.py:78` | 303 → `/assumptions?ticker=…&company_name=…&files=…` |
+| `/upload-session` | POST | `upload_session_file`, `api/routes_upload.py:107` | 303 → `/assumptions?session_file=…` |
+| `/assumptions` | GET | `assumptions_page`, `api/routes_valuation.py:362` | `assumptions.html` |
+| `/valuation` | POST | `run_valuation`, `api/routes_valuation.py:497` | `valuation_result.html` |
 
 ### The flow
 
-1. **Upload.** `_save_upload` writes each PDF to `uploads/<TICKER>/`.
-   `_guess_fiscal_year` pulls a 4-digit year from the filename with
-   `re.search(r"(20\d{2})")`. Files are passed on as a comma-separated
-   `year:path,year:path` **query string**.
-2. **Assumptions.** Runs extraction and normalisation, caches the result, derives the
-   defaults, formats them as percentage strings for the form.
-3. **Valuation.** Reads the cache, applies the user's overrides, runs steps 4 to 8,
-   renders.
+1. **Upload**, by one of two routes.
+   - **PDFs (route A).** `_save_upload` writes each PDF to `uploads/<TICKER>/`.
+     `_guess_fiscal_year` pulls a 4-digit year from the filename with
+     `re.search(r"(20\d{2})")`. Files are passed on as a comma-separated
+     `year:path,year:path` **query string**.
+   - **A session file (route B).** `_save_session_upload` writes the `.json` to
+     `uploads/session/` (the last path component of its name only; a missing name is a
+     400 naming `session_file`). It is **not parsed** here. Its saved path is passed on
+     as `session_file`. The file's format and stop list are in
+     [extraction.md](extraction.md), "Two routes, one parser".
+2. **Assumptions.** `_run_extraction`, the one place either handler extracts, takes
+   `files`, `file_path` and `session_file`:
+   - with a `session_file`, it calls `load_session_extraction`. A bad file stops there,
+     and its message, naming the file, the filing, the year and the key, is shown on the
+     page. The ticker and company name come from the file; one in the request that
+     differs from the file stops (`_shown_identity`), as `-t`/`-n` do in the CLI.
+     A `session_file` together with `files`/`file_path` stops;
+   - otherwise it runs route A over the API, and records
+     `resolve_provider(config.DEFAULT_EXTRACTION_PROVIDER, None)` as it extracts;
+   - with none of the three, it stops (backlog item 29 for `POST /valuation`).
+
+   It returns the raw statements, the items and the **`ProviderResolution`, recorded
+   when the extraction ran**. The page normalises, caches the result under the first
+   non-empty of `session_file`, `files` and `file_path`, derives the defaults, formats
+   them as percentage strings for the form, and shows the route ("Extraction — who read
+   the filing"). It forwards `files` and `session_file` as hidden fields.
+3. **Valuation.** Reads the cache under the same key (or, on a miss, calls the same
+   `_run_extraction`), applies the user's overrides, runs steps 4 to 8, and renders the
+   **recorded** label. The label used to be re-derived from the environment at render
+   time (`P2b-provider` review, finding F3), which named who *would* read a filing now:
+   wrong after an environment change, and wrong for every session file.
 
 ### Four things about this flow that will surprise you
 
-**The fiscal year comes from the filename.** A file named `annual_report.pdf` gets year
-`0`, and `_extract_from_files` then filters it out of the multi-file path. Renaming a
+**The fiscal year comes from the filename** (route A). A file named `annual_report.pdf`
+gets year `0`, and `_extract_from_files` then filters it out of the multi-file path. Renaming a
 file changes which years are extracted.
 
 **File paths travel in the URL.** The query string carries absolute filesystem paths,
-visible to the user and editable by them. `/assumptions?files=...` accepts whatever it
-is given.
+visible to the user and editable by them. `/assumptions?files=...` and
+`?session_file=...` accept whatever they are given. A session file is at least checked
+by the loader, and each PDF it names is verified by sha256.
 
 **The LLM runs on `/assumptions`, not on `/valuation`.** That is deliberate — the user
 must see historical-derived defaults before choosing overrides. It means the expensive
-call happens on a **GET**, so a browser prefetch or a refresh re-runs it.
+call happens on a **GET**, so a browser prefetch or a refresh re-runs it. On route B the
+same GET only re-reads the session file; no API call is made.
 
-**The cache is popped, not read.** `api/routes_valuation.py:134` uses `.pop()`, so
+**The cache is popped, not read.** `run_valuation` (`api/routes_valuation.py:548`) uses `.pop()`, so
 refreshing the results page is a cache miss and re-runs the whole paid extraction.
 Backlog item 5.
 
@@ -55,21 +82,27 @@ Backlog item 5.
 .venv/Scripts/python.exe cli.py --help
 ```
 
-760 lines: argument parsing, filing discovery, a pickle cache, a 10-step progress
-display, and one print function per pipeline stage.
+1,109 lines: argument parsing, a pickle cache, a 10-step progress display, one print
+function per pipeline stage, and stage 1 by either route. Filing discovery moved to
+`ingestion/filings.py` at `P9a-session-route`.
 
 **It is the cheaper way to iterate on `analysis/`**, because `--cache-dir` stores the
 extraction result as a pickle and `--no-cache` forces a re-run. You can change a formula
 and re-run the valuation without paying for extraction again.
 
+Measured at `P9b-session-web` (`cli.py` unchanged since `P9a-session-route`). The
+function names are the stable reference; the line numbers drift.
+
 | Piece | Lines |
 |---|---|
-| `parse_args` | `:69` |
-| `_discover_filings` | **moved** to `ingestion/filings.py` as `discover_filings` by `P9a-session-route`, with `parse_pdf_args`, `InputFingerprint` and `fingerprint_filings`. `cli.py` imports them |
-| `build_overrides` | `:214` — argparse → `ProjectionAssumptions` |
-| `_cache_path` / `_load_cache` / `_save_cache` | `:240-259` |
-| `print_*` — one per stage | `:286-591` |
-| `main` | `:596` |
+| `parse_args` | `:85` |
+| `discover_filings` | **moved** to `ingestion/filings.py` by `P9a-session-route` (it was `_discover_filings`), with `parse_pdf_args`, `InputFingerprint` and `fingerprint_filings`. `cli.py` imports them |
+| `build_overrides` | `:189` — argparse → `ProjectionAssumptions` |
+| `ExtractionKey` / `build_extraction_key` / `describe_key_difference` | `:219-246` — what the pickle cache is keyed on |
+| `_cache_path` / `_load_cache` / `_save_cache` | `:295-348` |
+| `print_*` — one per stage | `:382-743` |
+| `_extract_via_api` / `_extract_from_session_file` | `:762` / `:867` — stage 1, route A / route B |
+| `main` | `:934` |
 
 ### `--session-file FILE` — the session route
 

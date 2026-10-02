@@ -18,11 +18,13 @@ from analysis.wacc import calculate_wacc
 from config import BASE_DIR
 from ingestion.claude_extractor import (
     Provider,
+    ProviderResolution,
     extract_financials,
     extract_multi_year,
     resolve_provider,
 )
 from ingestion.price_fetcher import fetch_price_data
+from ingestion.session_extraction import load_session_extraction
 from models.financial_statements import FinancialStatements, NonRecurringItem
 from models.valuation import (
     AssumptionSource,
@@ -38,7 +40,7 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 class CachedExtraction:
     """One upload's extraction, as `assumptions_page` left it.
 
-    Four NAMED fields rather than a tuple (rule 2). The cache used to hold a
+    Five NAMED fields rather than a tuple (rule 2). The cache used to hold a
     2-tuple — the normalised statements and the excluded items — so the raw
     pre-adjustment statements and the items that were actually APPLIED were
     local variables in `assumptions_page` and died when it returned. The result
@@ -50,12 +52,19 @@ class CachedExtraction:
     Every field is required. None of them is defaulted, so a cache entry that
     is missing one cannot be constructed at all, rather than being constructed
     with an empty list that reads as "nothing was adjusted".
+
+    `extraction` is who read the filing, recorded when the extraction RAN
+    (rule 6). It used to be re-derived from the environment when the result
+    page rendered, which named who WOULD read a filing at that moment. With
+    two extraction routes that re-derivation is false for every session file:
+    it would label figures read in a Claude Code session as read over the API.
     """
 
     raw_financials: FinancialStatements
     normalised_financials: FinancialStatements
     applied_items: list[NonRecurringItem]
     excluded_items: list[NonRecurringItem]
+    extraction: ProviderResolution
 
 
 # `HistoricalFCFFYear` used to be defined here. It is a record, so it now
@@ -121,6 +130,112 @@ def _extract_from_files(
         return extract_financials(pdf_path, ticker, company_name, provider=provider)
 
     return extract_multi_year(valid, ticker, company_name, provider=provider)
+
+
+@dataclass(frozen=True)
+class RouteExtraction:
+    """One extraction, by either route, with the label recorded as it ran.
+
+    Every field is required, for the reason `CachedExtraction` gives.
+    """
+
+    raw_financials: FinancialStatements
+    non_recurring: list[NonRecurringItem]
+    extraction: ProviderResolution
+
+
+def _run_extraction(
+    files: str,
+    file_path: str,
+    session_file: str,
+    ticker: str,
+    company_name: str,
+) -> RouteExtraction:
+    """Run the one extraction a request names, by route A or route B.
+
+    The ONLY place either route handler extracts. `assumptions_page` and the
+    cache-miss branch of `run_valuation` used to call `_extract_from_files`
+    separately, and each built the cached values itself; that is how the two
+    halves drifted before (see the comment at the cache-miss branch).
+
+    - `session_file` (route B): `load_session_extraction` reads, checks and
+      merges the file, and stops with a `ValueError` naming the file and the
+      problem. The label is the loader's. `ticker` and `company_name` are not
+      used: they come from the file (see `_shown_identity`).
+    - otherwise (route A): `files` ("year:path,...") or the legacy `file_path`
+      is extracted over the API. The label is resolved immediately before the
+      extraction, in the same environment the extractor resolves it in
+      (`extract_financials` calls the same `resolve_provider`), and is carried
+      from here on rather than re-derived later.
+
+    Raises:
+        ValueError: when none of the three names a filing, when `files` names
+            none, or when a session file is combined with PDFs (rule 3: an input
+            is never silently ignored). Backlog item 29: `POST /valuation` with
+            no filing used to extract the empty string.
+    """
+    if session_file:
+        if files or file_path:
+            raise ValueError(
+                "session_file was given together with files/file_path. Give one: "
+                "a session file already names its PDFs.",
+            )
+        session = load_session_extraction(session_file)
+        return RouteExtraction(
+            raw_financials=session.financials,
+            non_recurring=session.non_recurring,
+            extraction=session.resolution,
+        )
+
+    if files:
+        filings = _parse_files_param(files)
+        if not filings:
+            raise ValueError(f"files: {files!r} names no filing.")
+    elif file_path:
+        filings = [(0, file_path)]
+    else:
+        raise ValueError(
+            "No filing named: session_file, files and file_path are all empty.",
+        )
+
+    extraction = resolve_provider(config.DEFAULT_EXTRACTION_PROVIDER, None)
+    raw_financials, non_recurring = _extract_from_files(filings, ticker, company_name)
+    return RouteExtraction(
+        raw_financials=raw_financials,
+        non_recurring=non_recurring,
+        extraction=extraction,
+    )
+
+
+def _shown_identity(
+    session_file: str,
+    ticker: str,
+    company_name: str,
+    raw_financials: FinancialStatements,
+) -> tuple[str, str]:
+    """The ticker and company name a page shows and forwards.
+
+    Route A: as the request gave them, unchanged. Route B: from the session
+    file's statements, as `cli.py --session-file` takes them. A ticker or name
+    the request supplied that differs from the file's stops rather than being
+    silently replaced, as `-t` / `-n` do in the CLI. The ticker reaches the
+    price fetch, so a mismatch is not cosmetic.
+    """
+    if not session_file:
+        return ticker, company_name
+    file_ticker = raw_financials.ticker.upper()
+    file_company = raw_financials.company_name
+    if ticker and ticker.upper() != file_ticker:
+        raise ValueError(
+            f"ticker {ticker!r} differs from the session file's ticker "
+            f"{file_ticker!r}. The ticker comes from the file.",
+        )
+    if company_name and company_name != file_company:
+        raise ValueError(
+            f"company_name {company_name!r} differs from the session file's "
+            f"company name {file_company!r}. The name comes from the file.",
+        )
+    return file_ticker, file_company
 
 
 def _historical_fcff_by_year(
@@ -251,6 +366,8 @@ async def assumptions_page(
     files: str = "",
     # Legacy single-file param
     file_path: str = "",
+    # Route B: a session file saved by POST /upload-session.
+    session_file: str = "",
 ):
     """Show assumptions page with defaults derived from historical data."""
     error = None
@@ -271,20 +388,21 @@ async def assumptions_page(
     historical_fcff: list[HistoricalFCFFYear] = []
     ebit_reconciliation: list[EBITReconciliationYear] = []
     assumption_sources: dict[str, AssumptionSource] = {}
+    # Who read the filing. None until an extraction has run, so a page with
+    # no extraction names no route.
+    extraction: ProviderResolution | None = None
 
-    # Build filings list from either new multi-file or legacy single-file param
-    if files:
-        filings = _parse_files_param(files)
-    elif file_path:
-        filings = [(0, file_path)]
-    else:
-        filings = []
+    cache_key = session_file or files or file_path
 
-    cache_key = files or file_path
-
-    if filings:
+    if cache_key:
         try:
-            raw_financials, non_recurring = _extract_from_files(filings, ticker, company_name)
+            run = _run_extraction(files, file_path, session_file, ticker, company_name)
+            raw_financials = run.raw_financials
+            non_recurring = run.non_recurring
+            extraction = run.extraction
+            ticker, company_name = _shown_identity(
+                session_file, ticker, company_name, raw_financials,
+            )
             # Partition first, normalise with the applied half only. The
             # decision belongs to analysis/ (rule 1) and normalize_financials
             # keeps the signature its tests were written against.
@@ -299,6 +417,7 @@ async def assumptions_page(
                 normalised_financials=normalised_financials,
                 applied_items=applied_items,
                 excluded_items=excluded_items,
+                extraction=extraction,
             )
             defaults = derive_assumptions(normalised_financials)
             # Rule 6, one home for the fact. `derive_assumptions` is the only
@@ -333,6 +452,12 @@ async def assumptions_page(
         "ticker": ticker,
         "company_name": company_name,
         "files": files or file_path,
+        # Forwarded beside `files` so POST /valuation finds the cache entry,
+        # or extracts by the same route on a miss.
+        "session_file": session_file,
+        # Rule 6: the route that produced the statements on this page. A
+        # reader checking them before choosing assumptions must know it.
+        "extraction": extraction,
         "defaults": defaults,
         "error": error,
         # The chain, carried so a template can show it. `P8b-statements-ui`
@@ -374,6 +499,7 @@ async def run_valuation(
     ticker: str = Form(...),
     company_name: str = Form(""),
     files: str = Form(""),
+    session_file: str = Form(""),
     projection_years: int = Form(5),
     terminal_growth_rate: float = Form(2.5),
     revenue_growth: str = Form(""),  # Comma-separated percentages
@@ -412,24 +538,44 @@ async def run_valuation(
     """Execute the full DCF valuation pipeline."""
     try:
         # 1. Use cached normalized financials from assumptions_page (avoids re-calling LLM)
-        if files in _extraction_cache:
+        # The same key assumptions_page wrote under: the first non-empty of
+        # session_file and files (the form's `files` carries `files or
+        # file_path` from that page).
+        cache_key = session_file or files
+        if cache_key in _extraction_cache:
             # Still a `.pop()`. That the cache is a module global emptied on
             # read is backlog item 5 and is not this unit's to change.
-            cached = _extraction_cache.pop(files)
+            cached = _extraction_cache.pop(cache_key)
             raw_financials = cached.raw_financials
             financials = cached.normalised_financials
             applied_items = cached.applied_items
             excluded_items = cached.excluded_items
+            extraction = cached.extraction
         else:
-            # Fallback: extract + normalize if cache miss
-            filings = _parse_files_param(files) if ":" in files else [(0, files)]
-            raw_financials, non_recurring = _extract_from_files(filings, ticker, company_name)
+            # Fallback: extract + normalize if cache miss.
+            # The form's `files` holds either "year:path,..." or a legacy bare
+            # path; the `":" in files` test that tells them apart is backlog
+            # item 26 and is kept as it was.
+            if ":" in files:
+                files_param, file_path_param = files, ""
+            else:
+                files_param, file_path_param = "", files
+            run = _run_extraction(
+                files_param, file_path_param, session_file, ticker, company_name,
+            )
+            raw_financials = run.raw_financials
+            extraction = run.extraction
             # Same order as assumptions_page: partition, then normalise with the
-            # applied half. Both branches must produce the same FOUR values, or
+            # applied half. Both branches must produce the same FIVE values, or
             # the page would report a different exclusion than the arithmetic
             # used depending on which one ran.
-            applied_items, excluded_items = partition_by_confidence(non_recurring)
+            applied_items, excluded_items = partition_by_confidence(run.non_recurring)
             financials = normalize_financials(raw_financials, applied_items)
+
+        # Route B: the ticker priced below is the session file's.
+        ticker, company_name = _shown_identity(
+            session_file, ticker, company_name, raw_financials,
+        )
 
         # 2. Build assumptions (from post-adjustment financials)
         rev_growth_list = []
@@ -504,22 +650,11 @@ async def run_valuation(
             diluted_shares=shares,
         )
 
-        # Rule 6: which model read the filing, over which transport, on whose
-        # credential, is an assumption about every figure on this page. It is read
-        # back here rather than carried from the extraction because the extraction
-        # may have happened on the earlier /assumptions request and been cached.
-        # resolve_provider touches only the environment — no token, no network call.
-        #
-        # KNOWN LIMITATION (P2b-provider review round 1, finding F3). This is a
-        # re-derivation, not a record: it names who WOULD read a filing now, not who
-        # read this one. If the environment moved between the extraction and this
-        # render — a Foundry variable set or unset — the label disagrees with the
-        # event it describes, and rule 4 asks that a figure be traceable to its real
-        # inputs. Fixing it means carrying the ProviderResolution alongside the
-        # financials in _extraction_cache (`:31`, written at `:102` in
-        # assumptions_page, read at `:148-154` here), which is backlog item 5 and
-        # outside this unit's Files in scope.
-        extraction = resolve_provider(config.DEFAULT_EXTRACTION_PROVIDER, None)
+        # Rule 6: `extraction`, set in step 1, is who read the filing — RECORDED
+        # when the extraction ran (in the cache entry, or by the cache-miss
+        # branch), never re-derived here. A re-derivation names who WOULD read a
+        # filing now: wrong if the environment moved since, and wrong for every
+        # session file, which no API read at all.
 
         # 7. The chain behind the figures above, for the page to show.
         #

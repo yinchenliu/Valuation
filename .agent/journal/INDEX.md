@@ -51,6 +51,9 @@ edits another's.
 | 2026-09-26 | P8b-statements-ui | tester | **`pass`** — 19 tests, 100 asserts over 7 blocks. Verified Rule 3 stops and badges | [entry](2026-09-26T1740-tester-p8b-statements-ui.md) |
 | 2026-10-02 | P9a-session-route | programmer | `ok` — 12 of 12 criteria; same JSON gives equal statements and byte-equal prompts by both routes; mypy 14 → 10. **One possible paid API call** in a probe, because `.env` overrides `env -u` | [entry](2026-10-02T1630-programmer-p9a-session-route.md) |
 | 2026-10-02 | P9a-session-route | code_reviewer | **`approved`** — round 1. Re-ran every criterion; loaded the `cde33cb` extractor beside the new one and found route A equal in 4 cases. F1 minor: Pass 2 shape and `NaN` amount not checked by the loader (→ `P9d`). Recorded the silent PDF drop as backlog item 49 | [entry](2026-10-02T1654-code_reviewer-p9a-session-route.md) |
+| 2026-10-02 | P9b-session-web | programmer | `ok` — 8 of 8; `/upload-session`, the label recorded at extraction time in a fifth cache field, one `_run_extraction`; closed backlog item 29 at no extra cost | [entry](2026-10-02T1658-programmer-p9b-session-web.md) |
+| 2026-10-02 | P9c-parse-tests | tester | `fail` **about the code, not the tests** — 156 new tests pass in the gate; 3 red cases lock review F1 for `P9d`. Six mutations each turned 1 to 11 tests red. Found items 50 and 51 | [entry](2026-10-02T1658-tester-p9c-parse-tests.md) |
+| 2026-10-02 | P9b-session-web | code_reviewer | **`approved`** — round 1, all 8 criteria re-run with every paid call stubbed. F1 minor: a cache hit ignores `files` sent with `session_file` (backlog item 52) | [entry](2026-10-02T1710-code_reviewer-p9b-session-web.md) |
 
 
 

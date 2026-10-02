@@ -27,4 +27,18 @@
         <button type="submit" class="btn btn-primary">Upload & Continue</button>
     </form>
 </div>
+
+<div class="card">
+    <h2>Use a Claude Code session file</h2>
+    <p>The figures in a session file were read from the PDFs in a Claude Code session, and no API call is made.</p>
+
+    <form action="/upload-session" method="post" enctype="multipart/form-data">
+        <div class="form-group">
+            <label for="session_file">Session file (.json)</label>
+            <input type="file" id="session_file" name="session_file" accept=".json" required>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Upload Session File & Continue</button>
+    </form>
+</div>
 {% endblock %}

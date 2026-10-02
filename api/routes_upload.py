@@ -1,12 +1,13 @@
-"""File upload routes for 10-K/10-Q PDF filings."""
+"""File upload routes: 10-K/10-Q PDF filings (route A) and session files (route B)."""
 
 from __future__ import annotations
 
 import re
 import shutil
 from pathlib import Path
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, File, Form, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
@@ -25,6 +26,31 @@ def _save_upload(file: UploadFile, ticker: str) -> Path:
     ticker_dir = UPLOAD_DIR / ticker.upper()
     ticker_dir.mkdir(parents=True, exist_ok=True)
     dest = ticker_dir / file.filename
+    with open(dest, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    return dest
+
+
+def _save_session_upload(file: UploadFile) -> Path:
+    """Save an uploaded session file under uploads/session/, as `_save_upload` saves a PDF.
+
+    It is not parsed here. `load_session_extraction` is the one reader of the
+    format, and it runs at /assumptions, where its message reaches the page.
+
+    A missing filename stops, naming the field (rule 3). `_save_upload` above
+    uses `file.filename` as a path segment unchecked (backlog item 28); that
+    pattern is not copied. Only the final path component of the name is kept,
+    so a crafted name such as "../x.json" cannot write outside the directory.
+    """
+    name = Path(file.filename).name if file.filename else ""
+    if name in ("", ".", ".."):
+        raise HTTPException(
+            status_code=400,
+            detail=f"session_file: the uploaded file has no usable filename ({file.filename!r}).",
+        )
+    session_dir = UPLOAD_DIR / "session"
+    session_dir.mkdir(parents=True, exist_ok=True)
+    dest = session_dir / name
     with open(dest, "wb") as f:
         shutil.copyfileobj(file.file, f)
     return dest
@@ -73,5 +99,22 @@ async def upload_files(
             f"&company_name={company_name}"
             f"&files={file_params}"
         ),
+        status_code=303,
+    )
+
+
+@router.post("/upload-session")
+async def upload_session_file(
+    session_file: UploadFile = File(...),
+):
+    """Accept a session file written by a Claude Code session (route B).
+
+    The figures in it were read from the PDFs in a Claude Code session; no API
+    call is made on this path. The file is saved and handed to /assumptions by
+    path. Parsing, and every stop the loader makes, happens there.
+    """
+    path = _save_session_upload(session_file)
+    return RedirectResponse(
+        url="/assumptions?" + urlencode({"session_file": str(path)}),
         status_code=303,
     )

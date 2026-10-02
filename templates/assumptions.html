@@ -12,6 +12,23 @@
 
     <p>Review and adjust the projection assumptions below. Defaults are derived from historical financials.</p>
 
+    <!-- Who read the filing, recorded when the extraction ran: route A over an
+         API, or route B in a Claude Code session. Rule 6: the reader checking the
+         statements below before choosing assumptions must know which route
+         produced them. The same four fields as valuation_result.html. Never a key
+         or a token: the credential is named by its source only. -->
+    {% if extraction %}
+    <div class="section">
+        <h2>Extraction — who read the filing</h2>
+        <table class="data-table">
+            <tr><td>Provider</td><td>{{ extraction.provider|upper }}</td></tr>
+            <tr><td>Model</td><td>{{ extraction.model }}</td></tr>
+            <tr><td>Transport</td><td>{{ extraction.transport_label }}</td></tr>
+            <tr><td>Credential source</td><td>{{ extraction.credential_source }}</td></tr>
+        </table>
+    </div>
+    {% endif %}
+
     {% if not error and assumption_sources %}
     <div class="section">
         <h2>Assumptions Used</h2>
@@ -112,6 +129,7 @@
         <input type="hidden" name="ticker" value="{{ ticker }}">
         <input type="hidden" name="company_name" value="{{ company_name }}">
         <input type="hidden" name="files" value="{{ files }}">
+        <input type="hidden" name="session_file" value="{{ session_file }}">
 
         <h2>Projection Settings</h2>
         <div class="form-row">

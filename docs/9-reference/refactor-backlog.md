@@ -82,6 +82,9 @@ rather than lying.
 | 47 | The income statement shown on both pages has no interest income row, so EBT does not add up from the rows shown | — | `cli.py`, `templates/_statements.html` | **new at `cde33cb`.** Display only: the figure is in EBT, but a reader cannot see it |
 | 48 | The equity bridge does not subtract noncontrolling interest | **silent** | `analysis/dcf.py`, `models/`, the Pass 1 schema | **new at `cde33cb`.** Walmart fiscal 2026: 6,563 of noncontrolling interest, about $0.82 a share |
 | 49 | Given several PDFs, the API route drops any PDF with no fiscal year and says nothing | **silent** | `cli.py`, `api/routes_valuation.py` | **new at `P9a`.** Route B stops on the same input, so the two routes now differ on it |
+| 50 | Route A returns `[]` when Pass 2 cannot be parsed twice, so "nothing was read" looks like "none found" | **silent** | `ingestion/claude_extractor.py` | **new, found by `P9c`.** The twin of item 8 inside the extractor |
+| 51 | The arithmetic check's `WARN` branch can never run | — | `ingestion/claude_extractor.py` | **new, found by `P9c`.** Dead code |
+| 52 | On a cache hit, `POST /valuation` ignores `files` sent together with `session_file`; a cache miss stops on the same form | — | `api/routes_valuation.py` | **new, found by the `P9b` review.** Reachable only by a hand-built request; moves no figure or label |
 
 ---
 
@@ -802,6 +805,28 @@ and the output does not say a file was ignored.
 
 **Fix, when assigned.** Stop and name the file, as route B does. Make the change in both
 entry points, or after item 7 in one place.
+
+## 50. Route A returns `[]` when Pass 2 cannot be parsed twice · **silent**
+
+**Fact.** `_run_nri_pass` retries once when the Pass 2 reply does not parse. If the retry
+also fails, a blanket `except Exception` prints a warning and returns `[]`
+(`ingestion/claude_extractor.py`, the second `try` in `_run_nri_pass`). `_parse_nri_response`
+goes out of its way to tell "the model found none" from "nothing was read"; this branch
+turns the second into the first.
+
+**Cost.** Silent. Every non-recurring item for that filing is lost, and the CLI and the
+result page then say no item was found. Found by `P9c-parse-tests`. Route B is not
+affected: its loader stops.
+
+**Fix, when assigned.** Raise, naming the filing. With item 8.
+
+## 51. The arithmetic check's `WARN` branch can never run · dead code
+
+**Fact.** `_validate_extracted_data` marks a field `FAIL` when `diff_pct > fail_pct`, and
+`fail_pct` defaults to 0.5. The next branch is `elif diff_pct > 0.5`, which is then
+never true. Found by `P9c-parse-tests`.
+
+**Cost.** None to any figure. A reader expects a warning band that does not exist.
 
 ## 36. The same filing extracted twice gave share prices 16% apart · **silent**
 
