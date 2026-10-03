@@ -351,9 +351,14 @@ key where one applies, when:
 - route A's Pass 2 parser rejects `pass2` (for example an item with no `confidence`);
 - `pages_read` for a written pass is absent or empty.
 
-Every problem is collected before stopping, so one `check` lists them all.
+Every problem is collected before stopping, so one `check` lists them all. One more stop
+comes after that list, while the filings are parsed: **a PDF `pdfplumber` cannot open**
+stops the loader with a `ValueError` that names the filing (the session file, the filing
+index and its PDF's file name) and the PDF's sha256 and size, because no printed
+line could be looked up on its page (`P12a`; see "The page check" below).
 
-**Failed checks are returned, not raised.** Route A keeps its figures and shows the
+**Failed checks are returned, not raised**: the arithmetic checks and, since `P12a`, each
+printed line not found on its cited page. Route A keeps its figures and shows the
 failures after its last retry; route B must reach the same result from the same JSON.
 Route B has no retry loop: `check` prints the failures, and the session reads the rows
 again and corrects a line only where it does not match the filing.
@@ -410,11 +415,98 @@ PDF again with the prompt, since `P11a` run 3: a model asked to read rows from a
 cannot see can only make them up. The JSON repair retry is syntactic and sends none.
 **The check retry states no amount** (`P11a` round 2, review F7): it names each failed
 check, its side, and the rows Python added (label, field, page), but not the printed
-figure, the sum or the gap. A model told the exact gap can add a row of that size, and
-no check could tell it was never printed (a defence by page is backlog item 59). The
+figure, the sum or the gap. A model told the exact gap can add a row of that size; since
+`P12a` the page check below looks for such a row, within its limits. The
 full wording, with the gap, is what `check`, the CLI and route A's console print: each
 failure is a `_CheckFailure` holding both.
 After the last retry the first two stop the run, and a failed check is shown and kept.
+A line not found on its page is a failed check of the third kind, and goes through the
+same retry and the same final print. The check retry's opening says so: Python added the
+printed lines, compared the sums with the printed totals, **and looked for each line on
+the page it cites**. Its page wording names where, the field, the line index, the label
+and the page, asks for the row to be read again with its label as printed and its page,
+and states no value and no amount.
+
+### The page check: each printed line on the page it cites
+
+Added by `P12a` (backlog item 59, from the `P11a` review's F7). Until it, nothing checked
+that a line was printed at all: a model could add a row the filing never printed, with a
+plausible label and page, and if it balanced every check passed.
+
+**The rule** is one pure function, `claude_extractor.printed_line_on_page(label, value,
+page_text) -> bool`, with no PDF and no I/O:
+
+1. A **figure** is a number as a statement prints it: an optional `(`, an optional `$`
+   with optional spaces, digits with optional thousands commas (whole groups of three),
+   an optional decimal part, an optional `)`. Its magnitude is the number without the
+   commas, `$` and parentheses. A dash standing alone (`—`, `–` or `-`, a whitespace
+   token) is a printed zero.
+2. A text line **holds the value** when one of its figures has a magnitude equal to
+   `abs(value)`; a value of 0 is held by a figure `0` or a standalone dash. Signs and
+   parentheses are not compared.
+3. **Normalised text**: remove every figure, casefold, replace each run of characters
+   that is neither a letter nor a digit with one space, strip; for the label and the
+   page alike. So `stockholders’ equity` equals `stockholders' equity`, and `Senior notes
+   due 2030` is compared without its year on both sides.
+4. **The line is found** when a text line L of the page holds the value and the
+   normalised label, not empty, is a substring of the normalised text of L; of the line
+   above L, a space, then L; or of L, a space, then the line below L. The joined forms
+   let a label wrap onto a second text line, and each counts only when the normalised
+   label is **not wholly inside the neighbouring line alone** (`P12a` round 2, review
+   F1). A wrapped label is split, so neither half holds it whole; a label printed whole
+   on the row above or below is that row's, and never takes L's figure. Walmart's
+   `Prepaid expenses and other` with `84,874` (the `Total current assets` row below it)
+   or `58,851` (the `Inventories` row above it) is not found.
+
+**The walk**, `_printed_line_failures(data, pdf_bytes)`, takes a Pass 1 answer that has
+passed `pass1_problems` and looks up **every** printed line: every line field of every
+`historical_years` entry and of `latest_balance_sheet`, the five check rows and the two
+noncontrolling interest memos included. `_read_cited_pages` opens the PDF once with
+`pdfplumber` and reads each cited page's text once, however many lines cite it. Per line:
+
+| Outcome | Result |
+|---|---|
+| found | nothing to report |
+| not found | a failed check: no text line on that page holds both the label and the figure |
+| the page is beyond the PDF's last page | a failed check naming the page and the page count |
+| the page has no text layer (`extract_text()` gives `None` or only whitespace) | a failed check: the line **cannot be confirmed**. Never a pass: a line not looked at is not confirmed (rule 3) |
+| `pdfplumber` cannot open the PDF | **the run stops**: `ValueError` naming the PDF by sha256 and size; route B's loader prefixes the filing's `where` (session file, filing index, PDF file name), since route A holds only the bytes. `pdfplumber` raises `pdfplumber.utils.exceptions.PdfminerException` (and `MalformedPDFException` for a malformed page); only those two are caught, never a broad `Exception` |
+
+Each failure is a `_CheckFailure`. `message` names where (`year 2026` or `balance sheet
+2026`), the field, the line index, the label, the value, the page and why. `retry_message`
+names the same without the value.
+
+**Where each route runs it.** Route A, in `_run_financials_pass`, after
+`_parse_financials_response` returns: the page failures join the arithmetic ones, every
+attempt, on the PDF bytes it already sends to the model. Route B, in
+`load_session_extraction`, after `parse_pass1`, through the public wrapper
+`printed_line_page_failures(json_str, pdf_bytes) -> list[str]`, on the bytes of
+`plan.pdf_path`, whose sha256 the loader has just checked. Its failures join
+`validation_errors` with the same `where` prefix; `check` exits 1 when failed checks are
+the only problems, and its "Clean" line says every printed line was found on its page.
+One walk serves both routes. The CLI prints route B's failures; **no failed reading
+check reaches the web page today**, for either route (backlog item 62). A CLI pickle cache
+hit skips extraction, and so skips this check, as it skips the arithmetic one.
+
+**Cost**, measured on Walmart's fiscal 2026 10-K (86 pages, 89 printed lines on pages
+21, 22, 23 and 27) on the macOS machine: about **0.55 s** per walk, nearly all of it
+`pdfplumber` reading the four cited pages. 89 of 89 lines are found.
+
+**Three limits. None is fixed; each is stated so nobody reads more into a pass.**
+
+- **It confirms a row is printed with that figure, not that the figure is in the right
+  year's column.** Walmart's `Prepaid expenses and other` with value `4,011` (the prior
+  year's) on page 22 is found, because the same text line prints `4,124 4,011`. A column
+  check needs word positions, not text lines.
+- **A label is matched as text, not as a whole printed row.** A short label can be
+  found inside a longer printed label, with that row's own figure: `Debt` with `34,624`,
+  the figure of Walmart's `Long-term debt` row on page 22, is found. And a label that
+  runs from one printed row into the next is found with the figure of either row:
+  `Prepaid expenses and other Total` with `84,874` is found (`P12a` round 2 review, F6).
+  Either way the model must write a label the filing does not print; a printed label
+  never takes a neighbouring row's figure. A stricter join is backlog item 64.
+- **It does not detect a real row listed under two fields.** The prompt forbids it;
+  nothing checks it.
 
 The check rows (`gross_profit`, `operating_income`, `net_income`, the two balance sheet
 totals) are read **only for this comparison**. They are never stored as figures: the

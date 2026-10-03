@@ -201,3 +201,39 @@ good.
 
 Items 1 (outside the new code, which must add no census hit), 8, 10, 11, 44, 46, 50,
 51, 53, 57, 58, 60, 61, 62.
+
+---
+
+## Round 2 — amended by the orchestrator after review round 1
+
+The round 1 review (`.agent/journal/2026-10-03T1547-code_reviewer-p12a-printed-pages.md`)
+returned `approved`. **Its F1 is a defect in this assignment's rule, not in the code.**
+Step 4's joined forms let a label take the figure printed on the row above or below it:
+on Walmart page 22, `Prepaid expenses and other` = 84,874 is found, and 84,874 is
+`Total current assets`. That is the misread a model closing a gap is most likely to make.
+So the docs' sentence "it confirms a row is printed with that figure" is false today.
+The orchestrator decided these on 2026-10-03:
+
+1. **F1 — step 4 changes.** A joined form counts only when the normalised label is **not
+   wholly inside the normalised text of the neighbouring line alone**. L alone is
+   unchanged. So a wrapped label still matches, because neither half holds the whole
+   label, and a label printed whole on the next row no longer takes L's figure. Update
+   the docstring of `printed_line_on_page` and both docs to the new rule. Remove the
+   docs' claim only where it is still false after the change.
+2. **F1 — new done-criterion 6b.** Each of these returns False on the real Walmart page
+   22 text: `('Prepaid expenses and other', 84874)`, `('Prepaid expenses and other',
+   58851)`, `('Inventories', 4124)`. The six criterion 6 cases still give the values
+   written there. Walmart still finds 89 of 89, and criteria 3 to 5 still hold.
+3. **F2 — route B names the filing.** In `load_session_extraction`, when the page check
+   raises the `ValueError` for a PDF `pdfplumber` cannot open, re-raise it with the
+   loader's `where` prefix, `from` the original. Route A's wording stays as it is: route A
+   holds only the bytes.
+4. **F3 is not adopted.** Whole-word matching does not stop `Debt` inside `Long-term
+   debt`, and exact equality was measured on one filing of 16. Leave the substring rule,
+   with the F1 change only. Keep the short-label looseness in the docs as a limit, in one
+   sentence: a short label can be found inside a longer printed label, with that row's
+   own figure.
+5. **F4 and F5 are not yours.** The tester gives the red-on-purpose test a real PDF. A
+   filing with no text layer is recorded on the backlog by the orchestrator.
+
+Files in scope are unchanged. Answer every finding by number in a new round 2 entry.

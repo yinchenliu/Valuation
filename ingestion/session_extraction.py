@@ -10,6 +10,8 @@ The two routes meet at the parser. This module calls, and never copies:
     plan_filings              which years and which balance sheet from which filing
     pass1_prompts / pass2_prompts   the prompts route A sends for that plan
     parse_pass1 / parse_pass2       route A's parsers
+    printed_line_page_failures      route A's page check: each printed line
+                                    looked up on the page it cites
     merge_filing_extractions  route A's merge
 
 so the same two JSON answers give the same `FinancialStatements` and the same
@@ -86,6 +88,7 @@ from ingestion.claude_extractor import (
     pass1_prompts,
     pass2_prompts,
     plan_filings,
+    printed_line_page_failures,
 )
 from ingestion.filings import fingerprint_filings, parse_pdf_args
 from models.financial_statements import FinancialStatements, NonRecurringItem
@@ -171,9 +174,9 @@ class SessionFiling:
 class SessionExtraction:
     """A session file, checked, parsed and merged exactly as route A merges.
 
-    `validation_errors` are route A's failed checks (printed subtotals and totals
-    against Python's sums of the lines). They are
-    returned, not raised: route A keeps its figures with a warning after its last
+    `validation_errors` are route A's failed checks: printed subtotals and totals
+    against Python's sums of the lines, and each printed line looked up on the
+    page it cites, in the PDF. They are returned, not raised: route A keeps its figures with a warning after its last
     retry, and both routes must reach the same result from the same JSON.
     """
 
@@ -621,6 +624,17 @@ def load_session_extraction(path: str | Path) -> SessionExtraction:
     for index, (plan, entry) in enumerate(planned):
         where = _filing_label(session_path, index, entry)
         financials, errors = parse_pass1(json.dumps(entry["pass1"]), ticker, company_name)
+        # Each printed line looked up on its cited page, in the PDF `_pdf_problems`
+        # has just proved is the one the session read (sha256). A line not found is
+        # a failed check, shown with the arithmetic ones; an unreadable PDF stops,
+        # naming the filing as every other loader stop does. `_filing_problems` has
+        # proved the Pass 1 shape, so the only ValueError left here is the PDF's.
+        try:
+            errors += printed_line_page_failures(
+                json.dumps(entry["pass1"]), Path(plan.pdf_path).read_bytes(),
+            )
+        except ValueError as exc:
+            raise ValueError(f"{where}: {exc}") from exc
         items = parse_pass2(json.dumps(entry["pass2"]))
         validation_errors += [f"{where}: {e}" for e in errors]
         extractions.append((plan, financials, items))
@@ -924,7 +938,8 @@ def cmd_check(path: Path) -> int:
             print(f"  - {error}")
         return 1
     print("\nClean: every key present, every line well formed, every PDF unchanged, "
-          "and every printed subtotal and total agrees with Python's sum of the lines.")
+          "every printed subtotal and total agrees with Python's sum of the lines, "
+          "and every printed line was found on the page it cites.")
     return 0
 
 

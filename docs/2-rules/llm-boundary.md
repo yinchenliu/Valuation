@@ -105,9 +105,27 @@ not the model's arithmetic. It is a **check**, not a repair: it never adjusts a 
 and route A's retry asks the model to read the rows again, never to change a value so a
 check passes. That retry sends the PDF with it: a model told to re-read a filing it
 cannot see can only make the rows up. It names each failed check and the rows Python
-added, and **states no amount**: told the gap, a model can write a row of that size,
-and no check could tell it was never printed. A failure is shown and the figures are kept (the user, 2026-10-02: "if the
+added, and **states no amount**: told the gap, a model can write a row of that size.
+A failure is shown and the figures are kept (the user, 2026-10-02: "if the
 balance sheet check doesn't pass, just fail it and show it").
+
+**The page check looks for each printed line on the page it cites** (`P12a`, backlog
+item 59). Both routes open the filing's PDF with `pdfplumber` and look, on the cited
+page, for one text line holding the line's label and its figure
+(`claude_extractor.py:printed_line_on_page`); a label may wrap onto the next text line,
+but a label printed whole on a neighbouring row never takes this row's figure. A line
+not found, a page beyond the PDF, or a page with no text layer is a failed check,
+retried, shown and kept exactly as an arithmetic failure is; a page that was not looked at never reads as confirmed (rule 3).
+A PDF `pdfplumber` cannot open stops the run. So a row the filing never printed, written
+to close a gap, is now caught, **within three limits**: the check confirms a row is
+printed with that figure, not that the figure sits in the right year's column; a label
+is matched as text, not as a whole printed row, so a short label can be found inside a
+longer printed label, and a label that runs from one printed row into the next is found
+with the figure of either row (a label the filing does not print); and it does not detect
+a real row listed under two fields. The retry for a line not found names it by
+label, field and page and states no value.
+[docs/3-architecture/extraction.md](../3-architecture/extraction.md), "The page check",
+holds the rule.
 
 **The parser subtracts D&A from other operating expense**
 (`claude_extractor.py:_parse_financials_response`):

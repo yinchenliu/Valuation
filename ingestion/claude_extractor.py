@@ -84,6 +84,8 @@ See docs/8-build/environment.md section 3.
 from __future__ import annotations
 
 import base64
+import hashlib
+import io
 import json
 import math
 import os
@@ -630,12 +632,15 @@ class _CheckFailure:
     """One failed check, in two wordings.
 
     `message` is for a human and for a Claude Code session following the skill:
-    the printed figure, Python's sum, the gap and the tolerance. `check`, the CLI
-    and route A's console print it. `retry_message` goes back to the model in route
-    A's retry: it names the check, the side and the rows Python added, and states
-    no amount. A model told the exact gap can add a row of that size, and Python
-    could not tell it was never printed (review F7; the orchestrator's round 2
-    decision 6).
+    for an arithmetic check, the printed figure, Python's sum, the gap and the
+    tolerance; for a page check, the line's label, value and page and why it is
+    not confirmed. `check`, the CLI and route A's console print it.
+    `retry_message` goes back to the model in route A's retry: it names the check,
+    the side and the rows Python added, or the line by label, field and page, and
+    states no value and no amount. A model told the exact gap can add a row of
+    that size (review F7; the orchestrator's round 2 decision 6); the page check
+    now looks for such a row, and a retry that states no figure still gives the
+    model none to aim at.
     """
 
     message: str
@@ -825,6 +830,210 @@ def _validate_extracted_data(
 
     print(f"\n{'='*65}")
 
+    return failures
+
+
+# ---------------------------------------------------------------------------
+# Checks: each printed line looked up on the page it cites
+# ---------------------------------------------------------------------------
+# Backlog item 59 (the P11a review's F7): the arithmetic checks above cannot tell
+# a row the filing printed from one the model wrote, if it balances. This check
+# opens the PDF and looks for each line's label and figure on one text line of
+# its cited page. It confirms a row is printed with that figure; it does not
+# confirm the figure is in the right year's column, nor that a real row is listed
+# under one field only (docs/3-architecture/extraction.md, "The page check").
+
+# A figure as a statement prints it: an optional "(", an optional "$" with
+# optional spaces, digits with optional thousands commas, an optional decimal
+# part, an optional ")". The comma form must be whole groups of three.
+_PRINTED_FIGURE = re.compile(r"\(?(?:\$\s*)?(?:\d{1,3}(?:,\d{3})+(?!\d)|\d+)(?:\.\d+)?\)?")
+# A dash standing alone on a text line is a printed zero.
+_PRINTED_ZERO_DASHES: frozenset[str] = frozenset({"—", "–", "-"})
+
+
+def _figure_magnitude(figure: str) -> float:
+    """A printed figure without its commas, "$", spaces and parentheses."""
+    return float(re.sub(r"[^\d.]", "", figure))
+
+
+def _text_line_holds(text_line: str, magnitude: float) -> bool:
+    """True when one figure on `text_line` has this magnitude. A magnitude of 0 is
+    also held by a dash standing alone."""
+    if any(_figure_magnitude(m.group(0)) == magnitude
+           for m in _PRINTED_FIGURE.finditer(text_line)):
+        return True
+    return magnitude == 0 and any(
+        token in _PRINTED_ZERO_DASHES for token in text_line.split()
+    )
+
+
+def _normalised_text(text: str) -> str:
+    """Remove every figure, casefold, turn each run of characters that is neither a
+    letter nor a digit into one space, strip."""
+    return re.sub(r"[\W_]+", " ", _PRINTED_FIGURE.sub("", text).casefold()).strip()
+
+
+def printed_line_on_page(label: str, value: float, page_text: str) -> bool:
+    """True when some text line of `page_text` holds `abs(value)` and the label.
+
+    A text line L holds the value when one of its figures has that magnitude
+    (signs and parentheses are not compared), or, for a value of 0, when it holds
+    a dash standing alone. The label is found when its normalised text is not
+    empty and is a substring of the normalised text of L, of the line above L
+    joined to L by a space, or of L joined to the line below it by a space: a
+    label may wrap onto a second text line. A joined form counts only when the
+    label is not wholly inside the neighbouring line alone, so a label printed
+    whole on the row above or below never takes L's figure. Normalised: figures
+    removed, casefolded, every run of characters that is neither a letter nor a
+    digit made one space, stripped; the same for the label and the page.
+
+    Pure: no PDF, no I/O. docs/3-architecture/extraction.md states the rule.
+    """
+    wanted = _normalised_text(label)
+    if not wanted:
+        return False
+    magnitude = abs(float(value))
+    text_lines = page_text.splitlines()
+    for index, text_line in enumerate(text_lines):
+        if not _text_line_holds(text_line, magnitude):
+            continue
+        candidates = [text_line]
+        # A joined form is for a label that wraps: neither half holds it whole.
+        # A neighbour that holds the whole label is its own row, with its own figure.
+        if index > 0 and wanted not in _normalised_text(text_lines[index - 1]):
+            candidates.append(f"{text_lines[index - 1]} {text_line}")
+        if index + 1 < len(text_lines) and wanted not in _normalised_text(text_lines[index + 1]):
+            candidates.append(f"{text_line} {text_lines[index + 1]}")
+        if any(wanted in _normalised_text(candidate) for candidate in candidates):
+            return True
+    return False
+
+
+def _pdf_identity(pdf_bytes: bytes) -> str:
+    """The PDF named by what both routes hold: its bytes. Route B's session file
+    records the same sha256 beside the PDF's path."""
+    return f"sha256 {hashlib.sha256(pdf_bytes).hexdigest()[:16]}… ({len(pdf_bytes):,} bytes)"
+
+
+def _read_cited_pages(
+    pdf_bytes: bytes, pages: set[int],
+) -> tuple[int, dict[int, str | None]]:
+    """The PDF's page count, and the text layer of each cited page within it.
+
+    A cited page beyond the last page has no entry; the caller reports it. Each
+    page is read once, however many lines cite it.
+
+    Raises:
+        ValueError: pdfplumber cannot open or read the PDF (it raises
+            PdfminerException, or MalformedPDFException for a malformed page),
+            naming the PDF by its sha256 and size.
+    """
+    import pdfplumber
+    from pdfplumber.utils.exceptions import MalformedPDFException, PdfminerException
+
+    try:
+        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            page_count = len(pdf.pages)
+            texts: dict[int, str | None] = {
+                page: pdf.pages[page - 1].extract_text()
+                for page in sorted(pages) if page <= page_count
+            }
+    except (PdfminerException, MalformedPDFException) as exc:
+        raise ValueError(
+            f"the PDF {_pdf_identity(pdf_bytes)} cannot be opened by pdfplumber "
+            f"({type(exc).__name__}: {exc}), so no printed line can be looked up on "
+            "the page it cites. The run stops.",
+        ) from exc
+    return page_count, texts
+
+
+def _printed_line_failure(
+    where: str,
+    field: str,
+    index: int,
+    line: dict[str, Any],
+    page_count: int,
+    page_texts: dict[int, str | None],
+) -> _CheckFailure | None:
+    """One printed line looked up on its cited page: None when found, else the
+    failure. A page with no text layer is a failure, never a pass: a line that was
+    not looked at is not confirmed (rule 3)."""
+    label, value, page = line["label"], line["value"], line["page"]
+    row = f"{where}, '{field}' line {index}"
+    read_again = (
+        "Read this row again from the filing, with its label as printed and the "
+        "page it is printed on."
+    )
+    if page > page_count:
+        return _CheckFailure(
+            message=(
+                f"{row}: '{label}' = {value:,} cites page {page}, but the PDF has "
+                f"{page_count} pages. {read_again}"
+            ),
+            retry_message=(
+                f"{row}: the row '{label}' cites page {page}, beyond the last page "
+                f"of the filing ({page_count} pages). {read_again}"
+            ),
+        )
+    text = page_texts[page]
+    if text is None or not text.strip():
+        return _CheckFailure(
+            message=(
+                f"{row}: '{label}' = {value:,} cannot be confirmed, because page "
+                f"{page} has no text layer; the line was not looked for, and it is "
+                "not confirmed."
+            ),
+            retry_message=(
+                f"{row}: the row '{label}' cannot be confirmed on page {page}, "
+                f"because that page has no text layer. {read_again}"
+            ),
+        )
+    if printed_line_on_page(label, value, text):
+        return None
+    return _CheckFailure(
+        message=(
+            f"{row}: '{label}' = {value:,} was not found on page {page}: no text line "
+            f"there holds both that label and that figure. {read_again}"
+        ),
+        retry_message=(
+            f"{row}: the row '{label}' was not found on page {page}, the page it "
+            f"cites. {read_again}"
+        ),
+    )
+
+
+def _printed_line_failures(data: dict[str, Any], pdf_bytes: bytes) -> list[_CheckFailure]:
+    """Look every printed line of a Pass 1 answer up on the page it cites.
+
+    `data` is the parsed answer after `pass1_problems` has passed, so every key is
+    read with `[]`. Every line field is walked: each historical year's, then the
+    balance sheet's, the check rows and the noncontrolling interest memos
+    included. Returns one _CheckFailure per line not found, in that order. Both
+    routes call this, route A in `_run_financials_pass` and route B through
+    `printed_line_page_failures`.
+
+    Raises:
+        ValueError: the PDF cannot be opened by pdfplumber.
+    """
+    cited: list[tuple[str, str, int, dict[str, Any]]] = []
+    for entry in data["historical_years"]:
+        where = f"year {entry['year']}"
+        for field in PASS1_YEAR_LINE_FIELDS:
+            cited += [(where, field, index, line) for index, line in enumerate(entry[field])]
+    balance = data["latest_balance_sheet"]
+    if balance:  # {}: the balance sheet was not asked for
+        where = f"balance sheet {balance['year']}"
+        for field in PASS1_BALANCE_SHEET_LINE_FIELDS:
+            cited += [(where, field, index, line) for index, line in enumerate(balance[field])]
+
+    page_count, page_texts = _read_cited_pages(pdf_bytes, {line["page"] for *_, line in cited})
+    failures: list[_CheckFailure] = []
+    for where, field, index, line in cited:
+        failure = _printed_line_failure(where, field, index, line, page_count, page_texts)
+        if failure is not None:
+            failures.append(failure)
+    print(f"  Printed lines looked up on their cited pages: {len(cited)} checked, "
+          f"{len(cited) - len(failures)} found, {len(failures)} not confirmed.")
     return failures
 
 
@@ -1430,9 +1639,11 @@ def _run_financials_pass(
     # Parse + Validate + Retry loop. Three kinds of answer go back to the model:
     # text that is not JSON, an answer with an absent key or a malformed printed
     # line (Pass1ShapeError), and an answer whose printed subtotals or totals fail
-    # their check. Each retry asks the model to READ the rows again; none asks it
-    # to change a figure so that a check passes (rule 1). After the last retry,
-    # the first two stop the run, and a failed check is shown and kept.
+    # their check or whose printed lines are not found on their cited pages. Each
+    # retry asks the model to READ the rows again; none asks it to change a figure
+    # so that a check passes (rule 1). After the last retry, the first two stop the
+    # run, and a failed check is shown and kept. A PDF that pdfplumber cannot open
+    # stops at once: nothing could be looked up, so no retry could help.
     MAX_RETRIES = 2
     json_str = _extract_json(raw)
 
@@ -1488,7 +1699,10 @@ def _run_financials_pass(
             json_str = _extract_json(raw2)
             continue
 
-        # Validation passed
+        # The answer parsed. Each printed line is now looked up on the page it
+        # cites (backlog item 59): a line not found is a failed check like any
+        # other, retried and then shown. A PDF pdfplumber cannot open stops here.
+        val_errors = val_errors + _printed_line_failures(json.loads(json_str), pdf_bytes)
         if not val_errors:
             return financials
 
@@ -1504,16 +1718,18 @@ def _run_financials_pass(
         print(f"\n  [Pass 1] Checks failed — asking for the rows to be read again "
               f"(retry {attempt + 1}/{MAX_RETRIES})...")
         # The retry wording names each failed check, its side and the rows Python
-        # added, and states no amount (review F7): a model told the gap can write a
-        # row of that size, and no check could tell it was never printed.
+        # added, or the line not found by label, field and page, and states no
+        # value and no amount (review F7): a model told the gap can write a row of
+        # that size.
         error_list = "\n".join(f"  - {failure.retry_message}" for failure in val_errors)
         fix_prompt = (
             "Python added up the printed lines in the following JSON and compared "
-            "the sums with the subtotals and totals the filing prints. These "
-            "checks failed:\n\n"
+            "the sums with the subtotals and totals the filing prints, and looked "
+            "for each line on the page it cites. These checks failed:\n\n"
             "FAILED CHECKS:\n" + error_list + "\n\n"
-            "A failed check means a row was misread, missed, or listed under two "
-            "fields. Read the statement rows again from the filing, and correct a "
+            "A failed check means a row was misread, missed, listed under two "
+            "fields, or not found on the page it cites. Read the statement rows "
+            "again from the filing, and correct a "
             "line only where it does not match the row printed in the filing. Do "
             "NOT change any value to make a check pass. If every line matches the "
             "filing, return it unchanged; the failure will be shown as it is. "
@@ -1918,6 +2134,25 @@ def parse_pass1(
     """
     financials, failures = _parse_financials_response(json_str, ticker, company_name)
     return financials, [failure.message for failure in failures]
+
+
+def printed_line_page_failures(json_str: str, pdf_bytes: bytes) -> list[str]:
+    """One message per Pass 1 printed line not found on the page it cites.
+
+    Route B's page check, the same walk route A runs in `_run_financials_pass`.
+    `pdf_bytes` is the filing the answer was read from. An empty list means every
+    printed line was found on its page.
+
+    Raises:
+        json.JSONDecodeError: the text is not JSON.
+        Pass1ShapeError: an absent key or a malformed printed line.
+        ValueError: the PDF cannot be opened by pdfplumber.
+    """
+    data = json.loads(json_str)
+    problems = pass1_problems(data)
+    if problems:
+        raise Pass1ShapeError(problems)
+    return [failure.message for failure in _printed_line_failures(data, pdf_bytes)]
 
 
 def parse_pass2(json_str: str) -> list[NonRecurringItem]:
