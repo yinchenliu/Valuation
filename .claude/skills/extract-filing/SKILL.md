@@ -110,6 +110,10 @@ still asks for "fiscal year 2024". Read the column whose date ends that fiscal y
 
    - One row per printed line: its label as printed, the one figure printed for that
      year under the field's sign rule, and its 1-based PDF page.
+   - **`check` looks for every row on the page it cites** (`P12a`): the label and the
+     figure on one line of that page's text layer. Copy the label from the `text`
+     output, not from memory, and record the PDF page that `text` printed it under. A
+     shortened label is still found; a reworded one is not.
    - **Never add, subtract or net rows yourself.** Python sums each list.
    - `[]` means the filing prints no such row. Never omit a key.
    - Every row belongs to exactly one field. A row that matches no named field goes
@@ -150,9 +154,11 @@ still asks for "fiscal year 2024". Read the column whose date ends that fiscal y
 ### 4. Label and check
 
 1. Set `extracted_by.model` to your model ID, and `extracted_by.date` to today's date.
-2. Run `SE check extractions/TICKER.json` until it exits 0. Exit 1 means only arithmetic
-   warnings remain. Report each one to the user, and say whether a second reading of the
-   page confirmed the figure.
+2. Run `SE check extractions/TICKER.json` until it exits 0. Exit 1 means only failed
+   checks remain: arithmetic, or a row "not found on page N". For a row not found, open
+   that page with `text` again and correct the label or the page to what is printed.
+   Never change a figure to make it match. Report each failure that remains to the user,
+   and say whether a second reading of the page confirmed the figure.
 
 ### 5. Value it
 
