@@ -75,7 +75,7 @@ rather than lying.
 | 40 | Five dev scripts now produce a price neither entry point would | — | `tests/` | **new, and created by `7354698`** |
 | 37 | `analysis/wacc.py`'s new stop states an inference as a fact | — | `analysis/wacc.py` | **new.** Message only; 23 of 23 wacc tests stay green with the rewrite |
 | 38 | `analysis/wacc.py` fabricates a 100% equity weighting when market cap and debt are both zero | **silent** | `analysis/wacc.py` | **new.** Item 22's weights half. Verified unblocked |
-| 43 | The fiscal year comes from the filename's date, not from the filing | **silent** | `cli.py` (moving to `ingestion/filings.py`), `api/routes_upload.py` | **new at `cde33cb`.** Wrong for every 52/53-week filer whose year ends in early January |
+| 43 | The fiscal year comes from the filename's date, not from the filing | **silent** | `ingestion/filings.py`, `api/routes_upload.py` | **closed by `P10c-fiscal-year`**: the filename year is verified against the cover date and the column label, and a mismatch stops |
 | 44 | The `units` field is extracted and then ignored | **silent**, latent | `ingestion/claude_extractor.py`, `api/routes_valuation.py` | **new at `cde33cb`.** A filing in thousands is labelled `M`; one fallback mixes scales |
 | 45 | `calculate_beta` checks for a constant market series only after SciPy has already raised | stopping | `analysis/capm.py` | **new at `cde33cb`.** SciPy 1.17.1 raises first, so the stop does not name `market_returns`. **Held by the user, 2026-10-02** |
 | 46 | `.env` overrides the environment, so unsetting a key does not stop a paid call | **silent** | `config.py` | **new at `cde33cb`.** Found by `P9a-session-route`, after it caused one possibly billed API call |
@@ -89,6 +89,8 @@ rather than lying.
 | 54 | `GET /assumptions` with no filing named shows an empty form and no message | — | `api/routes_valuation.py` | **new, found by the `P9b` tester.** No extraction runs and no figure is shown; the page just does not say why it is empty |
 | 55 | After `P10b`, only a NaN reaches `calculate_beta`'s NaN check, but its message still blames a market series with no variation | — | `analysis/capm.py` | **new, the `P10b` review's F1, minor.** A NaN in `stock_returns` is reported as a market with no variation; message only |
 | 56 | Four Pass 1 prompt lines ask the model to compute, not read: `capex` (PP&E plus acquisitions), `gross_profit`, `change_in_working_capital` (a sum of lines), and "adjust catch-alls to close any gap" | **silent** | `ingestion/claude_extractor.py` | **new, the `P10a` review.** Rule 1. Read each printed line; sum in Python. A prompt change, so it needs the user |
+| 57 | The upload page invites 10-Q PDFs, but a 10-Q with a year in its name always stops at the year check, with no remedy | — | `templates/upload.html`, `ingestion/filings.py` | **new, the `P10c` review's F7.** A 10-Q has no "fiscal year ended" cover line |
+| 58 | The CLI year remedy prints `YEAR:PATH` unquoted, and every filing name here has spaces | — | `ingestion/filings.py` | **new, the `P10c` review's F8.** Pasting it into a shell splits the path |
 
 ---
 

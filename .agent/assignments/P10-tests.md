@@ -50,11 +50,16 @@ Read the three assignments, their programmer entries and their review entries fi
    balance check.
 5. **P10b, new tests:** the constant-market message names the repeated value and the
    count; a NaN observation still reaches the NaN stop.
-6. **P10c, new tests:** `fiscal_year_from_evidence` on strings, one case per row of the
-   table in `P10c-fiscal-year.md`, plus a bare label that disagrees with the cover rule;
+6. **P10c, new tests**, against the **round 2** rule in `P10c-fiscal-year.md`:
+   `fiscal_year_from_evidence` on strings, one case per row of the table there, plus a
+   Target-style case (cover "February 1, 2025", label 2024 → 2024), a bare label outside
+   the cover year and the year before (stops, naming label, cover date and pages), and
+   date-only labels in the first seven days of January (the year before);
    `verify_filing_years` with a stubbed reader stops on a mismatch, names the file, both
    years and the remedy, and lists every bad filing in one message; an unreadable cover
-   stops; `POST /upload` with a mismatch answers 400 and does not redirect. **Never read
+   stops under its own heading, not "does not match"; the CLI remedy names `YEAR:PATH`
+   and the web remedy says to rename and upload again; `POST /upload` with a mismatch
+   answers 400 and does not redirect. **Never read
    `10K_filings/`**, which is not in git.
 
 ## Files in scope
