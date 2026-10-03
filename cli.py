@@ -61,7 +61,12 @@ from ingestion.claude_extractor import (
 from ingestion.filings import InputFingerprint, fingerprint_filings, parse_pdf_args
 from ingestion.price_fetcher import fetch_price_data
 from ingestion.session_extraction import load_session_extraction
-from models.financial_statements import FinancialStatements, NonRecurringItem
+from models.financial_statements import (
+    BALANCE_CHECK_TOLERANCE,
+    BalanceSheet,
+    FinancialStatements,
+    NonRecurringItem,
+)
 from models.valuation import ProjectionAssumptions
 
 W = 70  # output width
@@ -212,7 +217,11 @@ def build_overrides(args: argparse.Namespace) -> ProjectionAssumptions:
 # Helpers: cache
 # ---------------------------------------------------------------------------
 
-CACHE_FORMAT = "p6-inputs-keyed-v1"
+# P11a changed the extraction's shape: Pass 1 returns printed lines, and each
+# BalanceSheet carries the two printed totals. A cache written before that holds
+# figures some of which the model added up, and balance sheets with no printed
+# totals, so it is refused by marker rather than read.
+CACHE_FORMAT = "p11a-printed-lines-v1"
 
 
 @dataclass(frozen=True)
@@ -493,11 +502,26 @@ def print_extracted_financials(financials: FinancialStatements) -> None:
         right = f"{ll:<{lw}}{lv:>{bw},.0f}" if lv is not None else ""
         print(f"{left:<{2 + lw + bw}}{gap}{right}")
 
-    # Balance check
-    diff = abs(bs.total_assets - (bs.total_liabilities + bs.total_equity))
-    pct = diff / bs.total_assets * 100 if bs.total_assets else 0
-    flag = "OK" if pct < 2.0 else "WARN"
-    print(f"\n  Balance check: {flag}  (diff={diff:,.0f}, {pct:.2f}%)")
+    # Balance check: each printed total row against the sum of the lines mapped
+    # under it. FAIL when the difference exceeds 1 in the filing's units, which
+    # allows for rounding and nothing more (the user, 2026-10-02: "if the balance
+    # sheet check doesn't pass, just fail it and show it"). A failure is shown and
+    # the figures are kept; nothing here repairs one. The threshold and the status
+    # are BalanceSheet.printed_total_check's, the same the parser and the page use.
+    print(f"\n  Balance check — printed total against the sum of the mapped lines "
+          f"(FAIL above {BALANCE_CHECK_TOLERANCE:,.0f} in the filing's units):")
+    for check_label, printed, mapped, difference in (
+        ("Total Assets", bs.printed_total_assets, bs.total_assets,
+         bs.printed_total_assets_difference),
+        ("Total Liab + Equity", bs.printed_total_liabilities_and_equity,
+         bs.total_liabilities_and_equity,
+         bs.printed_total_liabilities_and_equity_difference),
+    ):
+        status = BalanceSheet.printed_total_check(difference)
+        printed_text = "not extracted" if printed is None else f"{printed:,.0f}"
+        diff_text = "" if difference is None else f"{difference:+,.0f}"
+        print(f"    {check_label:<20}  printed {printed_text:>13}  "
+              f"mapped {mapped:>12,.0f}  diff {diff_text:>8}  {status}")
 
     # Key derived metrics
     print(f"\n  Total Debt:           {bs.total_debt:>12,.0f}")
@@ -920,8 +944,8 @@ def _extract_from_session_file(
         )
         print(f"        pages read: pass 1 {pages1}; pass 2 {pages2}")
     if session.validation_errors:
-        print("\n  [WARN] Arithmetic validation errors in the session file. Route A "
-              "keeps its figures\n  with the same warning after its last retry:")
+        print("\n  [FAIL] Failed checks in the session file. The figures are kept "
+              "and shown;\n  route A keeps them the same way after its last retry:")
         for error in session.validation_errors:
             print(f"    {error}")
     print("  No API call was made and no pickle cache was read or written.")

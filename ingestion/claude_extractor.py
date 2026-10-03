@@ -4,7 +4,7 @@ ARCHITECTURE
 ============
   PASS 1 — Financial Statements (year-targeted, table extraction)
     PDF → LLM → I/S + C/F (+ optional B/S) for target years only
-    Prompt focused on number precision and arithmetic reconciliation.
+    Each figure is returned as the printed rows that make it up; Python adds them.
 
   PASS 2 — Non-Recurring Items (year-targeted, footnote reasoning)
     PDF + I/S summary from Pass 1 → LLM → NonRecurringItem list
@@ -85,13 +85,14 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import os
 import re
 import textwrap
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlsplit
 
 import config
@@ -100,6 +101,7 @@ if TYPE_CHECKING:  # the SDKs are imported lazily at the call site, not at impor
     import anthropic
 
 from models.financial_statements import (
+    BALANCE_CHECK_TOLERANCE,
     BalanceSheet,
     CashFlowStatement,
     FinancialStatements,
@@ -164,49 +166,63 @@ _DEFAULT_MODELS: dict[str, str] = {
 # One historical year of Pass 1. Named on its own so the session route can require
 # every key it names (PASS1_YEAR_FIELDS, below) without importing a private name,
 # and so the two cannot drift: the prompt's schema text is built from this dict.
+#
+# Every key but `year` is a LIST OF PRINTED LINES (see _PRINTED_LINE_SCHEMA): the
+# model copies each row that makes up the field, and Python adds them
+# (figure_from_printed_lines). The model never adds, subtracts or nets rows (rule 1;
+# the user's decision of 2026-10-02, backlog item 56).
 _FINANCIALS_YEAR_SCHEMA: dict[str, str] = {
     "year": "int — fiscal year (e.g. 2024)",
-    "revenue": "float — total net revenue / net sales",
-    "cost_of_revenue": "float — COGS / cost of goods sold / cost of services",
-    "gross_profit": "float — revenue minus cost_of_revenue (for validation)",
-    "sga": "float — SG&A combined (selling + general + admin). Positive.",
-    "rd_expense": "float — R&D / research and development. Positive.",
-    "depreciation_amortization": "float — D&A from cash flow statement operating section",
-    "other_operating_expense": "float — all other operating cost lines not listed above",
-    "operating_income": "float — EBIT, income from operating activities, this should be from income statement",
-    "interest_expense": "float — gross interest expense on debt. POSITIVE. Use footnote breakout if I/S shows only net interest.",
-    "interest_income": "float — interest / investment income. POSITIVE.",
-    "other_non_operating": "float — net other income/expense below operating line (signed)",
-    "tax_expense": "float — income tax provision. POSITIVE.",
-    "net_income": "float — TOTAL CONSOLIDATED net income (net income INCLUDING noncontrolling interests, i.e. EBT minus tax_expense, BEFORE any allocation to noncontrolling interests). Do NOT use 'net income attributable to common shareholders' or 'attributable to the parent'.",
-    "diluted_shares": "float — diluted weighted-avg shares (same units as F/S)",
-    "cfo": "float — net cash provided by operating activities",
-    "capex": "float — SUM of 'Purchases of PP&E' PLUS 'Acquisitions and intangible asset purchases' from investing section. Do NOT include securities. POSITIVE.",
-    "sbc": "float — stock-based compensation (from CFS operating section)",
-    "change_in_working_capital": "float — total 'Changes in assets and liabilities' from Cash Flow Statement operating section. SIGNED: negative = WC increase (cash outflow), positive = WC decrease (cash inflow).",
+    "revenue": "lines — total net revenue / net sales",
+    "cost_of_revenue": "lines — COGS / cost of goods sold / cost of services",
+    "gross_profit": "lines — the printed gross profit row, for validation only. [] if the filing prints no gross profit row; never derive it",
+    "sga": "lines — SG&A (selling + general + admin): the SG&A row, or each of the separately printed selling / marketing and general & administrative rows. Positive.",
+    "rd_expense": "lines — R&D / research and development. Positive.",
+    "depreciation_amortization": "lines — D&A from cash flow statement operating section",
+    "other_operating_expense": "lines — CATCH-ALL: every other operating cost row not listed above",
+    "operating_income": "lines — the printed EBIT / income from operating activities row; this should be from income statement. [] if the filing prints no operating income row; never derive it",
+    "interest_expense": "lines — gross interest expense on debt. POSITIVE. Use footnote breakout if I/S shows only net interest.",
+    "interest_income": "lines — interest / investment income. POSITIVE.",
+    "other_non_operating": "lines — CATCH-ALL: every other income/expense row below the operating line not listed above (signed)",
+    "tax_expense": "lines — income tax provision. POSITIVE.",
+    "net_income": "lines — the printed TOTAL CONSOLIDATED net income row (net income INCLUDING noncontrolling interests, i.e. after tax_expense, BEFORE any allocation to noncontrolling interests). Do NOT use 'net income attributable to common shareholders' or 'attributable to the parent'. Never []: every income statement prints it.",
+    "diluted_shares": "lines — the diluted weighted-avg shares row (same units as F/S)",
+    "cfo": "lines — the 'Net cash provided by operating activities' row",
+    "capex": "lines — the 'Purchases of PP&E' row and the 'Acquisitions and intangible asset purchases' row(s) from the investing section, each as its own line. Do NOT include securities. POSITIVE.",
+    "sbc": "lines — stock-based compensation (from CFS operating section)",
+    "change_in_working_capital": "lines — each individual 'Changes in assets and liabilities' row from the Cash Flow Statement operating section, one line per row. SIGNED: negative = WC increase (cash outflow), positive = WC decrease (cash inflow).",
 }
 
 # The one balance sheet Pass 1 returns when the plan asks for it.
 _FINANCIALS_BALANCE_SHEET_SCHEMA: dict[str, str] = {
     "year": "int — the most recent fiscal year in the filing",
-    "cash": "float — cash and cash equivalents (period-end)",
-    "short_term_investments": "float — marketable securities / short-term investments",
-    "accounts_receivable": "float",
-    "inventory": "float — 0 if not applicable",
-    "other_current_assets": "float — ALL other current assets not listed above",
-    "ppe_net": "float — PP&E net of accumulated depreciation",
-    "goodwill": "float",
-    "intangible_assets": "float — intangibles other than goodwill",
-    "other_non_current_assets": "float — CATCH-ALL for all non-current assets not listed above. Includes non-marketable securities, deferred income taxes (asset), operating lease ROU assets, equity method investments, etc.",
-    "accounts_payable": "float",
-    "accrued_liabilities": "float — accrued expenses / compensation",
-    "other_current_liabilities": "float — CATCH-ALL for all current liabilities not listed above. Includes deferred revenue, accrued revenue share, etc.",
-    "short_term_debt": "float — current portion of LT debt + notes payable + commercial paper",
-    "long_term_debt": "float — long-term debt beyond 1 year",
-    "other_non_current_liabilities": "float — CATCH-ALL for all non-current liabilities not listed above. Includes operating lease liabilities, pension, deferred tax liabilities, etc.",
-    "total_equity": "float — total stockholders equity",
-    "noncontrolling_interest_nonredeemable": "float — MEMO: the noncontrolling interest line printed INSIDE equity on the latest balance sheet (e.g. 'Nonredeemable noncontrolling interest'). 0 if the filing prints none. It is already inside total_equity; never add it to any total.",
-    "noncontrolling_interest_redeemable": "float — MEMO: the redeemable noncontrolling interest line printed OUTSIDE equity (mezzanine, between liabilities and equity) on the latest balance sheet. 0 if the filing prints none. It is already inside another line; never add it to any total.",
+    "cash": "lines — cash and cash equivalents (period-end)",
+    "short_term_investments": "lines — marketable securities / short-term investments",
+    "accounts_receivable": "lines",
+    "inventory": "lines — [] if not applicable",
+    "other_current_assets": "lines — CATCH-ALL: every other current asset row not listed above",
+    "ppe_net": "lines — PP&E net of accumulated depreciation",
+    "goodwill": "lines",
+    "intangible_assets": "lines — intangibles other than goodwill",
+    "other_non_current_assets": "lines — CATCH-ALL: every non-current asset row not listed above. Includes non-marketable securities, deferred income taxes (asset), operating lease ROU assets, equity method investments, etc.",
+    "accounts_payable": "lines",
+    "accrued_liabilities": "lines — accrued expenses / compensation",
+    "other_current_liabilities": "lines — CATCH-ALL: every current liability row not listed above. Includes deferred revenue, accrued revenue share, etc.",
+    "short_term_debt": "lines — the current portion of LT debt, notes payable and commercial paper rows, each as its own line",
+    "long_term_debt": "lines — long-term debt beyond 1 year",
+    "other_non_current_liabilities": "lines — CATCH-ALL: every non-current liability row not listed above, and any row printed between liabilities and equity (e.g. redeemable noncontrolling interest, mezzanine). Includes operating lease liabilities, pension, deferred tax liabilities, etc.",
+    "total_equity": "lines — total stockholders equity",
+    "noncontrolling_interest_nonredeemable": "lines — MEMO: the noncontrolling interest row printed INSIDE equity on the latest balance sheet (e.g. 'Nonredeemable noncontrolling interest'). [] if the filing prints none. It is already inside total_equity; never add it to any total.",
+    "noncontrolling_interest_redeemable": "lines — MEMO: the redeemable noncontrolling interest row printed OUTSIDE equity (mezzanine, between liabilities and equity) on the latest balance sheet. [] if the filing prints none. It is already inside another line; never add it to any total.",
+    "total_assets": "lines — CHECK ONLY: the printed 'Total assets' row. Never []: every balance sheet prints it",
+    "total_liabilities_and_equity": "lines — CHECK ONLY: the printed total row for liabilities and equity (including any mezzanine items, e.g. 'Total liabilities, redeemable noncontrolling interest, and shareholders' equity'). Never []: every balance sheet prints it",
+}
+
+# The shape of one printed line. Every "lines" field above is a JSON list of these.
+_PRINTED_LINE_SCHEMA: dict[str, str] = {
+    "label": "string — the row's label exactly as printed",
+    "value": "number — the ONE figure printed on that row for that year, under the field's sign rule",
+    "page": "int — the 1-based PDF page the row is printed on",
 }
 
 _FINANCIALS_SCHEMA = {
@@ -219,12 +235,32 @@ _FINANCIALS_SCHEMA = {
 }
 
 # Every key a Pass 1 answer must carry, per historical year and in the balance sheet.
-# Route A's parser does not require them (it reads an absent field as zero, backlog item 1).
-# The session route's loader does, on purpose; see ingestion/session_extraction.py.
+# Both routes require them: an absent key stops, naming the field and the year
+# (rule 3). An empty list is the answer for a row the filing does not print.
 PASS1_YEAR_FIELDS: tuple[str, ...] = tuple(_FINANCIALS_YEAR_SCHEMA)
 PASS1_BALANCE_SHEET_FIELDS: tuple[str, ...] = tuple(_FINANCIALS_BALANCE_SHEET_SCHEMA)
 
+# The keys that hold a list of printed lines: every key but `year`.
+PASS1_YEAR_LINE_FIELDS: tuple[str, ...] = tuple(k for k in PASS1_YEAR_FIELDS if k != "year")
+PASS1_BALANCE_SHEET_LINE_FIELDS: tuple[str, ...] = tuple(
+    k for k in PASS1_BALANCE_SHEET_FIELDS if k != "year"
+)
+
+# `[]` means "the filing prints no such row", and for most fields that reads as 0.
+# Three kinds of row are different (review round 1, F1 and F2; the orchestrator's
+# round 2 decisions):
+# - net_income is printed by every income statement and starts the cash flow
+#   statement, so `[]` is a shape problem: both routes stop, never a 0.
+# - gross_profit and operating_income are check rows a filing may not print: `[]`
+#   is None, and that check is skipped and labelled "not printed".
+# - total_assets and total_liabilities_and_equity are check rows every balance
+#   sheet prints: `[]` is None, "not extracted", and the check FAILs saying so.
+PASS1_YEAR_NEVER_EMPTY_FIELDS: tuple[str, ...] = ("net_income",)
+_YEAR_CHECK_ROWS: tuple[str, ...] = ("gross_profit", "operating_income")
+_BALANCE_SHEET_CHECK_ROWS: tuple[str, ...] = ("total_assets", "total_liabilities_and_equity")
+
 _FINANCIALS_SCHEMA_STR = json.dumps(_FINANCIALS_SCHEMA, indent=2)
+_PRINTED_LINE_SCHEMA_STR = json.dumps(_PRINTED_LINE_SCHEMA, indent=2)
 
 _FINANCIALS_SYSTEM_PROMPT = textwrap.dedent(f"""\
     You are a senior financial analyst. Your ONLY task is to extract numerical
@@ -237,31 +273,64 @@ _FINANCIALS_SYSTEM_PROMPT = textwrap.dedent(f"""\
     SCHEMA:
     {_FINANCIALS_SCHEMA_STR}
 
+    PRINTED LINES:
+    Every field marked "lines" is a JSON list of the printed rows that make it up,
+    each row in this shape:
+    {_PRINTED_LINE_SCHEMA_STR}
+    Example: "capex": [{{"label": "Purchases of property and equipment",
+    "value": 1200, "page": 41}}, {{"label": "Acquisitions, net of cash acquired",
+    "value": 35, "page": 41}}]
+    - Each "value" is ONE figure printed on that row for that year. NEVER add,
+      subtract or net rows, and never write a figure you worked out: Python adds
+      the lines of each field.
+    - If the filing prints one row that is the whole field, list that one row.
+      Otherwise list each row that makes it up. Never list a printed total
+      together with the rows it totals.
+    - An empty list [] means the filing prints no such row. Never leave a key out.
+    - Every row of the income statement down to net income, and every row of the
+      balance sheet, is accounted for exactly once: listed in one field, or
+      inside a printed total that is listed in one field. A row that matches no
+      named field goes into its section's CATCH-ALL list. No row appears in two
+      fields. Two kinds of field are outside this rule: the check fields
+      (gross_profit, operating_income, net_income, total_assets,
+      total_liabilities_and_equity), and the two noncontrolling interest MEMO
+      fields, which copy a row that already belongs to another field.
+    - "label" is the row's label as printed; "page" is the 1-based PDF page.
+
     EXTRACTION RULES:
     - Extract ONLY the fiscal years specified in the user instructions.
     - All monetary values: same currency and units as the source (usually USD Millions).
     - All values must be POSITIVE (signs implied by field name).
-    - If a line item is not reported, use 0.
+    - If a line item is not reported, use an empty list [].
     - Do NOT invent or estimate numbers. Only extract what is explicitly stated.
-    - For "sga": combine Sales & Marketing + General & Administrative if separate.
+    - For "sga": list the SG&A row, or the Sales & Marketing row and the General &
+      Administrative row as separate lines when the filing prints them separately.
     - For "interest_expense": gross interest on debt (positive). Go to footnotes
       for the breakout if only net interest is on the I/S.
     - For "cfo": use the total "Net cash provided by operating activities".
     - For "net_income": use TOTAL CONSOLIDATED net income (includes noncontrolling
-      interests; equals EBT minus tax). NEVER use "net income attributable to
+      interests; after tax). NEVER use "net income attributable to
       common shareholders / to the parent", which is net of noncontrolling interests.
-    - For "capex": SUM of 'Purchases of PP&E' PLUS 'Acquisitions/intangible asset
-      purchases' from investing section. Do NOT include securities. Absolute value.
-    - For "change_in_working_capital": sum of ALL individual asset/liability change
-      lines from CFS operating section. SIGNED per CFS convention.
+    - For "capex": the 'Purchases of PP&E' row and the 'Acquisitions/intangible
+      asset purchases' row(s) from the investing section, each its own line. Do
+      NOT include securities. Absolute value.
+    - For "change_in_working_capital": every individual asset/liability change
+      row from the CFS operating section, one line per row. SIGNED per CFS convention.
+    - "gross_profit", "operating_income" and "net_income" are the printed
+      subtotal rows. Python checks them against the component fields; they are
+      read, never derived. "gross_profit" and "operating_income" are [] when
+      the filing prints no such row. "net_income" is never [].
 
     BALANCE SHEET RULES (when requested):
-    - The balance sheet MUST balance: Total Assets = Total Liabilities + Total Equity.
-    - "other_" catch-all fields must capture ALL unmapped line items.
-    - After filling fields, verify the balance. Adjust catch-alls to close any gap.
+    - "total_assets" and "total_liabilities_and_equity" are the printed total
+      rows. Python checks each against the lines you mapped under it. Do NOT
+      change any line to make the check pass: a gap means a row was misread,
+      missed or listed twice, and it is reported as it is.
+    - "other_" catch-all fields must capture ALL unmapped rows.
     - "noncontrolling_interest_nonredeemable" and "noncontrolling_interest_redeemable"
-      are memos, each copied from its own printed line (0 if the filing prints none).
-      Do not combine them. Each is already inside another line; never add it to any total.
+      are memos, each copied from its own printed row ([] if the filing prints none).
+      Keep them in their own fields. Each is already inside another line; never
+      add it to any total.
 
     If the user says "skip the balance sheet", set latest_balance_sheet to {{}}.""")
 
@@ -325,42 +394,323 @@ _NRI_SYSTEM_PROMPT = textwrap.dedent(f"""\
 
 
 # ---------------------------------------------------------------------------
-# Arithmetic validation
+# Printed lines: the model copies rows, Python adds them
+# ---------------------------------------------------------------------------
+# Rule 1, and the user's decision of 2026-10-02 (backlog item 56, option A): every
+# Pass 1 figure arrives as the list of printed rows that make it up, and the ONE
+# function below turns a list into its figure. Neither route reads a figure any
+# other way, so no sum is the model's and no absent key becomes a zero.
+
+class Pass1ShapeError(ValueError):
+    """A Pass 1 answer with an absent key or a malformed printed line.
+
+    `problems` holds every one found, each naming the field, the year and the line
+    index, so route A can send them all back to the model in one retry and route B
+    can list them all in one `check`. A ValueError, so every caller that stops on a
+    bad answer stops on this one too.
+    """
+
+    def __init__(self, problems: list[str]) -> None:
+        self.problems = list(problems)
+        super().__init__(
+            f"the Pass 1 answer cannot be used. {len(self.problems)} problem(s):\n"
+            + "\n".join(f"  - {p}" for p in self.problems)
+        )
+
+
+def _is_json_int(value: object) -> bool:
+    """True for a JSON integer. A bool is not one, although Python says it is."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _is_finite_number(value: object) -> bool:
+    """True for a finite JSON number. `json` accepts NaN and Infinity; we do not.
+
+    A JSON integer too large for a float is not one either: `math.isfinite` raises
+    OverflowError on it, and that would end the run in a traceback instead of a
+    problem that names the field, the year and the line (review F4).
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+def _shown(value: object) -> str:
+    """`value` for a problem message. An integer too large for a float is described
+    by its size, not printed: its repr can run to thousands of digits."""
+    if _is_json_int(value) and isinstance(value, int) and value.bit_length() > 1024:
+        return f"an integer of {value.bit_length()} bits, too large for a float"
+    return repr(value)
+
+
+def printed_line_problems(lines: object) -> list[str]:
+    """Every problem with one field's list of printed lines; [] when it is usable.
+
+    A line is a JSON object with a non-empty string `label`, a finite number
+    `value` and a positive integer `page`. Each problem names the line by its
+    0-based index; the caller adds the field and the year.
+    """
+    if not isinstance(lines, list):
+        return [(
+            f"must be a list of printed lines (label, value, page); [] means the "
+            f"filing prints no such row. Got {type(lines).__name__} {lines!r}."
+        )]
+    problems: list[str] = []
+    for index, line in enumerate(lines):
+        if not isinstance(line, dict):
+            problems.append(
+                f"line {index}: must be a JSON object with label, value and page, "
+                f"got {type(line).__name__} {line!r}.",
+            )
+            continue
+        for key in ("label", "value", "page"):
+            if key not in line:
+                problems.append(f"line {index}: key '{key}' is absent.")
+        if "label" in line and (not isinstance(line["label"], str) or not line["label"].strip()):
+            problems.append(
+                f"line {index}: 'label' must be the row's label as printed, a "
+                f"non-empty string, got {line['label']!r}.",
+            )
+        if "value" in line and not _is_finite_number(line["value"]):
+            problems.append(
+                f"line {index}: 'value' must be a finite JSON number, got {_shown(line['value'])}.",
+            )
+        if "page" in line and (not _is_json_int(line["page"]) or line["page"] < 1):
+            problems.append(
+                f"line {index}: 'page' must be a positive integer (a 1-based PDF "
+                f"page), got {line['page']!r}.",
+            )
+    return problems
+
+
+def figure_from_printed_lines(lines: object, field: str, where: str) -> float:
+    """The figure a field's printed lines make: their values, added together.
+
+    The one place a Pass 1 figure is formed, for both routes. An empty list is 0,
+    because it is the answer "the filing prints no such row". A malformed list
+    stops, naming `where` (the year or the balance sheet), the field and the line.
+
+    Raises:
+        Pass1ShapeError: when any line is malformed.
+    """
+    problems = printed_line_problems(lines)
+    if problems or not isinstance(lines, list):
+        raise Pass1ShapeError([f"{where}, '{field}': {p}" for p in problems])
+    return math.fsum(float(line["value"]) for line in lines)
+
+
+def check_row_from_printed_lines(lines: object, field: str, where: str) -> float | None:
+    """A check row's printed figure, or None when its list is empty.
+
+    For the five rows read only to check the reading (gross_profit,
+    operating_income, total_assets, total_liabilities_and_equity; net_income is a
+    figure and goes through figure_from_printed_lines). An empty list here is not
+    a printed 0: the check either skips and says "not printed" (gross profit,
+    operating income) or fails and says "not extracted" (the two totals). A 0 the
+    filing never printed must not appear as a printed figure (rule 3; review F1, F2).
+
+    Raises:
+        Pass1ShapeError: when any line is malformed.
+    """
+    if isinstance(lines, list) and not lines:
+        return None
+    return figure_from_printed_lines(lines, field, where)
+
+
+def _line_field_problems(
+    entry: dict[str, Any],
+    label: str,
+    fields: tuple[str, ...],
+    never_empty: tuple[str, ...],
+) -> list[str]:
+    """Every absent key and every malformed line among `fields` of one entry, and
+    every field in `never_empty` given as `[]`."""
+    problems: list[str] = []
+    for key in fields:
+        if key not in entry:
+            problems.append(
+                f"{label}: key '{key}' is absent. Write [] only for a row the "
+                "filing does not print.",
+            )
+            continue
+        problems += [f"{label}, '{key}': {p}" for p in printed_line_problems(entry[key])]
+        if key in never_empty and entry[key] == []:
+            problems.append(
+                f"{label}, '{key}': is [], and this row is never absent from a "
+                "filing. Read the printed row.",
+            )
+    return problems
+
+
+def pass1_problems(data: object) -> list[str]:
+    """Every shape problem in a Pass 1 answer; [] when it can be parsed.
+
+    Both routes run this before any figure is formed: route A's parser raises
+    Pass1ShapeError on a non-empty result, and route B's loader prefixes each
+    problem with the session file and the filing. An absent key is never read as
+    zero (rule 3). `latest_balance_sheet` must be present: `{}` is the answer for
+    "skip the balance sheet", and anything else must carry every key.
+    """
+    if not isinstance(data, dict):
+        return [f"the Pass 1 answer must be a JSON object, got {type(data).__name__}."]
+    problems: list[str] = []
+
+    if "historical_years" not in data:
+        problems.append("key 'pass1.historical_years' is absent.")
+    elif not isinstance(data["historical_years"], list) or not data["historical_years"]:
+        problems.append("'pass1.historical_years' must be a non-empty list.")
+    else:
+        for position, entry in enumerate(data["historical_years"]):
+            if not isinstance(entry, dict):
+                problems.append(f"historical_years[{position}] must be a JSON object.")
+                continue
+            if "year" not in entry:
+                label = f"historical_years[{position}]"
+                problems.append(f"{label}: key 'year' is absent.")
+            elif not _is_json_int(entry["year"]):
+                label = f"historical_years[{position}]"
+                problems.append(
+                    f"{label}: 'year' must be an integer, got {entry['year']!r}.",
+                )
+            else:
+                label = f"year {entry['year']}"
+            problems += _line_field_problems(
+                entry, label, PASS1_YEAR_LINE_FIELDS, PASS1_YEAR_NEVER_EMPTY_FIELDS,
+            )
+
+    if "latest_balance_sheet" not in data:
+        problems.append(
+            "key 'pass1.latest_balance_sheet' is absent. It is {} when the balance sheet "
+            "is skipped.",
+        )
+        return problems
+    balance = data["latest_balance_sheet"]
+    if not isinstance(balance, dict):
+        problems.append("'pass1.latest_balance_sheet' must be a JSON object.")
+        return problems
+    if not balance:
+        return problems  # {}: the balance sheet was not asked for
+    bs_label = "balance sheet"
+    if "year" not in balance:
+        problems.append("balance sheet: key 'year' is absent.")
+    elif not _is_json_int(balance["year"]) or balance["year"] <= 0:
+        problems.append(
+            f"balance sheet: 'year' must be a positive integer, got {balance['year']!r}.",
+        )
+    else:
+        bs_label = f"balance sheet {balance['year']}"
+    problems += _line_field_problems(balance, bs_label, PASS1_BALANCE_SHEET_LINE_FIELDS, ())
+    return problems
+
+
+# ---------------------------------------------------------------------------
+# Checks: the printed subtotals and totals against Python's sums
 # ---------------------------------------------------------------------------
 
+@dataclass(frozen=True)
+class _YearFigures:
+    """One Pass 1 year. `figures` holds every line field but the two optional check
+    rows, summed. `gross_profit` and `operating_income` are the printed check rows,
+    None when the answer's list was empty: the filing prints no such row, and that
+    check is skipped and says so. `lines` is the year's answer as read, so a failed
+    check can name the rows Python added."""
+
+    year: int
+    figures: dict[str, float]
+    gross_profit: float | None
+    operating_income: float | None
+    lines: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class _CheckFailure:
+    """One failed check, in two wordings.
+
+    `message` is for a human and for a Claude Code session following the skill:
+    the printed figure, Python's sum, the gap and the tolerance. `check`, the CLI
+    and route A's console print it. `retry_message` goes back to the model in route
+    A's retry: it names the check, the side and the rows Python added, and states
+    no amount. A model told the exact gap can add a row of that size, and Python
+    could not tell it was never printed (review F7; the orchestrator's round 2
+    decision 6).
+    """
+
+    message: str
+    retry_message: str
+
+
+# The component fields each check adds, in the order the formula reads.
+_GROSS_PROFIT_FIELDS: tuple[str, ...] = ("revenue", "cost_of_revenue")
+_OPERATING_INCOME_FIELDS: tuple[str, ...] = (
+    "revenue", "cost_of_revenue", "sga", "rd_expense", "other_operating_expense",
+)
+_NET_INCOME_FIELDS: tuple[str, ...] = _OPERATING_INCOME_FIELDS + (
+    "interest_income", "interest_expense", "other_non_operating", "tax_expense",
+)
+_ASSET_FIELDS: tuple[str, ...] = (
+    "cash", "short_term_investments", "accounts_receivable", "inventory",
+    "other_current_assets", "ppe_net", "goodwill", "intangible_assets",
+    "other_non_current_assets",
+)
+_LIABILITY_AND_EQUITY_FIELDS: tuple[str, ...] = (
+    "accounts_payable", "accrued_liabilities", "other_current_liabilities",
+    "short_term_debt", "long_term_debt", "other_non_current_liabilities", "total_equity",
+)
+
+_RETRY_HINT = (
+    "A row was misread, missed, or listed under two fields; read those rows "
+    "again from the filing."
+)
+
+
+def _rows_listed(lines: dict[str, Any], fields: tuple[str, ...]) -> str:
+    """The rows listed under `fields`, by label, field and page. No values."""
+    rows = [
+        f"'{line['label']}' ({field}, page {line['page']})"
+        for field in fields for line in lines[field]
+    ]
+    return "; ".join(rows) if rows else "no rows"
+
+
 def _validate_extracted_data(
-    llm_years: list[dict],
+    years: list[_YearFigures],
+    balance: BalanceSheet | None,
+    balance_lines: dict[str, Any] | None,
     fail_pct: float = 0.5,
-) -> list[str]:
-    """Arithmetic reconciliation of LLM-extracted I/S data.
+) -> list[_CheckFailure]:
+    """Check the reading: printed subtotals and totals against Python's sums.
 
-    Verifies that the LLM's stated subtotals (gross_profit, operating_income,
-    net_income) can be re-derived from the component line items it returned.
+    Income statement, each year: the printed gross profit, operating income and
+    net income rows against the figures the component fields give, failing above
+    `fail_pct` percent. Gross profit and operating income are skipped, and say so,
+    when the filing prints no such row. Balance sheet: the printed total assets row
+    against the mapped asset lines, and the printed total liabilities and equity
+    row against the mapped liability and equity lines (the noncontrolling interest
+    memos are in neither), failing when the difference exceeds 1 in the filing's
+    units, or when the total was not extracted (BalanceSheet.printed_total_check).
 
-    Returns a list of error descriptions (empty = all passed).
+    A check is a check, never a repair: nothing here changes a figure. Returns one
+    _CheckFailure per failure (empty = all passed); neither wording asks for a
+    figure to be changed to pass.
     """
     print(f"\n{'='*65}")
     print("EXTRACTED DATA VALIDATION — ARITHMETIC CHECK")
     print(f"{'='*65}")
-    print(f"  {'Year':<6}  {'Field':<18}  {'Stated':>10}  {'Derived':>10}  {'Diff':>9}  Status")
+    print(f"  {'Year':<6}  {'Field':<18}  {'Printed':>10}  {'Derived':>10}  {'Diff':>9}  Status")
     print(f"  {'-'*64}")
 
-    errors: list[str] = []
+    failures: list[_CheckFailure] = []
 
-    for yr in sorted(llm_years, key=lambda x: x["year"]):
-        year       = int(yr["year"])
-        rev        = float(yr.get("revenue",                   0))
-        cogs       = float(yr.get("cost_of_revenue",           0))
-        gp_stated  = float(yr.get("gross_profit",              0))
-        sga        = float(yr.get("sga",                       0))
-        rd         = float(yr.get("rd_expense",                0))
-        other_opex = float(yr.get("other_operating_expense",   0))
-        ebit_stated= float(yr.get("operating_income",         0))
-        int_exp    = float(yr.get("interest_expense",          0))
-        int_inc    = float(yr.get("interest_income",           0))
-        other_nop  = float(yr.get("other_non_operating",       0))
-        tax        = float(yr.get("tax_expense",               0))
-        ni_stated  = float(yr.get("net_income",                0))
+    for yr in sorted(years, key=lambda y: y.year):
+        f = yr.figures
+        year = yr.year
+        rev, cogs = f["revenue"], f["cost_of_revenue"]
+        sga, rd, other_opex = f["sga"], f["rd_expense"], f["other_operating_expense"]
+        int_exp, int_inc = f["interest_expense"], f["interest_income"]
+        other_nop, tax = f["other_non_operating"], f["tax_expense"]
 
         # DA is broken out of other_opex in the IS model (net zero on EBIT),
         # so the raw-JSON check excludes DA to avoid double-counting.
@@ -368,35 +718,114 @@ def _validate_extracted_data(
         ebit_derived = gp_derived - sga - rd - other_opex
         ni_derived   = ebit_derived + int_inc - int_exp + other_nop - tax
 
-        for label, stated, derived, formula in [
-            ("Gross Profit", gp_stated, gp_derived,
-             f"revenue({rev:,.0f}) - cost_of_revenue({cogs:,.0f})"),
-            ("Oper. Income", ebit_stated, ebit_derived,
-             f"gross_profit({gp_derived:,.0f}) - sga({sga:,.0f}) - rd_expense({rd:,.0f}) - other_operating_expense({other_opex:,.0f})"),
-            ("Net Income", ni_stated, ni_derived,
-             f"operating_income({ebit_derived:,.0f}) + interest_income({int_inc:,.0f}) - interest_expense({int_exp:,.0f}) + other_non_operating({other_nop:,.0f}) - tax_expense({tax:,.0f})"),
-        ]:
-            if stated == 0 and derived == 0:
+        # (label, field, printed row or None, derived, formula with figures,
+        #  formula with field names only, the component fields)
+        checks: list[tuple[str, str, float | None, float, str, str, tuple[str, ...]]] = [
+            ("Gross Profit", "gross_profit", yr.gross_profit, gp_derived,
+             f"revenue({rev:,.0f}) - cost_of_revenue({cogs:,.0f})",
+             "revenue - cost_of_revenue", _GROSS_PROFIT_FIELDS),
+            ("Oper. Income", "operating_income", yr.operating_income, ebit_derived,
+             f"revenue({rev:,.0f}) - cost_of_revenue({cogs:,.0f}) - sga({sga:,.0f}) - rd_expense({rd:,.0f}) - other_operating_expense({other_opex:,.0f})",
+             "revenue - cost_of_revenue - sga - rd_expense - other_operating_expense",
+             _OPERATING_INCOME_FIELDS),
+            ("Net Income", "net_income", f["net_income"], ni_derived,
+             f"operating_income({ebit_derived:,.0f}) + interest_income({int_inc:,.0f}) - interest_expense({int_exp:,.0f}) + other_non_operating({other_nop:,.0f}) - tax_expense({tax:,.0f})",
+             ("revenue - cost_of_revenue - sga - rd_expense - other_operating_expense "
+              "+ interest_income - interest_expense + other_non_operating - tax_expense"),
+             _NET_INCOME_FIELDS),
+        ]
+
+        for label, field, stated, derived, formula, formula_names, fields in checks:
+            if stated is None:
+                print(f"  {year:<6}  {label:<18}  {'(none)':>10}  {derived:>10,.0f}  "
+                      f"{'':>9}  SKIP: not printed (the filing prints no {field} row)")
                 continue
-            diff     = stated - derived
-            base     = abs(stated) if stated else abs(derived)
-            diff_pct = abs(diff) / base * 100 if base else 0.0
-            if diff_pct > fail_pct:
-                status = "FAIL"
-                errors.append(
-                    f"[{year}] {label}: stated={stated:,.0f} but derived={derived:,.0f} "
-                    f"(diff={diff:+,.0f}). Derivation: {formula} = {derived:,.0f}. "
-                    f"Fix the component fields so they reconcile to your stated {label}."
-                )
-            elif diff_pct > 0.5:
-                status = "WARN"
-            else:
+            diff = stated - derived
+            if diff == 0:
                 status = "OK"
+            else:
+                base = abs(stated) if stated != 0 else abs(derived)
+                status = "FAIL" if abs(diff) / base * 100 > fail_pct else "OK"
             print(f"  {year:<6}  {label:<18}  {stated:>10,.0f}  {derived:>10,.0f}  {diff:>+9,.0f}  {status}")
+            if status == "FAIL":
+                failures.append(_CheckFailure(
+                    message=(
+                        f"[{year}] {label}: printed={stated:,.0f} but the component "
+                        f"fields give {derived:,.0f} (diff={diff:+,.0f}; the check "
+                        f"allows {fail_pct}%). Derivation: {formula} = {derived:,.0f}. "
+                        f"{_RETRY_HINT}"
+                    ),
+                    retry_message=(
+                        f"[{year}] {label}: the printed {field} row "
+                        f"({_rows_listed(yr.lines, (field,))}) does not agree with "
+                        f"{formula_names}, each field taken as Python's total of its rows. "
+                        f"Rows Python added: {_rows_listed(yr.lines, fields)}. {_RETRY_HINT}"
+                    ),
+                ))
+
+    if balance is not None and balance_lines is not None:
+        bs = balance
+        assets_formula = (
+            f"cash({bs.cash_and_equivalents:,.0f}) + short_term_investments({bs.short_term_investments:,.0f}) "
+            f"+ accounts_receivable({bs.accounts_receivable:,.0f}) + inventory({bs.inventory:,.0f}) "
+            f"+ other_current_assets({bs.other_current_assets:,.0f}) + ppe_net({bs.ppe_net:,.0f}) "
+            f"+ goodwill({bs.goodwill:,.0f}) + intangible_assets({bs.intangible_assets:,.0f}) "
+            f"+ other_non_current_assets({bs.other_non_current_assets:,.0f})"
+        )
+        le_formula = (
+            f"accounts_payable({bs.accounts_payable:,.0f}) + accrued_liabilities({bs.accrued_liabilities:,.0f}) "
+            f"+ other_current_liabilities({bs.other_current_liabilities:,.0f}) + short_term_debt({bs.short_term_debt:,.0f}) "
+            f"+ long_term_debt({bs.long_term_debt:,.0f}) + other_non_current_liabilities({bs.other_non_current_liabilities:,.0f}) "
+            f"+ total_equity({bs.total_equity:,.0f})"
+        )
+        for label, side, field, printed, mapped, difference, formula, fields in (
+            ("Total Assets", "assets", "total_assets", bs.printed_total_assets,
+             bs.total_assets, bs.printed_total_assets_difference, assets_formula,
+             _ASSET_FIELDS),
+            ("Total L + E", "liabilities and equity", "total_liabilities_and_equity",
+             bs.printed_total_liabilities_and_equity, bs.total_liabilities_and_equity,
+             bs.printed_total_liabilities_and_equity_difference, le_formula,
+             _LIABILITY_AND_EQUITY_FIELDS),
+        ):
+            status = BalanceSheet.printed_total_check(difference)
+            printed_text = "(none)" if printed is None else f"{printed:,.0f}"
+            diff_text = "" if difference is None else f"{difference:+,.0f}"
+            print(f"  {bs.year:<6}  {label:<18}  {printed_text:>10}  {mapped:>10,.0f}  {diff_text:>9}  {status}")
+            if status == "OK":
+                continue
+            if printed is None:
+                failures.append(_CheckFailure(
+                    message=(
+                        f"[{bs.year}] Balance sheet {label}: the printed {field} row was "
+                        "not extracted (the answer lists no row for it), so the "
+                        f"{side} side cannot be checked. Every balance sheet prints "
+                        "this total; read its row."
+                    ),
+                    retry_message=(
+                        f"[{bs.year}] Balance sheet, {side} side: the printed {field} "
+                        "row was not extracted (the answer lists no row for it). "
+                        "Every balance sheet prints this total; read its row."
+                    ),
+                ))
+                continue
+            failures.append(_CheckFailure(
+                message=(
+                    f"[{bs.year}] Balance sheet {label}: printed {field}={printed_text} "
+                    f"but the mapped lines sum to {mapped:,.0f} (diff={diff_text}; the "
+                    f"check allows {BALANCE_CHECK_TOLERANCE:,.0f} in the filing's "
+                    f"units, for rounding). Mapped: {formula}. {_RETRY_HINT}"
+                ),
+                retry_message=(
+                    f"[{bs.year}] Balance sheet, {side} side: the printed {field} row "
+                    f"({_rows_listed(balance_lines, (field,))}) does not agree with "
+                    f"Python's total of the rows listed under {', '.join(fields)}. Rows Python "
+                    f"added: {_rows_listed(balance_lines, fields)}. {_RETRY_HINT}"
+                ),
+            ))
 
     print(f"\n{'='*65}")
 
-    return errors
+    return failures
 
 
 # ---------------------------------------------------------------------------
@@ -638,40 +1067,73 @@ def _parse_financials_response(
     json_str: str,
     ticker: str,
     company_name: str,
-) -> tuple[FinancialStatements, list[str]]:
-    """Parse Pass 1 JSON → FinancialStatements + validation errors."""
-    data = json.loads(json_str)
-    validation_errors = _validate_extracted_data(data.get("historical_years", []))
+) -> tuple[FinancialStatements, list[_CheckFailure]]:
+    """Parse Pass 1 JSON → FinancialStatements + failed checks.
 
+    Every figure is `figure_from_printed_lines` over the field's printed lines, and
+    every key is read with `[]` after `pass1_problems` has proved it present: an
+    absent key, a malformed line or an empty net_income raises Pass1ShapeError
+    naming the field, the year and the line (rule 3). The five check rows go
+    through `check_row_from_printed_lines`, so an empty one is None, never a
+    printed 0. A failed check is returned, never repaired: the figures are kept as
+    read.
+
+    Raises:
+        json.JSONDecodeError: the text is not JSON.
+        Pass1ShapeError: an absent key or a malformed printed line.
+    """
+    data = json.loads(json_str)
+    problems = pass1_problems(data)
+    if problems:
+        raise Pass1ShapeError(problems)
+
+    years: list[_YearFigures] = []
     income_statements: list[IncomeStatement] = []
     balance_sheets: list[BalanceSheet] = []
     cash_flow_statements: list[CashFlowStatement] = []
 
-    for yr in data.get("historical_years", []):
-        year = int(yr["year"])
+    for entry in data["historical_years"]:
+        year = entry["year"]
+        f = {
+            key: figure_from_printed_lines(entry[key], key, f"year {year}")
+            for key in PASS1_YEAR_LINE_FIELDS if key not in _YEAR_CHECK_ROWS
+        }
+        years.append(_YearFigures(
+            year=year,
+            figures=f,
+            gross_profit=check_row_from_printed_lines(
+                entry["gross_profit"], "gross_profit", f"year {year}",
+            ),
+            operating_income=check_row_from_printed_lines(
+                entry["operating_income"], "operating_income", f"year {year}",
+            ),
+            lines=entry,
+        ))
 
         income_statements.append(IncomeStatement(
             year=year,
-            revenue=float(yr.get("revenue", 0)),
-            cost_of_revenue=float(yr.get("cost_of_revenue", 0)),
-            sga=float(yr.get("sga", 0)),
-            rd_expense=float(yr.get("rd_expense", 0)),
-            depreciation_amortization=float(yr.get("depreciation_amortization", 0)),
-            other_operating_expense=float(yr.get("other_operating_expense", 0)) - float(yr.get("depreciation_amortization", 0)),
-            interest_expense=float(yr.get("interest_expense", 0)),
-            interest_income=float(yr.get("interest_income", 0)),
-            other_non_operating=float(yr.get("other_non_operating", 0)),
-            tax_expense=float(yr.get("tax_expense", 0)),
-            diluted_shares_outstanding=float(yr.get("diluted_shares", 0)),
+            revenue=f["revenue"],
+            cost_of_revenue=f["cost_of_revenue"],
+            sga=f["sga"],
+            rd_expense=f["rd_expense"],
+            depreciation_amortization=f["depreciation_amortization"],
+            # Backlog item 10, unchanged by P11a: D&A is taken out of the summed
+            # other operating expense here, in the parser.
+            other_operating_expense=f["other_operating_expense"] - f["depreciation_amortization"],
+            interest_expense=f["interest_expense"],
+            interest_income=f["interest_income"],
+            other_non_operating=f["other_non_operating"],
+            tax_expense=f["tax_expense"],
+            diluted_shares_outstanding=f["diluted_shares"],
         ))
 
         # Reconstruct CFS so cash_from_operations == cfo exactly
-        cfo = float(yr.get("cfo", 0))
-        net_income = float(yr.get("net_income", 0))
-        da = float(yr.get("depreciation_amortization", 0))
-        sbc = float(yr.get("sbc", 0))
-        capex = float(yr.get("capex", 0))
-        delta_wc = float(yr.get("change_in_working_capital", 0))
+        cfo = f["cfo"]
+        net_income = f["net_income"]
+        da = f["depreciation_amortization"]
+        sbc = f["sbc"]
+        capex = f["capex"]
+        delta_wc = f["change_in_working_capital"]
         other_ops = cfo - net_income - da - sbc - delta_wc   # residual
 
         cash_flow_statements.append(CashFlowStatement(
@@ -692,43 +1154,53 @@ def _parse_financials_response(
             other_financing_activities=0.0,
         ))
 
-    # Parse latest_balance_sheet (single object, not per-year)
-    bs_data = data.get("latest_balance_sheet", {})
-    if bs_data and bs_data.get("year"):
-        # The two noncontrolling interest lines, each as printed, read with no
-        # fallback (rule 3; backlog item 1 is the reads that have one). An absent
-        # or null key stays None, which means "not extracted";
-        # analysis/dcf.py:total_noncontrolling_interest stops on it, naming the
-        # key. A filing that prints no such line is answered with an explicit 0.
-        # They are not added here: the sum is Python's, in that one function.
-        nci_nonredeemable_raw = bs_data.get("noncontrolling_interest_nonredeemable")
-        nci_redeemable_raw = bs_data.get("noncontrolling_interest_redeemable")
-        nci_nonredeemable = (
-            None if nci_nonredeemable_raw is None else float(nci_nonredeemable_raw)
-        )
-        nci_redeemable = None if nci_redeemable_raw is None else float(nci_redeemable_raw)
-        balance_sheets.append(BalanceSheet(
-            year=int(bs_data.get("year", 0)),
-            cash_and_equivalents=float(bs_data.get("cash", 0)),
-            short_term_investments=float(bs_data.get("short_term_investments", 0)),
-            accounts_receivable=float(bs_data.get("accounts_receivable", 0)),
-            inventory=float(bs_data.get("inventory", 0)),
-            other_current_assets=float(bs_data.get("other_current_assets", 0)),
-            ppe_net=float(bs_data.get("ppe_net", 0)),
-            goodwill=float(bs_data.get("goodwill", 0)),
-            intangible_assets=float(bs_data.get("intangible_assets", 0)),
-            other_non_current_assets=float(bs_data.get("other_non_current_assets", 0)),
-            accounts_payable=float(bs_data.get("accounts_payable", 0)),
-            short_term_debt=float(bs_data.get("short_term_debt", 0)),
+    # latest_balance_sheet: {} means it was not asked for; anything else carries
+    # every key (pass1_problems). The two noncontrolling interest memos and the two
+    # printed totals are each their own printed lines, in no total: the NCI sum is
+    # analysis/dcf.py:total_noncontrolling_interest's, and the totals only check.
+    bs_data = data["latest_balance_sheet"]
+    balance: BalanceSheet | None = None
+    if bs_data:
+        bs_year = bs_data["year"]
+        b = {
+            key: figure_from_printed_lines(bs_data[key], key, f"balance sheet {bs_year}")
+            for key in PASS1_BALANCE_SHEET_LINE_FIELDS
+            if key not in _BALANCE_SHEET_CHECK_ROWS
+        }
+        balance = BalanceSheet(
+            year=bs_year,
+            cash_and_equivalents=b["cash"],
+            short_term_investments=b["short_term_investments"],
+            accounts_receivable=b["accounts_receivable"],
+            inventory=b["inventory"],
+            other_current_assets=b["other_current_assets"],
+            ppe_net=b["ppe_net"],
+            goodwill=b["goodwill"],
+            intangible_assets=b["intangible_assets"],
+            other_non_current_assets=b["other_non_current_assets"],
+            accounts_payable=b["accounts_payable"],
+            short_term_debt=b["short_term_debt"],
             current_portion_lt_debt=0.0,
-            accrued_liabilities=float(bs_data.get("accrued_liabilities", 0)),
-            other_current_liabilities=float(bs_data.get("other_current_liabilities", 0)),
-            long_term_debt=float(bs_data.get("long_term_debt", 0)),
-            other_non_current_liabilities=float(bs_data.get("other_non_current_liabilities", 0)),
-            total_equity=float(bs_data.get("total_equity", 0)),
-            noncontrolling_interest_nonredeemable=nci_nonredeemable,
-            noncontrolling_interest_redeemable=nci_redeemable,
-        ))
+            accrued_liabilities=b["accrued_liabilities"],
+            other_current_liabilities=b["other_current_liabilities"],
+            long_term_debt=b["long_term_debt"],
+            other_non_current_liabilities=b["other_non_current_liabilities"],
+            total_equity=b["total_equity"],
+            noncontrolling_interest_nonredeemable=b["noncontrolling_interest_nonredeemable"],
+            noncontrolling_interest_redeemable=b["noncontrolling_interest_redeemable"],
+            printed_total_assets=check_row_from_printed_lines(
+                bs_data["total_assets"], "total_assets", f"balance sheet {bs_year}",
+            ),
+            printed_total_liabilities_and_equity=check_row_from_printed_lines(
+                bs_data["total_liabilities_and_equity"], "total_liabilities_and_equity",
+                f"balance sheet {bs_year}",
+            ),
+        )
+        balance_sheets.append(balance)
+
+    validation_errors = _validate_extracted_data(
+        years, balance, bs_data if balance is not None else None,
+    )
 
     financials = FinancialStatements(
         ticker=ticker or data.get("ticker", ""),
@@ -955,7 +1427,12 @@ def _run_financials_pass(
     if debug:
         print(f"\n{'='*65}\nPASS 1 RAW RESPONSE\n{'='*65}\n{raw}\n{'='*65}\n")
 
-    # Parse + Validate + Retry loop
+    # Parse + Validate + Retry loop. Three kinds of answer go back to the model:
+    # text that is not JSON, an answer with an absent key or a malformed printed
+    # line (Pass1ShapeError), and an answer whose printed subtotals or totals fail
+    # their check. Each retry asks the model to READ the rows again; none asks it
+    # to change a figure so that a check passes (rule 1). After the last retry,
+    # the first two stop the run, and a failed check is shown and kept.
     MAX_RETRIES = 2
     json_str = _extract_json(raw)
 
@@ -983,34 +1460,69 @@ def _run_financials_pass(
             )
             json_str = _extract_json(raw2)
             continue
+        except Pass1ShapeError as exc:
+            print(f"\n  [Pass 1 shape error] {exc}")
+            if attempt >= MAX_RETRIES:
+                raise
+            print(f"  Retrying — asking {resolution.provider.upper()} to supply the "
+                  f"missing keys and lines (retry {attempt + 1}/{MAX_RETRIES})...")
+            error_list = "\n".join(f"  - {p}" for p in exc.problems)
+            fix_prompt = (
+                "The following JSON does not have the shape the schema requires.\n\n"
+                "PROBLEMS:\n" + error_list + "\n\n"
+                "Every field except 'year' is a list of printed lines, each "
+                '{"label": ..., "value": ..., "page": ...}, and an empty list means '
+                "the filing prints no such row. Read the missing rows from the "
+                "filing and return the whole JSON with every key present. Each value "
+                "is one figure printed on its row; do not add rows together. Return "
+                "ONLY the corrected JSON.\n\n"
+                + json_str
+            )
+            # The filing goes with the retry: the prompt asks for rows to be read
+            # from it, and a model that cannot see it can only make one up.
+            raw2, in2, out2 = _call_llm(
+                system_prompt, fix_prompt, resolution, pdf_bytes=pdf_bytes,
+            )
+            if in2 or out2:
+                print(f"  [Pass 1] Retry tokens — input: {in2:,}  output: {out2:,}")
+            json_str = _extract_json(raw2)
+            continue
 
         # Validation passed
         if not val_errors:
             return financials
 
-        # Validation failed — feedback loop
+        # A check failed. The figures are kept and the failure is shown; it is
+        # never repaired here.
         if attempt >= MAX_RETRIES:
-            print(f"\n  [Pass 1 WARN] Validation errors remain after {MAX_RETRIES} retries:")
-            for e in val_errors:
-                print(f"    {e}")
+            print(f"\n  [Pass 1 FAIL] Checks still fail after {MAX_RETRIES} retries. "
+                  "The figures are kept as read and the failures are shown:")
+            for failure in val_errors:
+                print(f"    {failure.message}")
             return financials
 
-        print(f"\n  [Pass 1] Validation errors — sending feedback "
+        print(f"\n  [Pass 1] Checks failed — asking for the rows to be read again "
               f"(retry {attempt + 1}/{MAX_RETRIES})...")
-        error_list = "\n".join(f"  - {e}" for e in val_errors)
+        # The retry wording names each failed check, its side and the rows Python
+        # added, and states no amount (review F7): a model told the gap can write a
+        # row of that size, and no check could tell it was never printed.
+        error_list = "\n".join(f"  - {failure.retry_message}" for failure in val_errors)
         fix_prompt = (
-            "The following JSON has arithmetic errors in the income statement.\n\n"
-            "ERRORS:\n" + error_list + "\n\n"
-            "Fix so these reconcile exactly:\n"
-            "  gross_profit = revenue - cost_of_revenue\n"
-            "  operating_income = gross_profit - sga - rd_expense - other_operating_expense\n"
-            "  net_income = operating_income + interest_income - interest_expense "
-            "+ other_non_operating - tax_expense\n\n"
-            "Use ONLY numbers from the original filing. Return ONLY the corrected JSON.\n\n"
+            "Python added up the printed lines in the following JSON and compared "
+            "the sums with the subtotals and totals the filing prints. These "
+            "checks failed:\n\n"
+            "FAILED CHECKS:\n" + error_list + "\n\n"
+            "A failed check means a row was misread, missed, or listed under two "
+            "fields. Read the statement rows again from the filing, and correct a "
+            "line only where it does not match the row printed in the filing. Do "
+            "NOT change any value to make a check pass. If every line matches the "
+            "filing, return it unchanged; the failure will be shown as it is. "
+            "Return ONLY the JSON.\n\n"
             + json_str
         )
+        # The filing goes with the retry, as above: rows are re-read from it.
         raw2, in2, out2 = _call_llm(
-            system_prompt, fix_prompt, resolution,
+            system_prompt, fix_prompt, resolution, pdf_bytes=pdf_bytes,
         )
         if in2 or out2:
             print(f"  [Pass 1] Retry tokens — input: {in2:,}  output: {out2:,}")
@@ -1398,8 +1910,14 @@ def parse_pass1(
     ticker: str,
     company_name: str,
 ) -> tuple[FinancialStatements, list[str]]:
-    """Parse a Pass 1 answer into statements plus arithmetic validation errors."""
-    return _parse_financials_response(json_str, ticker, company_name)
+    """Parse a Pass 1 answer into statements plus one message per failed check.
+
+    The messages are the full wording (printed figure, Python's sum, the gap), the
+    one route B's `check` and the CLI print. Route A's retry uses the wording
+    without amounts, inside `_run_financials_pass`.
+    """
+    financials, failures = _parse_financials_response(json_str, ticker, company_name)
+    return financials, [failure.message for failure in failures]
 
 
 def parse_pass2(json_str: str) -> list[NonRecurringItem]:

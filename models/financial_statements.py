@@ -2,6 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+# The balance sheet check's tolerance, in the filing's own units (a filing in
+# millions: 1 million). A printed total and the sum of the lines mapped under it
+# may differ by rounding and by nothing more: the user's decision of 2026-10-02,
+# "if the balance sheet check doesn't pass, just fail it and show it". It decides
+# a status, never a figure, and every output that shows the status names it.
+BALANCE_CHECK_TOLERANCE = 1.0
+
 
 @dataclass
 class NonRecurringItem:
@@ -196,6 +203,15 @@ class BalanceSheet:
     noncontrolling_interest_nonredeemable: float | None = None
     noncontrolling_interest_redeemable: float | None = None
 
+    # Memo: the two totals the filing PRINTS, each read off its total row, used
+    # only to check the reading. They are in no total and no figure: the check
+    # compares each with the sum of the mapped lines above (`total_assets`, and
+    # `total_liabilities + total_equity`). None is not a zero default: it means
+    # "not extracted" (also what an empty list of printed lines gives), and the
+    # check then FAILs saying so instead of passing (rule 3).
+    printed_total_assets: float | None = None
+    printed_total_liabilities_and_equity: float | None = None
+
     # Derived
     @property
     def total_debt(self) -> float:
@@ -214,6 +230,48 @@ class BalanceSheet:
     @property
     def balance_check_difference(self) -> float:
         return self.total_assets - (self.total_liabilities + self.total_equity)
+
+    @property
+    def total_liabilities_and_equity(self) -> float:
+        """The sum of the mapped liability and equity lines. The NCI memos are not in it."""
+        return self.total_liabilities + self.total_equity
+
+    @property
+    def printed_total_assets_difference(self) -> float | None:
+        """Printed total assets minus the mapped asset lines. None: total not extracted."""
+        if self.printed_total_assets is None:
+            return None
+        return self.printed_total_assets - self.total_assets
+
+    @property
+    def printed_total_liabilities_and_equity_difference(self) -> float | None:
+        """Printed total L+E minus the mapped L+E lines. None: total not extracted."""
+        if self.printed_total_liabilities_and_equity is None:
+            return None
+        return self.printed_total_liabilities_and_equity - self.total_liabilities_and_equity
+
+    @staticmethod
+    def printed_total_check(difference: float | None) -> str:
+        """'OK', 'FAIL' or 'FAIL: not extracted' for one printed-total difference.
+
+        FAIL when the difference exceeds BALANCE_CHECK_TOLERANCE, which is 1 in the
+        filing's own units: rounding, and nothing more. The user decided on
+        2026-10-02 that a balance sheet that does not pass is failed and shown,
+        never repaired. The one threshold for the parser, the CLI and the page.
+
+        None (the printed total was not extracted) fails too, and says why: every
+        balance sheet prints both totals, so a missing one is a reading that did
+        not happen, never a pass and never a printed 0 (review F1).
+        """
+        if difference is None:
+            return "FAIL: not extracted"
+        return "FAIL" if abs(difference) > BALANCE_CHECK_TOLERANCE else "OK"
+
+    @staticmethod
+    def printed_total_tolerance() -> float:
+        """BALANCE_CHECK_TOLERANCE, for the page: a template reaches it through `bs`,
+        so the threshold it prints is the one `printed_total_check` applies."""
+        return BALANCE_CHECK_TOLERANCE
 
     @property
     def net_working_capital(self) -> float:

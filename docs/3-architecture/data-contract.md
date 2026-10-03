@@ -48,7 +48,7 @@ def ebit(self) -> float:
 | Type | Derived |
 |---|---|
 | `IncomeStatement` | `gross_profit`, `gross_margin`, `total_operating_expenses`, `ebit`, `operating_margin`, `ebt`, `net_income`, `effective_tax_rate`, `eps` |
-| `BalanceSheet` | `total_current_assets`, `total_assets`, `total_current_liabilities`, `total_liabilities`, `total_debt`, `net_debt`, `net_working_capital` |
+| `BalanceSheet` | `total_current_assets`, `total_assets`, `total_current_liabilities`, `total_liabilities`, `total_liabilities_and_equity`, `total_debt`, `net_debt`, `balance_check_difference`, `printed_total_assets_difference`, `printed_total_liabilities_and_equity_difference`, `net_working_capital` |
 | `CashFlowStatement` | `cash_from_operations`, `cash_from_investing`, `cash_from_financing`, `net_change_in_cash` |
 | `FinancialStatements` | `years`, `latest_year` |
 | `CAPMResult` | `cost_of_equity` |
@@ -61,8 +61,9 @@ def ebit(self) -> float:
    fields so it falls out. This is deliberate: it makes an inconsistent statement
    unrepresentable.
 2. **The extractor must not send a derived field.** `_parse_financials_response` reads
-   `operating_income` and `gross_profit` from the model **only to reconcile them**
-   against the computed values — never to store them. See
+   the printed `gross_profit`, `operating_income` and `net_income` rows **only to check
+   them** against the computed values — never to store them as figures (`net_income`
+   also starts the reconstructed cash flow, as before). See
    [extraction.md](extraction.md).
 3. **A derived property with a zero-guard is a rule 3 site.** `gross_margin`,
    `operating_margin`, `effective_tax_rate`, `eps`, `fcff_margin`,
@@ -126,16 +127,49 @@ outside equity (mezzanine). Pass 1 reads each from the key of the same name.
 - **Not summed on the dataclass.** The total is computed in one place,
   `analysis/dcf.py:total_noncontrolling_interest`, because the filing prints the parts and
   not the sum ([rule 1](../2-rules/rules.md)).
-- **`None` is not a zero default.** It means "not extracted": route A's parser leaves a part
-  `None` when its key is absent (no `.get(..., 0)`), and route B's loader refuses a session
-  file without either key. `total_noncontrolling_interest` stops on `None` or NaN, naming the
-  key and the year. A filing that prints no such line is extracted as an explicit `0`.
+- **`None` is not a zero default.** It means "not extracted". Since `P11a` neither route's
+  parser produces `None` here: each key is a list of printed lines, an absent key stops
+  the parse (`pass1_problems`), and `[]` (the filing prints no such line) reads as 0. A
+  `BalanceSheet` built any other way may still hold `None`. `total_noncontrolling_interest` stops on `None` or NaN, naming the
+  key and the year. A filing that prints no such line is extracted as an empty list,
+  `[]`, which reads as `0`.
 - **Where it goes.** `run_dcf` puts the total in `DCFResult.noncontrolling_interest`, a
   keyword-only field with **no default**, beside `noncontrolling_interest_source` (which
   names both parts and their figures), and `DCFResult.equity_value` is
   `enterprise_value − net_debt − noncontrolling_interest`. The CLI's balance sheet block and
   `templates/_statements.html` print the two parts as memo lines, `not extracted` when
   `None`.
+
+## `BalanceSheet` printed totals — two memo fields, used only to check the reading
+
+`printed_total_assets: float | None = None` and
+`printed_total_liabilities_and_equity: float | None = None`, added by `P11a` on the
+user's decision of 2026-10-02 (backlog item 56, option A). Each is the total row the
+filing prints, read from the Pass 1 keys `total_assets` and
+`total_liabilities_and_equity`, and summed from its printed lines like every other field.
+
+- **Memos.** In no total and no figure. They exist so the balance check, and both
+  outputs, can put the printed total beside the sum of the mapped lines. They are not
+  `total_assets` (a derived property: the sum of the nine mapped asset fields) and not
+  `total_liabilities_and_equity` (derived: `total_liabilities + total_equity`; the
+  noncontrolling interest memos are in neither).
+- **The check.** `printed_total_assets_difference` and
+  `printed_total_liabilities_and_equity_difference` are printed minus mapped, `None` when
+  the printed total is `None`. `BalanceSheet.printed_total_check(difference)` returns
+  `FAIL` when the difference exceeds `BALANCE_CHECK_TOLERANCE` (1.0, in the filing's
+  units: rounding, nothing more), `OK` otherwise, and `FAIL: not extracted` for `None`. It is
+  the one threshold, used by the parser's check, `cli.py` and
+  `templates/_statements.html`. A failure is shown and the figures are kept.
+- **`None` is not a zero default.** It means "not extracted", and the check then says
+  `FAIL: not extracted`, never `OK`. The Pass 1 keys are required, so an absent key
+  stops the parse. **`[]` for a total is `None`, not `0`** (`P11a` round 2, review F1):
+  `claude_extractor.py:check_row_from_printed_lines` maps it, because every balance
+  sheet prints both totals and a `0` the filing never printed must not be shown as a
+  printed figure. The check fails, the outputs print `not extracted` and no gap, and the
+  run continues.
+- **The threshold on the page.** `BalanceSheet.printed_total_tolerance()` returns
+  `BALANCE_CHECK_TOLERANCE`, so `templates/_statements.html` prints the threshold the
+  check applies rather than a copy of it.
 
 ## `ProjectionAssumptions` — `None` is meaningful
 

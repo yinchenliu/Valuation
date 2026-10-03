@@ -18,10 +18,10 @@ so the same two JSON answers give the same `FinancialStatements` and the same
 **This module holds no model client, no prompt text and no credential.**
 `docs/2-rules/llm-boundary.md`: `claude_extractor.py` is the only file that may.
 
-The file format, `session-extraction-v1`:
+The file format, `session-extraction-v2`:
 
     {
-      "format": "session-extraction-v1",
+      "format": "session-extraction-v2",
       "ticker": "CMG",
       "company_name": "Chipotle Mexican Grill, Inc.",
       "extracted_by": {"model": null, "tool": "Claude Code", "date": null},
@@ -40,8 +40,13 @@ The file format, `session-extraction-v1`:
       ]
     }
 
-`pass1` and `pass2` hold exactly the JSON objects route A parses. `pages_read` is a
-locator (1-based PDF pages); it is recorded and printed, never computed from.
+`pass1` and `pass2` hold exactly the JSON objects route A parses. In `pass1` every
+figure is a list of the printed lines that make it up, each
+`{"label": ..., "value": ..., "page": ...}`, and Python adds them
+(`figure_from_printed_lines`); `[]` means the filing prints no such row. A
+`session-extraction-v1` file, which held one figure per field, is refused by name:
+it must be extracted again. `pages_read` is a locator (1-based PDF pages); it is
+recorded and printed, never computed from.
 `extracted_by.model` is the model ID the session declares; it cannot be verified and
 is printed as declared. `extracted_by.tool` and `extracted_by.date` are a record for a
 human reader and are not read by this module.
@@ -71,14 +76,13 @@ from typing import Any
 
 from ingestion.claude_extractor import (
     _NRI_SCHEMA,
-    PASS1_BALANCE_SHEET_FIELDS,
-    PASS1_YEAR_FIELDS,
     FilingPlan,
     ProviderResolution,
     describe_resolution,
     merge_filing_extractions,
     parse_pass1,
     parse_pass2,
+    pass1_problems,
     pass1_prompts,
     pass2_prompts,
     plan_filings,
@@ -86,7 +90,13 @@ from ingestion.claude_extractor import (
 from ingestion.filings import fingerprint_filings, parse_pdf_args
 from models.financial_statements import FinancialStatements, NonRecurringItem
 
-SESSION_FORMAT = "session-extraction-v1"
+SESSION_FORMAT = "session-extraction-v2"
+
+# The format before P11a. Its Pass 1 holds one figure per field, and some of those
+# figures were sums the session worked out; v2 holds the printed lines and Python
+# adds them. A v1 file is refused by name rather than read, because its figures
+# cannot be turned back into the lines they came from.
+_SESSION_FORMAT_V1 = "session-extraction-v1"
 
 # Every key a Pass 2 item must carry, read from the schema route A's Pass 2 prompt is
 # built from, so the two cannot drift. `claude_extractor.py` exports no public name
@@ -161,7 +171,8 @@ class SessionFiling:
 class SessionExtraction:
     """A session file, checked, parsed and merged exactly as route A merges.
 
-    `validation_errors` are route A's arithmetic reconciliation errors. They are
+    `validation_errors` are route A's failed checks (printed subtotals and totals
+    against Python's sums of the lines). They are
     returned, not raised: route A keeps its figures with a warning after its last
     retry, and both routes must reach the same result from the same JSON.
     """
@@ -209,6 +220,16 @@ def _read_session_json(path: Path) -> dict[str, Any]:
     if "format" not in data:
         raise ValueError(
             f"{path}: key 'format' is absent. Expected {SESSION_FORMAT!r}.",
+        )
+    if data["format"] == _SESSION_FORMAT_V1:
+        raise ValueError(
+            f"{path}: format is {_SESSION_FORMAT_V1!r}, and this reader understands "
+            f"{SESSION_FORMAT!r} only. The Pass 1 shape changed: in "
+            f"{SESSION_FORMAT!r} every figure is the list of printed lines that make "
+            "it up (label, value, page), and Python adds them, where a v1 file "
+            "holds one figure per field, some of them sums the session worked out. "
+            "A v1 file cannot be converted. Extract the filing again in the new "
+            "shape: run `plan`, then `prompt --pass 1` prints the schema.",
         )
     if data["format"] != SESSION_FORMAT:
         raise ValueError(
@@ -391,54 +412,29 @@ def _pages(where: str, entry: dict[str, Any], which: str) -> tuple[list[str], tu
 
 
 def _pass1_problems(where: str, plan: FilingPlan, pass1: object) -> list[str]:
-    """Every key the Pass 1 schema names must be present.
+    """Pass 1's shape, then what this filing's plan asks of it.
 
-    Stricter than route A on purpose. Route A's parser reads an absent field as 0
-    (backlog item 1), so a key the model left out becomes a zero that reads as a
-    measurement. Here an explicit 0 is accepted and an absent key stops, naming
-    the filing, the year and the key. Route A's parser is unchanged.
+    The shape is `pass1_problems`, the same function route A's parser runs: every
+    key the schema names is present, and every printed line has a non-empty
+    `label`, a finite number `value` and a positive integer `page`. Each problem
+    names the year, the field and the line index; this function adds the session
+    file and the filing. An absent key is never read as zero (rule 3), and an empty
+    list is the answer "the filing prints no such row". Then the plan: the years it
+    asks for, each once, and the balance sheet exactly when it asks for one.
     """
     if pass1 is None:
         return [f"{where}: 'pass1' is null — Pass 1 has not been written."]
     if not isinstance(pass1, dict):
         return [f"{where}: 'pass1' must be a JSON object, not {type(pass1).__name__}."]
 
-    problems: list[str] = []
+    problems = [f"{where}, {p}" for p in pass1_problems(pass1)]
 
-    if "historical_years" not in pass1:
-        problems.append(f"{where}: key 'pass1.historical_years' is absent.")
-    elif not isinstance(pass1["historical_years"], list) or not pass1["historical_years"]:
-        problems.append(f"{where}: 'pass1.historical_years' must be a non-empty list.")
-    else:
-        years: list[int] = []
-        for position, year_entry in enumerate(pass1["historical_years"]):
-            if not isinstance(year_entry, dict):
-                problems.append(
-                    f"{where}: pass1.historical_years[{position}] must be a JSON object.",
-                )
-                continue
-            if "year" in year_entry and _is_int(year_entry["year"]):
-                label = f"year {year_entry['year']}"
-                years.append(year_entry["year"])
-            else:
-                label = f"historical_years[{position}]"
-            for key in PASS1_YEAR_FIELDS:
-                if key not in year_entry:
-                    problems.append(
-                        f"{where}, {label}: key '{key}' is absent. Write 0 only for "
-                        "a line the filing does not report.",
-                    )
-                elif key == "year":
-                    if not _is_int(year_entry[key]):
-                        problems.append(
-                            f"{where}, {label}: 'year' must be an integer, got "
-                            f"{year_entry[key]!r}.",
-                        )
-                elif not _is_number(year_entry[key]):
-                    problems.append(
-                        f"{where}, {label}: '{key}' must be a number, got "
-                        f"{year_entry[key]!r}.",
-                    )
+    historical = pass1.get("historical_years")  # its shape is reported just above
+    if isinstance(historical, list) and historical:
+        years = [
+            entry["year"] for entry in historical
+            if isinstance(entry, dict) and "year" in entry and _is_int(entry["year"])
+        ]
         duplicates = sorted({y for y in years if years.count(y) > 1})
         if duplicates:
             problems.append(
@@ -450,51 +446,17 @@ def _pass1_problems(where: str, plan: FilingPlan, pass1: object) -> list[str]:
                 f"{list(plan.target_years)}, and pass1 gives {sorted(years)}.",
             )
 
-    if "latest_balance_sheet" not in pass1:
-        problems.append(f"{where}: key 'pass1.latest_balance_sheet' is absent.")
-        return problems
-    balance = pass1["latest_balance_sheet"]
-    if not isinstance(balance, dict):
-        problems.append(f"{where}: 'pass1.latest_balance_sheet' must be a JSON object.")
-        return problems
-
-    if not plan.include_bs:
-        if balance != {}:
+    balance = pass1.get("latest_balance_sheet")  # its shape is reported just above
+    if isinstance(balance, dict):
+        if not plan.include_bs and balance != {}:
             problems.append(
                 f"{where}: the plan takes the balance sheet from another filing, so "
                 "'pass1.latest_balance_sheet' must be {}.",
             )
-        return problems
-
-    if not balance:
-        problems.append(
-            f"{where}: the plan takes the balance sheet from this filing, and "
-            "'pass1.latest_balance_sheet' is empty.",
-        )
-        return problems
-    # The balance sheet's year is read only after a presence test: an absent year and
-    # a wrong one are reported in different words, and neither falls back to a value.
-    bs_label = "balance sheet"
-    if "year" not in balance:
-        problems.append(f"{where}, balance sheet: key 'year' is absent.")
-    elif not _is_int(balance["year"]) or balance["year"] <= 0:
-        problems.append(
-            f"{where}, balance sheet: 'year' must be a positive integer, got "
-            f"{balance['year']!r}.",
-        )
-    if "year" in balance and _is_int(balance["year"]):
-        bs_label = f"balance sheet {balance['year']}"
-    for key in PASS1_BALANCE_SHEET_FIELDS:
-        if key == "year":
-            continue
-        if key not in balance:
+        if plan.include_bs and not balance:
             problems.append(
-                f"{where}, {bs_label}: key '{key}' is absent. Write 0 only for a "
-                "line the filing does not report.",
-            )
-        elif not _is_number(balance[key]):
-            problems.append(
-                f"{where}, {bs_label}: '{key}' must be a number, got {balance[key]!r}.",
+                f"{where}: the plan takes the balance sheet from this filing, and "
+                "'pass1.latest_balance_sheet' is empty.",
             )
     return problems
 
@@ -935,7 +897,7 @@ def cmd_prompt(path: Path, index: int, which_pass: int) -> int:
 
 
 def cmd_check(path: Path) -> int:
-    """Run the loader. Exit 0 clean, 1 arithmetic errors only, 2 the loader stops."""
+    """Run the loader. Exit 0 clean, 1 failed checks only, 2 the loader stops."""
     session_path = path.resolve()
     try:
         session = load_session_extraction(session_path)
@@ -954,13 +916,15 @@ def cmd_check(path: Path) -> int:
           f"balance sheet(s): {[b.year for b in session.financials.balance_sheets]}  |  "
           f"non-recurring items: {len(session.non_recurring)}")
     if session.validation_errors:
-        print(f"\n{len(session.validation_errors)} arithmetic validation error(s). "
-              "Route A would keep these figures with a warning after its last retry; "
-              "read the page again and correct the field that was misread:")
+        print(f"\n{len(session.validation_errors)} failed check(s). Route A keeps "
+              "these figures and shows the failure after its last retry. Read the "
+              "rows again; correct a line only where it does not match the row "
+              "printed in the filing, never to make a check pass:")
         for error in session.validation_errors:
             print(f"  - {error}")
         return 1
-    print("\nClean: every key present, every PDF unchanged, arithmetic reconciles.")
+    print("\nClean: every key present, every line well formed, every PDF unchanged, "
+          "and every printed subtotal and total agrees with Python's sum of the lines.")
     return 0
 
 

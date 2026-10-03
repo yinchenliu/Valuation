@@ -16,7 +16,7 @@ Per PDF, two focused calls rather than one broad one.
 | | Pass 1 — statements | Pass 2 — non-recurring |
 |---|---|---|
 | Reads | the statement tables | MD&A and the Notes |
-| Prompt emphasises | number precision, arithmetic reconciliation | citation to a note, one-time nature |
+| Prompt emphasises | number precision; every figure as the printed rows that make it up (`P11a`) | citation to a note, one-time nature |
 | Returns | I/S, C/F, optionally B/S, for target years | `list[NonRecurringItem]` |
 | Context given | the PDF | the PDF **plus** Pass 1's I/S summary |
 | Schema | `_FINANCIALS_SCHEMA` | `_NRI_SCHEMA` |
@@ -181,7 +181,7 @@ Added by `P9a-session-route` on the user's decision of 2026-10-02.
 
 | Route | Who reads the PDF | Code | Cost |
 |---|---|---|---|
-| A | the model, over the API | `extract_multi_year` / `extract_financials` | two API calls per filing, plus up to two retries |
+| A | the model, over the API | `extract_multi_year` / `extract_financials` | two API calls per filing, plus up to two Pass 1 retries. **Each shape or check retry re-sends the whole PDF** (since `P11a`), so a failing Pass 1 costs up to three times its input tokens per filing; a JSON-syntax repair retry sends no PDF |
 | B | Claude, inside a Claude Code session | `ingestion/session_extraction.py` | the session only; no API call |
 
 Both routes answer the **same prompts** with the **same JSON**, and both go through the
@@ -193,7 +193,9 @@ same functions from that JSON onwards. Each of these has one definition, in
 | which years and which balance sheet from which filing | `plan_filings` → `list[FilingPlan]` |
 | the Pass 1 prompt for a plan | `pass1_prompts(plan)` |
 | the Pass 2 prompt for a plan and that filing's own Pass 1 result | `pass2_prompts(plan, financials)` |
-| Pass 1 JSON → statements + arithmetic errors | `parse_pass1` |
+| Pass 1 JSON → every absent key and malformed printed line | `pass1_problems` |
+| one field's printed lines → its figure | `figure_from_printed_lines` |
+| Pass 1 JSON → statements + failed checks | `parse_pass1` |
 | Pass 2 JSON → items | `parse_pass2` |
 | per-filing results → one result | `merge_filing_extractions` (several filings only; one filing is returned as parsed, by both routes) |
 
@@ -216,14 +218,14 @@ session file and says the model ID is as declared and cannot be verified; the cr
 label says no API call was made. `_build_claude_client` refuses this resolution, so it
 can never be used to make a call.
 
-### The session file, `session-extraction-v1`
+### The session file, `session-extraction-v2`
 
 JSON, UTF-8, one file per company run, kept under `extractions/` (git-ignored: it is
 data).
 
 ```json
 {
-  "format": "session-extraction-v1",
+  "format": "session-extraction-v2",
   "ticker": "CMG",
   "company_name": "Chipotle Mexican Grill, Inc.",
   "extracted_by": {"model": null, "tool": "Claude Code", "date": null},
@@ -244,12 +246,62 @@ data).
 ```
 
 - `pass1` is the object `_FINANCIALS_SCHEMA` describes, `pass2` the one `_NRI_SCHEMA`
-  describes: exactly what route A parses. Stored as JSON objects, not strings.
+  describes: exactly what route A parses. Stored as JSON objects, not strings. The
+  shape of `pass1` is below.
 - `pages_read` holds the 1-based PDF pages read for each pass. A locator: recorded and
   printed, never computed from.
 - `extracted_by.model` is printed as declared. `tool` and `date` are a record for a
   human and are not read.
 - A single bare PDF gets `fiscal_year` 0, exactly as `parse_pdf_args` gives route A.
+
+**Two formats, one readable.** `session-extraction-v1` (before `P11a`) held one figure
+per Pass 1 field, and some of those figures were sums the session worked out: capex,
+the working capital change, short-term debt, every catch-all. `session-extraction-v2`
+holds the printed lines and Python adds them. **A v1 file stops**, with a message that
+names both formats and says the filing must be extracted again; it cannot be converted,
+because a sum cannot be turned back into the rows it came from. The CLI's pickle cache
+marker changed for the same reason (`p6-inputs-keyed-v1` → `p11a-printed-lines-v1`).
+
+### The Pass 1 shape: printed lines, and Python's sums
+
+`P11a`, on the user's decision of 2026-10-02 ("go with option A"). Both routes.
+
+Every Pass 1 field except `year` (and the four strings `ticker`, `company_name`,
+`currency`, `units`) is a **list of printed lines**:
+
+```json
+"capex": [
+  {"label": "Payments for property and equipment", "value": 26642, "page": 23},
+  {"label": "Payments for business acquisitions, net of cash acquired", "value": 53, "page": 23}
+]
+```
+
+- `label` is the row's label as printed, a non-empty string. `value` is the one figure
+  printed on that row for that year, under the field's sign rule, a finite JSON number.
+  `page` is the 1-based PDF page, a positive integer. All three are required.
+- **The model never adds, subtracts or nets rows.** `figure_from_printed_lines` adds a
+  field's values; it is the only place a Pass 1 figure is formed, for both routes.
+- `[]` says the filing prints no such row, and for a component field reads as 0. The
+  check rows differ (`P11a` round 2): `[]` on `gross_profit` or `operating_income` is
+  `None` and that check is skipped as "not printed"; `[]` on `total_assets` or
+  `total_liabilities_and_equity` is `None` and the check fails as "not extracted"; `[]`
+  on `net_income` **stops** like an absent key, because every income statement prints
+  it and it starts the cash flow statement. No path turns an unprinted row into a
+  printed `0`. **An absent key stops**
+  (rule 3), naming the field and the year; a malformed line stops naming the field, the
+  year and the line index. Both are found by `pass1_problems` before any figure is
+  formed, and route A's parser raises them as `Pass1ShapeError`, a `ValueError`.
+- Every row of the income statement down to net income, and of the balance sheet, is
+  accounted for once: in one field, or inside a printed total listed in one field. An
+  unmapped row goes into its section's catch-all. A row printed between liabilities
+  and equity (a redeemable noncontrolling interest) belongs to
+  `other_non_current_liabilities`. The two noncontrolling interest memos copy a row
+  that already belongs to another field, and are in no total.
+- **Check fields**, read only to check the reading: `gross_profit`, `operating_income`
+  and `net_income` in each year, and `total_assets` and `total_liabilities_and_equity`
+  in the balance sheet, each the printed row. `gross_profit` may be `[]`: Walmart prints
+  none. `operating_income` may be `[]` too. `net_income` may not: it is also the cash
+  flow's starting figure, as before.
 
 ### The subcommands
 
@@ -262,7 +314,7 @@ into `filings`.
 | `locate FILE --filing N` | after checking the PDF's sha256, prints the pages holding a statement title (income/operations/earnings, balance sheet, cash flows) and the non-recurring keywords, with match counts. A *title line* is a line holding the title, no digit, at most 80 characters. **Page numbers and counts only, never a figure** |
 | `text FILE --filing N --pages A-B` | after checking the PDF's sha256, prints the text layer of those 1-based pages under `=== page N ===` markers. At most 20 pages per call. Added because the Read tool cannot render PDF pages on the macOS machine (no `pdftoppm`) |
 | `prompt FILE --filing N --pass 1\|2` | prints the system and user prompt from `pass1_prompts` / `pass2_prompts`. Pass 2 requires that filing's Pass 1 to pass the key check first, because its summary is built from it |
-| `check FILE` | runs the loader; prints every problem, the arithmetic table, and the validation errors. Exit 0 clean, 1 arithmetic validation errors only, 2 the loader stops |
+| `check FILE` | runs the loader; prints every problem, the check table, and the failed checks. Exit 0 clean, 1 failed checks only, 2 the loader stops |
 
 ### The loader, and what stops it
 
@@ -273,7 +325,8 @@ its plan, sha256, size and pages read).
 It raises `ValueError`, naming the file, the filing index and its PDF, and the year and
 key where one applies, when:
 
-- `format` is not `session-extraction-v1`;
+- `format` is not `session-extraction-v2` (a `session-extraction-v1` file is refused by
+  name: extract it again);
 - `ticker` is absent or empty, or `company_name` is absent or not a string;
 - `extracted_by.model` is absent or empty;
 - the filings are not in `plan_filings` order, or a recorded `target_years` or
@@ -282,9 +335,10 @@ key where one applies, when:
 - a filing's `pass1` or `pass2` is `null`;
 - a PDF is missing, or its sha256 differs from `pdf_sha256` (rule 5);
 - **any key `_FINANCIALS_SCHEMA` names is absent** from a `historical_years` entry, or
-  from `latest_balance_sheet` when `include_bs` is true, or holds a non-number. An
-  explicit `0` is accepted. **This is stricter than route A on purpose**: route A's
-  parser reads an absent field as zero (backlog item 1), and is unchanged;
+  from `latest_balance_sheet` when it is not `{}`, or is not a list of printed lines, or
+  a line lacks `label`, `value` or `page` or holds one of the wrong kind (an empty
+  label, a `NaN`, `"12"` or `true` value, a page below 1). An empty list is accepted.
+  These are `pass1_problems`, the same check route A's parser runs since `P11a`;
 - a year appears twice in one `pass1`, or the plan's `target_years` is set and the
   years in `pass1` differ from it;
 - `include_bs` is true and `latest_balance_sheet` is empty or has no positive `year`,
@@ -299,10 +353,10 @@ key where one applies, when:
 
 Every problem is collected before stopping, so one `check` lists them all.
 
-**Arithmetic validation errors are returned, not raised.** Route A keeps its figures
-with a warning after its last retry; route B must reach the same result from the same
-JSON. Route B has no retry loop: `check` prints the errors, and the session reads the
-page again and corrects the file.
+**Failed checks are returned, not raised.** Route A keeps its figures and shows the
+failures after its last retry; route B must reach the same result from the same JSON.
+Route B has no retry loop: `check` prints the failures, and the session reads the rows
+again and corrects a line only where it does not match the filing.
 
 ### The fiscal year is verified against the filing
 
@@ -317,22 +371,55 @@ With the remedy, the 2025-01-03 filing is asked for 2024, and its column is head
 
 ## Validation
 
-`_validate_extracted_data` (`:240`) reconciles the model's arithmetic against its own
-figures:
+`_validate_extracted_data` checks the **reading**, after Python has added each field's
+printed lines. Both checks print in one table, `EXTRACTED DATA VALIDATION — ARITHMETIC
+CHECK`.
 
-- stated `gross_profit` against `revenue − cost_of_revenue`
-- stated `operating_income` against the computed EBIT
-- stated `net_income` against the computed one
+**Income statement, every year.** The printed subtotal rows against the figures the
+component fields give, failing above **0.5%**:
 
-It reports a **percentage difference**. It is deterministic Python checking the model's
-work, which is correct and must stay.
+- `gross_profit` against `revenue − cost_of_revenue`. **Skipped, and the table says
+  "not printed", when `gross_profit` is `[]`**: the filing prints no such row;
+- `operating_income` against `revenue − cost_of_revenue − sga − rd_expense −
+  other_operating_expense`, **skipped and labelled the same way when it is `[]`**;
+- `net_income` against that EBIT `+ interest_income − interest_expense +
+  other_non_operating − tax_expense`.
 
-**It is a check, not a repair.** It must never adjust a figure to close a
-reconciliation. A reconciliation that fails is a reason to stop, not to edit.
+**Balance sheet, when there is one.** The printed `total_assets` row against the sum of
+the nine mapped asset fields (`BalanceSheet.total_assets`), and the printed
+`total_liabilities_and_equity` row against the sum of the seven mapped liability and
+equity fields (`BalanceSheet.total_liabilities_and_equity`). The noncontrolling interest
+memos count in neither. **A row fails when the difference exceeds 1 in the filing's
+units** (`BALANCE_CHECK_TOLERANCE`, `BalanceSheet.printed_total_check`): rounding, and
+nothing more. A total given as `[]` is not extracted, and its row reads `FAIL: not
+extracted` with no gap. The CLI's old 2% tolerance, which on Walmart's 284,668 of assets hid up to
+5,693, is gone.
 
-The stated values (`gross_profit`, `operating_income`, `net_income`) are read **only for
-this comparison**. They are never stored — those are derived properties on
-`IncomeStatement`. See [data-contract.md](data-contract.md).
+**It is a check, not a repair.** Nothing adjusts a figure to close a gap, and the prompt
+no longer asks the model to: "Adjust catch-alls to close any gap" was deleted by `P11a`,
+because a model-plugged balance sheet can never fail its check. On the user's decision
+of 2026-10-02 ("if the balance sheet check doesn't pass, just fail it and show it"), a
+failure is shown in the CLI, in `check`, and on the statements page with the word
+`FAIL`, and the figures are kept.
+
+**Route A's retries.** Three kinds of answer go back to the model, up to two retries:
+text that is not JSON, an answer with an absent key or a malformed line, and an answer
+whose checks fail. Each retry asks the model to **read the rows again**; none asks it
+to change a value so that a check passes. The shape retry and the check retry send the
+PDF again with the prompt, since `P11a` run 3: a model asked to read rows from a filing it
+cannot see can only make them up. The JSON repair retry is syntactic and sends none.
+**The check retry states no amount** (`P11a` round 2, review F7): it names each failed
+check, its side, and the rows Python added (label, field, page), but not the printed
+figure, the sum or the gap. A model told the exact gap can add a row of that size, and
+no check could tell it was never printed (a defence by page is backlog item 59). The
+full wording, with the gap, is what `check`, the CLI and route A's console print: each
+failure is a `_CheckFailure` holding both.
+After the last retry the first two stop the run, and a failed check is shown and kept.
+
+The check rows (`gross_profit`, `operating_income`, `net_income`, the two balance sheet
+totals) are read **only for this comparison**. They are never stored as figures: the
+first three are derived properties on `IncomeStatement`, and the two totals are memo
+fields on `BalanceSheet`. See [data-contract.md](data-contract.md).
 
 ## Known defects in this file
 
@@ -340,8 +427,8 @@ Full detail in [9-reference/refactor-backlog.md](../9-reference/refactor-backlog
 
 | | |
 |---|---|
-| **46 `.get(field, 0)` calls** | a figure the model omitted becomes `0.0` and flows through the whole valuation. Item 1 |
-| **D&A subtracted inside the parser** (`:479`) | an accounting decision taken silently in a parser, on two defaulted values. Item 10 |
-| **16 mypy errors** | the most of any file. Item 11 |
-| **`except Exception`** (`:795`) | collapses every Pass 2 failure into one string. Item 8 |
+| ~~46 `.get(field, 0)` calls~~ | **closed in the Pass 1 parser by `P11a`**: every key is read with `[]` after `pass1_problems` proved it present. The file's census count fell 49 → 2; the two left are the Gemini token counts (`getattr(…, 0) or 0`), not figures. Item 1 |
+| **D&A subtracted inside the parser** (`_parse_financials_response`) | an accounting decision taken silently in a parser, now on two summed figures that are never defaulted. Item 10 |
+| **1 mypy error** (measured at `P11a`; 16 when this table was written) | `_call_claude`'s `content` list against the SDK's TypedDict. Item 11 |
+| **`except Exception`** (`_run_nri_pass`) | collapses every Pass 2 failure into one string, and after the retry returns `[]`, "no items". Item 8 |
 | **Provider default divergence** | above. Item 13 |

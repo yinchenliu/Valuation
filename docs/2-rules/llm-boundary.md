@@ -41,15 +41,30 @@ prompt, or an API key. `ingestion/session_extraction.py` holds none of them: it 
 prompts from the wrappers and parses through them. Nothing under `analysis/`, `models/`
 or `api/` imports `anthropic` or `google.genai`.
 
-Route B's loader is stricter than route A's parser about absence: a key the schema names
-must be present in the session file (an explicit `0` is accepted). Route A's parser still
-reads an absent key as zero (backlog item 1).
+Since `P11a` both routes are equally strict about absence: every key the Pass 1 schema
+names must be present, and every printed line well formed (`pass1_problems`), before
+any figure is formed. An empty list is accepted and reads as 0 for a component field.
+On a check row it is never a printed 0: `gross_profit` and `operating_income` skip their
+check as "not printed", the two balance sheet totals fail as "not extracted", and an
+empty `net_income` stops, because it starts the cash flow statement (`P11a` round 2).
 
 ## What the model may return
 
 Only values that are **printed on a page of the filing**, plus the locator that says
 where. In route B the locator is recorded: `pages_read` names the 1-based PDF pages read
 for each pass, and is printed beside the figures, never computed from.
+
+**Pass 1 returns printed lines, and Python adds them.** Every Pass 1 field is a list of
+the rows that make it up, each `{"label", "value", "page"}`: the label as printed, the
+one figure printed on that row, and its 1-based PDF page.
+`claude_extractor.py:figure_from_printed_lines` adds a field's values, and it is the
+only place a Pass 1 figure is formed. The user decided this on 2026-10-02 ("go with
+option A", backlog item 56), which is the approval `AGENTS.md` requires for a change to
+what the model returns. Before it, the prompt asked the model to add printed lines
+together (capex, the working capital change, SG&A, short-term debt, every catch-all), to
+subtract for gross profit, and to "adjust catch-alls to close any gap" on the balance
+sheet. All of that is gone. The check rows (`gross_profit`, `operating_income`,
+`net_income`, `total_assets`, `total_liabilities_and_equity`) are each one printed row.
 
 | Pass | Returns | Source in the PDF |
 |---|---|---|
@@ -60,7 +75,8 @@ Pass 1's balance sheet keys `noncontrolling_interest_nonredeemable` and
 `noncontrolling_interest_redeemable` were added by `P10a` on the user's approval of
 2026-10-02 ("item 48: fix"), as `AGENTS.md` requires for a new field. Each is one printed
 line; the filing prints no total, so `analysis/dcf.py:total_noncontrolling_interest` adds
-them, not the model.
+them, not the model. The keys `total_assets` and `total_liabilities_and_equity` were
+added by `P11a` under the decision above; they are read only to check the balance sheet.
 
 Pass 2 receives the Pass 1 income statement summary as context. That is an **anchor**,
 not a calculation input: it exists so the model cites items that reconcile to figures we
@@ -78,29 +94,33 @@ already hold, rather than inventing a line the statement does not have.
 does not refuse and it does not flag; it returns a plausible number in the right shape,
 and the shape is what the parser checks.
 
-## Where the two passes already cross the line
+## The checks, and the one place a pass still crosses the line
 
-Two places, both live today. Both are findings, recorded here so they are not
-rediscovered as new.
-
-**`_validate_extracted_data` reconciles arithmetic** (`claude_extractor.py:240`). It
-compares stated `gross_profit` against `revenue - cost_of_revenue` and reports a
-percentage difference. That is deterministic Python checking the model's arithmetic,
-which is correct and should stay. Note it is a **check**, not a repair: it must never
-adjust a figure to make the reconciliation close.
+**`_validate_extracted_data` checks the reading.** It compares each printed subtotal and
+total with Python's sum of the lines mapped under it: gross profit (skipped when the
+filing prints none), operating income and net income at 0.5%, and the balance sheet's
+two printed totals at 1 in the filing's units. Since `P11a` the subtotal is a row the
+model read and the components are rows the model read, so the check tests **reading**,
+not the model's arithmetic. It is a **check**, not a repair: it never adjusts a figure,
+and route A's retry asks the model to read the rows again, never to change a value so a
+check passes. That retry sends the PDF with it: a model told to re-read a filing it
+cannot see can only make the rows up. It names each failed check and the rows Python
+added, and **states no amount**: told the gap, a model can write a row of that size,
+and no check could tell it was never printed. A failure is shown and the figures are kept (the user, 2026-10-02: "if the
+balance sheet check doesn't pass, just fail it and show it").
 
 **The parser subtracts D&A from other operating expense**
-(`claude_extractor.py:479`):
+(`claude_extractor.py:_parse_financials_response`):
 
 ```python
-other_operating_expense=float(yr.get("other_operating_expense", 0))
-                       - float(yr.get("depreciation_amortization", 0)),
+other_operating_expense=f["other_operating_expense"] - f["depreciation_amortization"],
 ```
 
 This is a real accounting decision — whether the filing's "other operating expense"
-already contains D&A — taken silently inside a parser, on values that each default to
-zero. It belongs in `analysis/`, with its reasoning written down, and it must stop rather
-than default. See [docs/9-reference/refactor-backlog.md](../9-reference/refactor-backlog.md).
+already contains D&A — taken silently inside a parser. Since `P11a` both values are sums
+of printed lines and neither can default to zero. It still belongs in `analysis/`, with
+its reasoning written down. See
+[docs/9-reference/refactor-backlog.md](../9-reference/refactor-backlog.md), item 10.
 
 ## The one question for a reviewer
 
