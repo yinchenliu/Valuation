@@ -4,7 +4,7 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `24a9a90`, 2026-10-02**, on branch `main`, **on the macOS machine**
+**Measured at `048198b`, 2026-10-03**, on branch `main`, **on the macOS machine**
 (`.venv/bin/python`, Python 3.11.6). Every figure before `cde33cb` was measured on the
 Windows machine. **Twenty-seven work units accepted, and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; **five** times a reviewer or a
@@ -23,14 +23,14 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `24a9a90` (macOS) |
+| Gate | Command | Result at `048198b` (macOS) |
 |---|---|---|
-| Tests | `.venv/bin/python -m pytest -q` | **497 tests. 495 pass, 2 fail**: the 2 red on purpose, one in each `*_rule3_red.py` file |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **495 passed, 0 failed.** The first fully green gate on the macOS machine |
+| Tests | `.venv/bin/python -m pytest -q` | **497 tests. 455 pass, 42 fail**: 40 fixtures in the old Pass 1 shape (`P11a`, **known red**, `P11a-tests` rewrites them) and the 2 red on purpose |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **455 passed, 40 failed**, all 40 the known old-shape fixtures above |
 | Lint | `.venv/bin/python -m ruff check .` | **5 errors**, every one `BLE001` |
 | Types | `.venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **10 errors in 4 files**, 20 files checked |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
-| **Rule 3 census** | the grep at [rules.md:65](docs/2-rules/rules.md) | **114**: `P10a` deleted item 2's two lines. Under zsh, quote `'--include=*.py'` or the count reads 0 |
+| **Rule 3 census** | the grep at [rules.md:65](docs/2-rules/rules.md) | **67**: `P11a` replaced the Pass 1 parser's `.get(field, 0)` reads (114 at `24a9a90`). Under zsh, quote `'--include=*.py'` or the count reads 0 |
 | **Write guard** | `.venv/bin/python .claude/check_guard.py` | **48/48** |
 
 **There is a fourth gate now, and it is stricter than `import app` ever was.**
@@ -440,6 +440,11 @@ the headline. Re-ranked at `622262b`.
 started — **every one of them was found by running the code**, not by reading it. So were
 41 and 42, both found at `6e58f13` by a reviewer exhausting inputs rather than reading
 the branch.
+
+**Phase 11 (printed lines; Python sums) is in progress.** `P11a` is committed at
+`ae27f47`: every Pass 1 money field is a list of printed rows, Python sums, the
+balance-sheet plug is gone, and a failed balance check shows `FAIL`. Session files are
+`session-extraction-v2`. `P11a-tests` rewrites the 40 old-shape fixtures next.
 
 **Phase 10 (the user's fixes of 2026-10-02) is done at `24a9a90`.** `P10b` closed item
 45, `P10a` closed items 48 and 2, `P10c` closed item 43, and `P10-tests` repaired the 36
