@@ -92,6 +92,8 @@ rather than lying.
 | 57 | The upload page invites 10-Q PDFs, but a 10-Q with a year in its name always stops at the year check, with no remedy | — | `templates/upload.html`, `ingestion/filings.py` | **new, the `P10c` review's F7.** A 10-Q has no "fiscal year ended" cover line |
 | 58 | The CLI year remedy prints `YEAR:PATH` unquoted, and every filing name here has spaces | — | `ingestion/filings.py` | **new, the `P10c` review's F8.** Pasting it into a shell splits the path |
 | 59 | Nothing checks that a printed line's label and value appear on the page it cites | **silent** | `ingestion/` | **new, from the `P11a` review's F7.** A model can add a row the filing never printed to close a gap. `pdfplumber` could confirm each row's label and figure on its stated page, for both routes |
+| 60 | `session_extraction plan` still ends with "The fiscal year comes from the filename. Check each one against the filing's cover page", although `P10c` now checks it | — | `ingestion/session_extraction.py` | **new.** Message only; tells a session to do by hand what the code already does |
+| 61 | The `return financials` after Pass 1's retry loop cannot be reached | — | `ingestion/claude_extractor.py` | **new, found by the `P11a` tester.** Dead code |
 
 ---
 
