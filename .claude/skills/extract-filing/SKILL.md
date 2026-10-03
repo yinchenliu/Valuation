@@ -34,12 +34,11 @@ API model's rules.
 Read [docs/2-rules/llm-boundary.md](../../../docs/2-rules/llm-boundary.md) before you start.
 
 - **Write only figures printed on a page you read.** Never a figure you remember about
-  the company, never an estimate, never a figure computed from other figures. A sum the
-  prompt asks for, such as `capex` as PP&E purchases plus acquisitions, is the one
-  exception. Write both printed lines in your notes.
+  the company, never an estimate, never a figure computed from other figures. Where a
+  field is made of several rows, list each row; Python adds them.
 - **Never adjust a figure to make `check` pass.** An arithmetic error means you misread
-  or mismapped a line. Open the page again and find which one. The only exception is the
-  balance sheet catch-all rule the Pass 1 prompt states.
+  or mismapped a line. Open the page again and find which one. There is no exception:
+  the old rule that let the catch-alls close the balance sheet is gone.
 - **Units are the filing's units.** Most 10-Ks report in millions. Some, such as
   Chipotle, report in thousands. Copy the filing's scale and write it in the `units`
   field. Shares use the same scale as the money figures in that filing. If the money and
@@ -98,9 +97,35 @@ still asks for "fiscal year 2024". Read the column whose date ends that fiscal y
    pages 49 to 52. Record **PDF** page numbers, the ones `text` and `locate` use.
 4. Write the Pass 1 JSON object into `filings[N].pass1`, and the page numbers into
    `filings[N].pages_read.pass1`. Write a JSON object, not a string. Write every key the
-   schema names. Use `0` only for a line the filing does not report.
+   schema names.
+
+   **Every money field is a list of printed rows** (format `session-extraction-v2`):
+
+   ```json
+   "capex": [
+     {"label": "Payments for property and equipment", "value": 26642, "page": 23},
+     {"label": "Payments for business acquisitions, net of cash acquired", "value": 53, "page": 23}
+   ]
+   ```
+
+   - One row per printed line: its label as printed, the one figure printed for that
+     year under the field's sign rule, and its 1-based PDF page.
+   - **Never add, subtract or net rows yourself.** Python sums each list.
+   - `[]` means the filing prints no such row. Never omit a key.
+   - Every row belongs to exactly one field. A row that matches no named field goes
+     into its section's `other_*` list.
+   - `gross_profit`, `operating_income` and `net_income` are the printed subtotal rows.
+     Write `gross_profit: []` when the filing prints none.
+   - The balance sheet also takes the printed `total_assets` and
+     `total_liabilities_and_equity` rows.
 5. Run `SE check extractions/TICKER.json`. Pass 2 is still empty, so expect that stop.
    Fix every Pass 1 problem it reports by reading the page again.
+
+   **A balance sheet `FAIL` means a row was misread, missed, or listed twice.** The
+   message lists the rows Python added. Find the missing or extra row on the page.
+   **Never change a figure, or add a row the filing does not print, to make the totals
+   agree.** If the page really does not tie, leave the `FAIL`. The user decided on
+   2026-10-02 that a failed check is shown, with the figures kept.
 
 ### 3. Pass 2, for each filing N
 

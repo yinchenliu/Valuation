@@ -160,3 +160,41 @@ Change no other figure's definition.
 ## Backlog items this unit is NOT fixing
 
 Items 10, 44, 46, 49, 50, 51, 53, 55, 57, 58.
+
+---
+
+## Round 2 — amended by the orchestrator after review round 1
+
+The round 1 review (`.agent/journal/2026-10-03T1046-code_reviewer-p11a-printed-lines.md`)
+returned `changes_requested`. **F1 and F2 come from this assignment's sentence "an empty
+list … Python reads it as `0`"**, applied to rows the filing always prints. A `0` the
+filing never printed is rule 3. Replace that sentence's effect as follows. The
+orchestrator decided these on 2026-10-03, inside the user's option A:
+
+1. **F1 — printed totals.** An empty `total_assets` or `total_liabilities_and_equity`
+   list is `None` ("not extracted"), never `0`. The balance check shows `FAIL` and says
+   the total was not extracted. It must not print a printed figure of 0 or a gap equal to
+   the whole balance sheet.
+2. **F2 — `operating_income`.** An empty list means the filing prints no operating
+   income row. The check is skipped and labelled "not printed", exactly as for
+   `gross_profit`.
+3. **F2 — `net_income`.** An empty list is a stop, like an absent key: route A's retry,
+   then a stop; route B's loader stops naming the filing, year and field. Every income
+   statement prints net income, and it feeds `CashFlowStatement.net_income`, so a `0`
+   there would move every other operating cash flow line. **No path may put a `0` that
+   was not printed into the cash flow.**
+4. **F4.** A `value` too large for a float stops naming the field, year and line index,
+   not with an `OverflowError` traceback.
+5. **F5.** Remove the `WARN` branch that cannot fire from the new check code.
+6. **F7.** Route A's check retry names the failing total and the side, and lists the
+   rows Python added, but **does not state the gap amount**. A model told the exact gap
+   can add a row of that size, and Python cannot tell it was not printed. (A real
+   defence, checking each row against its page, is recorded as backlog item 59 for a
+   later unit.) The route B `check` message, read by a session that follows the skill,
+   keeps the gap.
+7. **F3, F6.** `docs/3-architecture/extraction.md`: the route A cost row says each
+   shape or check retry is a full-PDF call. `docs/3-architecture/data-contract.md:134`:
+   an empty list, not an explicit `0`.
+
+`.claude/skills/extract-filing/SKILL.md` was edited by the orchestrator, not by the
+programmer. Answer every finding by number in a new round 2 entry.
