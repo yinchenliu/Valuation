@@ -211,6 +211,21 @@ is also the user's approval of that change to the LLM boundary.
 | `P10b-capm-variance` | 45 | the constant-market stop names `market_returns` on every SciPy version | `test_capm.py` on macOS |
 | `P10c-fiscal-year` | 43 | a filename year the filing contradicts stops, naming both | `discover_filings` on `10K_filings/LHX` |
 
+## Phase 11 — the model reads printed lines; Python does every sum
+
+**Decided by the user on 2026-10-02** ("go with option A … if the balance sheet check
+doesn't pass, just fail it and show it"). Backlog item 56. Every Pass 1 money field
+becomes a list of the printed rows that make it up, and Python adds them. The prompt no
+longer asks the model to plug the balance sheet, so the balance check becomes a real
+test of the reading.
+
+| # | Criterion | Expected | Measured by |
+|---|---|---|---|
+| 1 | no prompt sentence asks the model to compute | 0 | a grep, each remaining hit explained |
+| 2 | both routes give equal statements from the same JSON | equal | the route equality test |
+| 3 | a dropped balance sheet row fails and is shown; the figures are kept | `FAIL` | a test |
+| 4 | a balance check difference above 1 unit is `FAIL`, not the old 2% `OK` | `FAIL` | the CLI and the result page |
+
 ---
 
 ## Rules for every phase
