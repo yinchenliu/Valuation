@@ -749,8 +749,26 @@ route stops with no credential. It did not stop. The run printed
 sure no API call is made" is false while `.env` holds the key. The label then also says
 `(environment)` for a key that came from the file.
 
-**Fix, when assigned.** `override=False`, so the environment wins and `env -u` works.
-Then `credential_source` can name the file or the environment truthfully.
+**Measured 2026-10-02**, with a probe that prints only whether the key is present after
+`load_dotenv`:
+
+| `.env` setting | shell unsets the key (`env -u`) | shell sets it empty (`ANTHROPIC_API_KEY=`) |
+|---|---|---|
+| `override=True` (today) | key present | key present |
+| `override=False` | key present | **key absent** |
+
+So with `override=True` **nothing in the shell can turn the key off**. With
+`override=False`, an empty value turns it off for one run. Unsetting it never does,
+because `load_dotenv` fills an absent variable from the file either way. An earlier
+version of this entry said `override=False` makes `env -u` work. That was wrong.
+
+**The keys themselves are not the problem.** `.env` holds three names.
+`ANTHROPIC_API_KEY` is the credential route A uses by default. `GEMINI_API_KEY` is read
+only when `-p gemini` is chosen. `DEEPSEEK_API_KEY` is read by no code in the repository.
+
+**Fix, when assigned.** `override=False`, and say in `docs/8-build/environment.md` that
+`ANTHROPIC_API_KEY=` (empty) is how to run with the key off. Then make
+`credential_source` say whether the key came from `.env` or from the shell.
 
 ## 47. The income statement shown has no interest income row · display
 

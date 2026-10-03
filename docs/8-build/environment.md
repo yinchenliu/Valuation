@@ -175,8 +175,9 @@ GEMINI_API_KEY=...
 `config.py` loads `.env` with `override=True`. So a key in `.env` replaces the same
 variable in the environment, and `env -u ANTHROPIC_API_KEY …` does **not** remove it.
 **Never rely on unsetting a variable to prevent a paid API call while `.env` holds the
-key.** To run with no credential, replace `ingestion.claude_extractor._call_llm` with a
-stub, or move `.env` aside. Backlog item 46.
+key.** Neither `env -u` nor an empty value works while `override=True`. To run with no
+credential, replace `ingestion.claude_extractor._call_llm` with a stub, or move `.env`
+aside. Backlog item 46 holds the measurement.
 
 ### What happens when nothing resolves
 

@@ -198,6 +198,19 @@ every credential removed and `_call_llm` disabled (`ad52e1a`, re-run by review).
 web routes gave the CLI's $28.84. 5: the stage 1 line and both pages name
 `Claude Code session`. 6 and 7: loader stop tests (`92549f8`, `a375dae`).
 
+## Phase 10 — the user's fixes of 2026-10-02
+
+The user asked on 2026-10-02 for three backlog items to be fixed, in their own words:
+"item 48: fix, item 45: fix, item 43: can get it from the filename, but need to verify
+against content of the file". Item 48 adds a field the model is asked to read, so this
+is also the user's approval of that change to the LLM boundary.
+
+| Unit | Item | Criterion | Measured by |
+|---|---|---|---|
+| `P10a-nci-bridge` | 48 | equity value = EV − net debt − noncontrolling interest; absence stops | a test with round numbers |
+| `P10b-capm-variance` | 45 | the constant-market stop names `market_returns` on every SciPy version | `test_capm.py` on macOS |
+| `P10c-fiscal-year` | 43 | a filename year the filing contradicts stops, naming both | `discover_filings` on `10K_filings/LHX` |
+
 ---
 
 ## Rules for every phase
