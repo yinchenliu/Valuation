@@ -4,7 +4,7 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `7058e25`, 2026-10-02, in a clean `git archive` copy** (P10c's round 2 files were uncommitted in the tree), on branch `main`, **on the macOS machine**
+**Measured at `1c24af8`, 2026-10-02**, on branch `main`, **on the macOS machine**
 (`.venv/bin/python`, Python 3.11.6). Every figure before `cde33cb` was measured on the
 Windows machine. **Twenty-three work units accepted, and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; **five** times a reviewer or a
@@ -23,10 +23,10 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `7058e25` (macOS) |
+| Gate | Command | Result at `1c24af8` (macOS) |
 |---|---|---|
-| Tests | `.venv/bin/python -m pytest -q` | **401 tests. 368 pass, 33 fail**: 31 fixtures without the new noncontrolling interest keys (`P10a`, **known red**, `P10-tests` repairs them) and 2 red on purpose |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **367 passed, 31 failed**, all 31 the `P10a` fixtures above. **The CAPM failure is gone** (`P10b`, item 45 closed) |
+| Tests | `.venv/bin/python -m pytest -q` | **401 tests. 363 pass, 38 fail**: 36 fixtures turned red on purpose (31 by `P10a`, 5 by `P10c`; **known red**, `P10-tests` repairs them) and 2 red on purpose |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **362 passed, 36 failed**, all 36 the known fixtures above. The CAPM failure is gone (`P10b`, item 45 closed) |
 | Lint | `.venv/bin/python -m ruff check .` | **5 errors**, every one `BLE001` |
 | Types | `.venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **10 errors in 4 files**, 20 files checked |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
@@ -441,9 +441,8 @@ started — **every one of them was found by running the code**, not by reading 
 the branch.
 
 **Phase 10 (the user's fixes of 2026-10-02) is in progress.** `P10b` (item 45) and
-`P10a` (items 48 and 2) are committed at `1ae0069` and `dd1e225`. `P10c` (item 43) is in
-its second round. `P10-tests` then repairs the 36 fixtures the three units turned red on
-purpose. Walmart's implied price is $28.02 with the new bridge.
+`P10a` (items 48 and 2) and `P10c` (item 43) are committed at `1ae0069`, `dd1e225` and
+`bf6eb20`. `P10-tests` repairs the 36 fixtures the three units turned red on purpose. Walmart's implied price is $28.02 with the new bridge.
 
 **Phase 9 ("two extraction routes, one parser") is done.** Route B works from the
 CLI since `ad52e1a` and from the web app since `be1c077`. The parse layer both routes
