@@ -211,7 +211,7 @@ is also the user's approval of that change to the LLM boundary.
 | `P10b-capm-variance` | 45 | the constant-market stop names `market_returns` on every SciPy version | `test_capm.py` on macOS |
 | `P10c-fiscal-year` | 43 | a filename year the filing contradicts stops, naming both | `discover_filings` on `10K_filings/LHX` |
 
-## Phase 11 — the model reads printed lines; Python does every sum
+## Phase 11 — the model reads printed lines; Python does every sum · **done at `P11a-tests`**
 
 **Decided by the user on 2026-10-02** ("go with option A … if the balance sheet check
 doesn't pass, just fail it and show it"). Backlog item 56. Every Pass 1 money field

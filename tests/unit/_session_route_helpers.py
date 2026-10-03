@@ -5,8 +5,9 @@ name starts with an underscore so pytest does not collect it.
 
 **Every figure here is written by hand, and every expected value in the two test
 files is read off this file, not off a rendered page.** The session file below is
-`session-extraction-v1` as the module docstring of `ingestion/session_extraction.py`
-lays it out: one filing, so `plan_filings` gives `target_years = null` and
+`session-extraction-v2` as the module docstring of `ingestion/session_extraction.py`
+lays it out (v1 until P11a; since then every Pass 1 figure is a list of printed
+rows, built by `tests/unit/_printed_lines.py` with the figures unchanged): one filing, so `plan_filings` gives `target_years = null` and
 `include_bs = true` (the routing table, `docs/3-architecture/extraction.md`; the same
 plan `tests/unit/test_session_extraction.py::one_filing` writes).
 
@@ -46,6 +47,8 @@ from ingestion.claude_extractor import (
     pass2_prompts,
 )
 from ingestion.price_fetcher import PriceData
+from ingestion.session_extraction import SESSION_FORMAT
+from tests.unit._printed_lines import printed_balance_sheet, printed_year
 
 # ---------------------------------------------------------------------------
 # The session file, by hand
@@ -84,25 +87,28 @@ EXCLUDED_ITEM_DESCRIPTION = "Hand-written low-confidence item for the route test
 
 
 def _year(year: int, k: int) -> dict[str, Any]:
-    return {"year": year} | {key: value * k for key, value in _BASE_YEAR.items()}
+    # P11a shape: each field one printed row, holding the base value times k.
+    return printed_year(year, {key: [value * k] for key, value in _BASE_YEAR.items()})
 
 
 def _balance_sheet(year: int) -> dict[str, Any]:
     # assets 100+50+80+60+10+300+200+40+20 = 860
     # liabilities 70+30+15+25+400+35 = 575; equity 285; 575 + 285 = 860.
-    return {
-        "year": year, "cash": 100, "short_term_investments": 50,
-        "accounts_receivable": 80, "inventory": 60, "other_current_assets": 10,
-        "ppe_net": 300, "goodwill": 200, "intangible_assets": 40,
-        "other_non_current_assets": 20, "accounts_payable": 70,
-        "accrued_liabilities": 30, "other_current_liabilities": 15,
-        "short_term_debt": 25, "long_term_debt": 400,
-        "other_non_current_liabilities": 35, "total_equity": 285,
-        # The two NCI memo lines (P10a): explicit 0, this company prints
-        # none. Required by the loader; never added to any total.
-        "noncontrolling_interest_nonredeemable": 0,
-        "noncontrolling_interest_redeemable": 0,
-    }
+    # P11a: the printed totals are those sums, 860 and 860.
+    return printed_balance_sheet(year, {
+        "cash": [100], "short_term_investments": [50],
+        "accounts_receivable": [80], "inventory": [60], "other_current_assets": [10],
+        "ppe_net": [300], "goodwill": [200], "intangible_assets": [40],
+        "other_non_current_assets": [20], "accounts_payable": [70],
+        "accrued_liabilities": [30], "other_current_liabilities": [15],
+        "short_term_debt": [25], "long_term_debt": [400],
+        "other_non_current_liabilities": [35], "total_equity": [285],
+        # The two NCI memo lines (P10a): [] (an explicit 0 before P11a), this
+        # company prints none. Required by the loader; never added to any total.
+        "noncontrolling_interest_nonredeemable": [],
+        "noncontrolling_interest_redeemable": [],
+        "total_assets": [860], "total_liabilities_and_equity": [860],
+    })
 
 
 def pass1_answer() -> dict[str, Any]:
@@ -136,7 +142,7 @@ def make_pdf(directory: Path) -> Path:
 def session_dict(pdf: Path) -> dict[str, Any]:
     data = pdf.read_bytes()
     return {
-        "format": "session-extraction-v1",
+        "format": SESSION_FORMAT,
         "ticker": TICKER,
         "company_name": COMPANY,
         "extracted_by": {"model": MODEL, "tool": "Claude Code", "date": "2026-10-02"},

@@ -76,6 +76,7 @@ edits another's.
 | 2026-10-03 | P11a-printed-lines | code_reviewer, r1 | `changes_requested` — F1 major: an empty printed total showed as a printed 0; F2 major: the same for `operating_income` / `net_income`, and a 0 net income reached the cash flow. **Both from the assignment's "[] reads as 0".** Upheld the PDF-sending retries | [entry](2026-10-03T1046-code_reviewer-p11a-printed-lines.md) |
 | 2026-10-03 | P11a-printed-lines | programmer, r2 | `ok` — F1-F7 per the orchestrator's decisions: empty totals "not extracted", empty operating income "not printed", empty net income stops; retry states no gap amount. Same 40 old-shape fixtures red | [entry](2026-10-03T1048-programmer-p11a-printed-lines-r2.md) |
 | 2026-10-03 | P11a-printed-lines | code_reviewer, r2 | **`approved`** — all 7 round 1 findings fixed, each run; the retry text carries no gap amount; same 40 red fixtures, same reasons | [entry](2026-10-03T1056-code_reviewer-p11a-printed-lines-r2.md) |
+| 2026-10-03 | P11a-tests | tester | **`pass`** — 40 old-shape fixtures rewritten, figures unchanged; 126 new cases; 14 mutations each turned 1 to 7 tests red; 2 NCI tests now assert P11a's stop. Gate 626 passed, 0 failed | [entry](2026-10-03T1057-tester-p11a-tests.md) |
 
 
 

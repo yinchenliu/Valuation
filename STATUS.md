@@ -4,9 +4,9 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `048198b`, 2026-10-03**, on branch `main`, **on the macOS machine**
+**Measured at the `P11a-tests` commit, 2026-10-03**, on branch `main`, **on the macOS machine**
 (`.venv/bin/python`, Python 3.11.6). Every figure before `cde33cb` was measured on the
-Windows machine. **Twenty-seven work units accepted, and not one on its own report.** Every programmer run went to a reviewer that
+Windows machine. **Twenty-nine work units accepted, and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; **five** times a reviewer or a
 programmer overturned a claim — twice against a programmer, **three times against the
 orchestrator**. The journal is [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
@@ -23,10 +23,10 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `048198b` (macOS) |
+| Gate | Command | Result at the `P11a-tests` commit (macOS) |
 |---|---|---|
-| Tests | `.venv/bin/python -m pytest -q` | **497 tests. 455 pass, 42 fail**: 40 fixtures in the old Pass 1 shape (`P11a`, **known red**, `P11a-tests` rewrites them) and the 2 red on purpose |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **455 passed, 40 failed**, all 40 the known old-shape fixtures above |
+| Tests | `.venv/bin/python -m pytest -q` | **628 tests. 626 pass, 2 fail**: the 2 red on purpose |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **626 passed, 0 failed** |
 | Lint | `.venv/bin/python -m ruff check .` | **5 errors**, every one `BLE001` |
 | Types | `.venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **10 errors in 4 files**, 20 files checked |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
@@ -164,9 +164,9 @@ api/ TOTAL                       191       9    95%
 models/financial_statements.py   154       1    99%
 models/valuation.py              127       2    98%
 
-ingestion/claude_extractor.py    442     133    70%     22% at ad52e1a
+ingestion/claude_extractor.py    588     106    82%     at the P11a-tests commit
 ingestion/filings.py             200       0   100%     at 24a9a90
-ingestion/session_extraction.py  510      73    86%     new at ad52e1a
+ingestion/session_extraction.py  473      71    85%     at the P11a-tests commit
 ingestion/price_fetcher.py        37      21    43%
 api/routes_upload.py              51       0   100%     at 24a9a90
 api/routes_valuation.py          197       8    96%
@@ -441,10 +441,12 @@ started — **every one of them was found by running the code**, not by reading 
 41 and 42, both found at `6e58f13` by a reviewer exhausting inputs rather than reading
 the branch.
 
-**Phase 11 (printed lines; Python sums) is in progress.** `P11a` is committed at
-`ae27f47`: every Pass 1 money field is a list of printed rows, Python sums, the
-balance-sheet plug is gone, and a failed balance check shows `FAIL`. Session files are
-`session-extraction-v2`. `P11a-tests` rewrites the 40 old-shape fixtures next.
+**Phase 11 (printed lines; Python sums) is done.** `P11a` (`ae27f47`): every Pass 1
+money field is a list of printed rows, Python sums, the balance-sheet plug is gone, and a
+failed balance check shows `FAIL`. Session files are `session-extraction-v2`.
+`P11a-tests` rewrote the 40 old-shape fixtures and tested every new behaviour. Walmart,
+re-read in the new shape: every printed subtotal and total agrees with Python's sum
+(total assets 284,668 = 284,668), and the implied price is unchanged at $28.02.
 
 **Phase 10 (the user's fixes of 2026-10-02) is done at `24a9a90`.** `P10b` closed item
 45, `P10a` closed items 48 and 2, `P10c` closed item 43, and `P10-tests` repaired the 36

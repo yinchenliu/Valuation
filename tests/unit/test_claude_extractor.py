@@ -26,11 +26,17 @@ would lock a default (`docs/5-testing/strategy.md` section 2), so nothing here d
 
 No test in this file can reach the API: an autouse fixture replaces `_call_llm` with
 a function that raises.
+
+**P11a-tests.** Since `P11a-printed-lines` every Pass 1 money field is a list of
+printed rows (`tests/unit/_printed_lines.py`). The fixtures below were rewritten
+into that shape with every figure unchanged: each field is one printed row holding
+the value it held before, so every expected value below is the one it was.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +45,7 @@ import pytest
 import ingestion.claude_extractor as ce
 from ingestion.claude_extractor import (
     FilingPlan,
+    Pass1ShapeError,
     merge_filing_extractions,
     parse_pass1,
     parse_pass2,
@@ -51,6 +58,7 @@ from models.financial_statements import (
     IncomeStatement,
     NonRecurringItem,
 )
+from tests.unit._printed_lines import lines, printed_balance_sheet, printed_year
 
 
 @pytest.fixture(autouse=True)
@@ -86,29 +94,37 @@ def _no_api(monkeypatch: pytest.MonkeyPatch) -> None:
 #   diluted_shares             48
 #
 # Every value is distinct, so a field landing on the wrong attribute is caught.
+# Each field is ONE printed row holding the value above (P11a shape).
 
 
 def _year_2024() -> dict[str, Any]:
+    return printed_year(2024, {
+        "revenue": [1000],
+        "cost_of_revenue": [400],
+        "gross_profit": [600],
+        "sga": [150],
+        "rd_expense": [100],
+        "depreciation_amortization": [30],
+        "other_operating_expense": [50],
+        "operating_income": [300],
+        "interest_expense": [20],
+        "interest_income": [10],
+        "other_non_operating": [-5],
+        "tax_expense": [57],
+        "net_income": [228],
+        "diluted_shares": [48],
+        "cfo": [290],
+        "capex": [70],
+        "sbc": [25],
+        "change_in_working_capital": [-15],
+    })
+
+
+def _rows(overrides: dict[str, Sequence[float]], balance_sheet: bool = False) -> dict[str, Any]:
+    """`{field: [values]}` as printed rows, to merge over a fixture with `|`."""
     return {
-        "year": 2024,
-        "revenue": 1000,
-        "cost_of_revenue": 400,
-        "gross_profit": 600,
-        "sga": 150,
-        "rd_expense": 100,
-        "depreciation_amortization": 30,
-        "other_operating_expense": 50,
-        "operating_income": 300,
-        "interest_expense": 20,
-        "interest_income": 10,
-        "other_non_operating": -5,
-        "tax_expense": 57,
-        "net_income": 228,
-        "diluted_shares": 48,
-        "cfo": 290,
-        "capex": 70,
-        "sbc": 25,
-        "change_in_working_capital": -15,
+        field: lines(field, values, balance_sheet=balance_sheet)
+        for field, values in overrides.items()
     }
 
 
@@ -116,31 +132,34 @@ def _year_2024() -> dict[str, Any]:
 #   assets      = 100 + 50 + 80 + 60 + 10 + 300 + 200 + 40 + 20 = 860
 #   liabilities = 70 + 30 + 15 + 25 + 400 + 35                  = 575
 #   equity      = 285;  575 + 285 = 860
+# P11a added the two printed totals, read only to check the reading: the filing
+# prints "Total assets 860" and "Total liabilities and equity 860", the sums above.
 def _balance_sheet_2024() -> dict[str, Any]:
-    return {
-        "year": 2024,
-        "cash": 100,
-        "short_term_investments": 50,
-        "accounts_receivable": 80,
-        "inventory": 60,
-        "other_current_assets": 10,
-        "ppe_net": 300,
-        "goodwill": 200,
-        "intangible_assets": 40,
-        "other_non_current_assets": 20,
-        "accounts_payable": 70,
-        "accrued_liabilities": 30,
-        "other_current_liabilities": 15,
-        "short_term_debt": 25,
-        "long_term_debt": 400,
-        "other_non_current_liabilities": 35,
-        "total_equity": 285,
+    return printed_balance_sheet(2024, {
+        "cash": [100],
+        "short_term_investments": [50],
+        "accounts_receivable": [80],
+        "inventory": [60],
+        "other_current_assets": [10],
+        "ppe_net": [300],
+        "goodwill": [200],
+        "intangible_assets": [40],
+        "other_non_current_assets": [20],
+        "accounts_payable": [70],
+        "accrued_liabilities": [30],
+        "other_current_liabilities": [15],
+        "short_term_debt": [25],
+        "long_term_debt": [400],
+        "other_non_current_liabilities": [35],
+        "total_equity": [285],
         # Memo lines (P10a): each already inside another line, in no total, so
         # the 860 = 575 + 285 balance above does not move. 7 and 3 are used by
         # no other key, so a swap or a mis-mapping cannot pass by accident.
-        "noncontrolling_interest_nonredeemable": 7,
-        "noncontrolling_interest_redeemable": 3,
-    }
+        "noncontrolling_interest_nonredeemable": [7],
+        "noncontrolling_interest_redeemable": [3],
+        "total_assets": [860],
+        "total_liabilities_and_equity": [860],
+    })
 
 
 def _pass1(years: list[dict[str, Any]], balance: dict[str, Any] | None = None) -> str:
@@ -196,23 +215,25 @@ def test_pass1_ticker_and_name_come_from_the_caller() -> None:
 #
 #   inside other_opex:   1000 - 400 - 150 - 100 - 50 = 300
 #   inside cost_of_rev:  1000 - 430 - 150 - 100 - 20 = 300
-#   not reported (0):    1000 - 400 - 150 - 100 - 50 = 300
+#   not reported ([]):   1000 - 400 - 150 - 100 - 50 = 300
 #
 # Whatever line holds D&A, the parsed EBIT must equal the stated 300. This is the
 # identity backlog item 10's fix must preserve; it does not lock the subtraction.
+# "Not reported" was an explicit 0 before P11a; in the printed-lines shape it is
+# [], "the filing prints no such row", which reads as 0 for a component field.
 @pytest.mark.parametrize(
     ("label", "overrides"),
     [
         ("D&A inside other_operating_expense", {}),
         ("D&A inside cost_of_revenue",
-         {"cost_of_revenue": 430, "gross_profit": 570, "other_operating_expense": 20}),
-        ("no D&A reported", {"depreciation_amortization": 0}),
+         {"cost_of_revenue": [430], "gross_profit": [570], "other_operating_expense": [20]}),
+        ("no D&A reported", {"depreciation_amortization": []}),
     ],
 )
 def test_pass1_ebit_equals_the_stated_operating_income(
-    label: str, overrides: dict[str, Any],
+    label: str, overrides: dict[str, Sequence[float]],
 ) -> None:
-    year = _year_2024() | overrides
+    year = _year_2024() | _rows(overrides)
     fin, errors = _parse_one(year)
     # The input reconciles, so the arithmetic check finds nothing (identity).
     assert errors == [], label
@@ -273,40 +294,59 @@ def test_pass1_balance_sheet_fields_land_on_their_fields() -> None:
     # so the parsed sheet does too. A field dropped or swapped across the
     # assets/liabilities line would move this.
     assert bs.balance_check_difference == 0.0
+    # P11a: the two printed totals are memos carried as read, 860 and 860 (input).
+    assert bs.printed_total_assets == 860.0
+    assert bs.printed_total_liabilities_and_equity == 860.0
 
 
 NCI_KEYS = ("noncontrolling_interest_nonredeemable", "noncontrolling_interest_redeemable")
 NCI_FIELDS = NCI_KEYS  # the BalanceSheet field carries the JSON key's name
 
 
+# Before P11a an absent or null NCI key parsed to None ("not extracted"), and
+# `analysis/dcf.py:total_noncontrolling_interest` stopped on it. Since P11a the
+# parser itself stops on both, earlier and naming the key and the balance sheet
+# year (`pass1_problems`). The requirement both tests protect, "never zero", is
+# unchanged; only the place the run stops moved. The two tests assert the stop.
+
 @pytest.mark.parametrize("key", NCI_KEYS)
-def test_pass1_an_absent_nci_key_is_none_never_zero(key: str) -> None:
-    """Rule 3 at the parser (P10a step 2): an absent key is "not extracted",
-    which is None, and `analysis/dcf.py:total_noncontrolling_interest` stops on
-    it. A `.get(key, 0)` here would make it 0.0 and overstate the share price by
-    the whole minority stake. The other key keeps its value (7 or 3).
+def test_pass1_an_absent_nci_key_stops_never_zero(key: str) -> None:
+    """Rule 3 at the parser (P10a step 2, P11a): an absent key stops, naming it.
+    A `.get(key, 0)` here would make it 0.0 and overstate the share price by the
+    whole minority stake.
     """
     balance = _balance_sheet_2024()
     del balance[key]
-    fin, _ = _parse_one(_year_2024(), balance)
-    (bs,) = fin.balance_sheets
-    assert getattr(bs, key) is None
-    (other,) = [k for k in NCI_FIELDS if k != key]
-    assert getattr(bs, other) == float(_balance_sheet_2024()[other])
+    with pytest.raises(Pass1ShapeError) as excinfo:
+        _parse_one(_year_2024(), balance)
+    # Expected parts: the year and the key (P11a assignment, step 1).
+    assert any(
+        "balance sheet 2024" in p and f"'{key}'" in p and "absent" in p
+        for p in excinfo.value.problems
+    ), excinfo.value.problems
+    # Exactly the one key removed is reported: the other NCI key (7 or 3) is fine.
+    assert len(excinfo.value.problems) == 1
 
 
 @pytest.mark.parametrize("key", NCI_KEYS)
-def test_pass1_a_null_nci_key_is_none_never_zero(key: str) -> None:
+def test_pass1_a_null_nci_key_stops_never_zero(key: str) -> None:
     balance = _balance_sheet_2024() | {key: None}
-    fin, _ = _parse_one(_year_2024(), balance)
-    (bs,) = fin.balance_sheets
-    assert getattr(bs, key) is None
+    with pytest.raises(Pass1ShapeError) as excinfo:
+        _parse_one(_year_2024(), balance)
+    assert any(
+        "balance sheet 2024" in p and f"'{key}'" in p and "must be a list" in p
+        for p in excinfo.value.problems
+    ), excinfo.value.problems
 
 
 def test_pass1_explicit_zero_nci_is_kept_as_zero() -> None:
-    """The prompt asks for 0 when the filing prints no such line. That 0 is a
-    value and must land as 0.0, not as None: `is None`, not falsiness, decides."""
-    balance = _balance_sheet_2024() | {key: 0 for key in NCI_KEYS}
+    """The prompt asks for [] when the filing prints no such line (P11a: "[] if the
+    filing prints none"). That is a value and must land as 0.0, not as None: `is
+    None`, not falsiness, decides. The redeemable key is also given as one printed
+    row of 0, the other way a filing can say "none"; it must land as 0.0 too."""
+    balance = _balance_sheet_2024() | _rows(
+        {"noncontrolling_interest_nonredeemable": []}, balance_sheet=True,
+    ) | _rows({"noncontrolling_interest_redeemable": [0]}, balance_sheet=True)
     fin, _ = _parse_one(_year_2024(), balance)
     (bs,) = fin.balance_sheets
     assert bs.noncontrolling_interest_nonredeemable == 0.0
@@ -324,7 +364,7 @@ def test_pass1_without_a_balance_sheet_gives_none() -> None:
 
 def test_pass1_years_are_returned_ascending() -> None:
     # Given 2024 then 2023; FinancialStatements.years is documented "sorted ascending".
-    older = _year_2024() | {"year": 2023}
+    older = _year_2024() | {"year": 2023}  # `year` stays an integer in the P11a shape
     fin, _ = parse_pass1(_pass1([_year_2024(), older]), "TST", "Test Co")
     assert [s.year for s in fin.income_statements] == [2023, 2024]
     assert [s.year for s in fin.cash_flow_statements] == [2023, 2024]
@@ -342,7 +382,7 @@ def test_pass1_arithmetic_check_is_clean_when_everything_reconciles() -> None:
 
 def test_pass1_arithmetic_check_names_year_and_field_on_a_gross_profit_miss() -> None:
     # Stated 610 against derived 1000 - 400 = 600: diff 10, 10 / 610 = 1.64% > 0.5%.
-    year = _year_2024() | {"gross_profit": 610}
+    year = _year_2024() | _rows({"gross_profit": [610]})
     _, errors = _parse_one(year)
     assert len(errors) == 1
     assert "2024" in errors[0]
@@ -361,7 +401,7 @@ def test_pass1_arithmetic_check_names_year_and_field_on_a_gross_profit_miss() ->
 def test_pass1_gross_profit_tolerance_is_half_a_percent(
     stated: int, expect_error: bool,
 ) -> None:
-    year = _year_2024() | {"gross_profit": stated}
+    year = _year_2024() | _rows({"gross_profit": [stated]})
     _, errors = _parse_one(year)
     assert bool(errors) is expect_error
 

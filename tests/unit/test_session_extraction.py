@@ -63,6 +63,7 @@ from ingestion.session_extraction import (
     main,
 )
 from tests.unit._fiscal_year_stub import stub_evidence_reader
+from tests.unit._printed_lines import lines, printed_balance_sheet, printed_year
 
 MODEL = "claude-opus-5"
 TICKER = "TST"
@@ -100,24 +101,28 @@ _BASE_YEAR: dict[str, float] = {
 
 
 def year_entry(year: int, k: int = 1) -> dict[str, Any]:
-    return {"year": year} | {key: value * k for key, value in _BASE_YEAR.items()}
+    # P11a shape: each field one printed row, holding the base value times k.
+    return printed_year(year, {key: [value * k] for key, value in _BASE_YEAR.items()})
 
 
 def balance_sheet(year: int) -> dict[str, Any]:
     # assets 860 = liabilities 575 + equity 285 (see test_claude_extractor.py).
-    return {
-        "year": year, "cash": 100, "short_term_investments": 50,
-        "accounts_receivable": 80, "inventory": 60, "other_current_assets": 10,
-        "ppe_net": 300, "goodwill": 200, "intangible_assets": 40,
-        "other_non_current_assets": 20, "accounts_payable": 70,
-        "accrued_liabilities": 30, "other_current_liabilities": 15,
-        "short_term_debt": 25, "long_term_debt": 400,
-        "other_non_current_liabilities": 35, "total_equity": 285,
-        # The two NCI memo lines (P10a): explicit 0, this company prints
-        # none. Required by the loader; never added to any total.
-        "noncontrolling_interest_nonredeemable": 0,
-        "noncontrolling_interest_redeemable": 0,
-    }
+    # P11a: the printed totals are those two sums, "Total assets 860" and
+    # "Total liabilities and equity 860"; the check compares them with the rows.
+    return printed_balance_sheet(year, {
+        "cash": [100], "short_term_investments": [50],
+        "accounts_receivable": [80], "inventory": [60], "other_current_assets": [10],
+        "ppe_net": [300], "goodwill": [200], "intangible_assets": [40],
+        "other_non_current_assets": [20], "accounts_payable": [70],
+        "accrued_liabilities": [30], "other_current_liabilities": [15],
+        "short_term_debt": [25], "long_term_debt": [400],
+        "other_non_current_liabilities": [35], "total_equity": [285],
+        # The two NCI memo lines (P10a): [] (was an explicit 0 before P11a),
+        # this company prints none. Required by the loader; never added to any total.
+        "noncontrolling_interest_nonredeemable": [],
+        "noncontrolling_interest_redeemable": [],
+        "total_assets": [860], "total_liabilities_and_equity": [860],
+    })
 
 
 def pass1(years: list[dict[str, Any]], bs: dict[str, Any]) -> dict[str, Any]:
@@ -333,7 +338,8 @@ def test_a_changed_figure_makes_the_routes_differ(
     """
     data = one_filing(tmp_path)
     fin_a, _, _ = run_route_a(monkeypatch, data, [2024])
-    data["filings"][0]["pass1"]["historical_years"][1]["sbc"] = 51  # was 25 * 2 = 50
+    # sbc is one printed row (P11a shape); its value was 25 * 2 = 50.
+    data["filings"][0]["pass1"]["historical_years"][1]["sbc"][0]["value"] = 51
     route_b = load_session_extraction(write(tmp_path, data))
     assert route_b.financials != fin_a
 
@@ -443,13 +449,16 @@ BALANCE_SHEET_KEYS = (
     "other_current_liabilities", "short_term_debt", "long_term_debt",
     "other_non_current_liabilities", "total_equity",
     "noncontrolling_interest_nonredeemable", "noncontrolling_interest_redeemable",
+    # P11a: the two printed totals, read only to check the reading
+    # (.agent/assignments/P11a-printed-lines.md, "Two new printed totals").
+    "total_assets", "total_liabilities_and_equity",
 )
 
 
 def test_the_required_key_lists_are_the_schema() -> None:
-    # 19 keys per year and 19 in the balance sheet, as written in the schema
-    # (17 until P10a added the two printed NCI lines,
-    # ingestion/claude_extractor.py:_FINANCIALS_BALANCE_SHEET_SCHEMA).
+    # 19 keys per year and 21 in the balance sheet, as written in the schema
+    # (17 until P10a added the two printed NCI lines, 19 until P11a added the two
+    # printed totals; ingestion/claude_extractor.py:_FINANCIALS_BALANCE_SHEET_SCHEMA).
     assert PASS1_YEAR_FIELDS == YEAR_KEYS
     assert PASS1_BALANCE_SHEET_FIELDS == BALANCE_SHEET_KEYS
 
@@ -486,11 +495,24 @@ def test_stop_balance_sheet_key_absent(tmp_path: Path, key: str) -> None:
 def test_stop_year_key_not_a_finite_number(tmp_path: Path, bad: Any) -> None:
     # A null is an absent value with a key; a string, a bool or a NaN is not a
     # figure. json writes nan/inf as NaN/Infinity and reads them back.
+    # P11a: the figure is the `value` of a printed row, so the bad value goes
+    # there, and the line names the row's index too ("line 0").
+    data = one_filing(tmp_path)
+    data["filings"][0]["pass1"]["historical_years"][0]["revenue"][0]["value"] = bad
+    path = write(tmp_path, data)
+    assert_one_line_names(stop_message(path), str(path.resolve()), "filings[0]",
+                          pdf_name(2024), "year 2023", "'revenue'", "line 0", "'value'")
+
+
+@pytest.mark.parametrize("bad", [None, "12", 1000], ids=["null", "string", "bare number"])
+def test_stop_year_key_not_a_list_of_printed_lines(tmp_path: Path, bad: Any) -> None:
+    # The field itself, not a row of it: a null, a string, or a bare number (the
+    # old v1 shape) is not a list of printed lines (P11a step 4).
     data = one_filing(tmp_path)
     data["filings"][0]["pass1"]["historical_years"][0]["revenue"] = bad
     path = write(tmp_path, data)
     assert_one_line_names(stop_message(path), str(path.resolve()), "filings[0]",
-                          pdf_name(2024), "year 2023", "'revenue'")
+                          pdf_name(2024), "year 2023", "'revenue'", "must be a list")
 
 
 def test_explicit_zero_is_accepted(tmp_path: Path) -> None:
@@ -498,10 +520,26 @@ def test_explicit_zero_is_accepted(tmp_path: Path) -> None:
 
     sbc is outside every arithmetic check, and inventory is a balance sheet line
     a services company reports as nothing, so 0 is a legitimate reading of both.
+
+    P11a: "the filing prints no such row" is now the empty list `[]`, not an
+    explicit 0, and the printed totals are checked against the rows. A filing
+    with no inventory row prints totals that do not include one, so the sheet is
+    rebuilt to balance without it, by hand:
+      assets = 860 - 60 (inventory)                       = 800
+      equity = 285 - 60                                    = 225
+      L + E  = 575 + 225                                   = 800
+    and the printed totals are 800 and 800.
     """
     data = one_filing(tmp_path)
-    data["filings"][0]["pass1"]["historical_years"][0]["sbc"] = 0
-    data["filings"][0]["pass1"]["latest_balance_sheet"]["inventory"] = 0
+    data["filings"][0]["pass1"]["historical_years"][0]["sbc"] = []
+    balance = data["filings"][0]["pass1"]["latest_balance_sheet"]
+    balance["inventory"] = []
+    balance |= {
+        "total_equity": lines("total_equity", [225], balance_sheet=True),
+        "total_assets": lines("total_assets", [800], balance_sheet=True),
+        "total_liabilities_and_equity": lines(
+            "total_liabilities_and_equity", [800], balance_sheet=True),
+    }
     loaded = load_session_extraction(write(tmp_path, data))
     # The value is the explicit input, 0, not a default.
     assert loaded.financials.get_cash_flow(2023).stock_based_compensation == 0.0
@@ -775,7 +813,8 @@ def test_check_exit_codes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) ->
     assert cmd_check(write(tmp_path, data, "clean.json")) == 0
 
     # 2024 gross profit 1300 against 2000 - 800 = 1200 (k = 2): 100 / 1300 = 7.7%.
-    data["filings"][0]["pass1"]["historical_years"][1]["gross_profit"] = 1300
+    data["filings"][0]["pass1"]["historical_years"][1]["gross_profit"] = lines(
+        "gross_profit", [1300])
     assert cmd_check(write(tmp_path, data, "arith.json")) == 1
 
     del data["filings"][0]["pass1"]["historical_years"][1]["sbc"]
