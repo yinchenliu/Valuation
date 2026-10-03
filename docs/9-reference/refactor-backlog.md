@@ -36,7 +36,7 @@ rather than lying.
 | # | Item | Silent? | Area | State at `7354698` |
 |---|---|---|---|---|
 | 1 | **116** silent zero-default sites | **silent** | `models/` 60, `ingestion/` 49, `analysis/` 5, `api/` 2 | open |
-| 2 | Missing balance sheet gives zero net debt | **silent** | `analysis/dcf.py` | open, **proven by measurement** |
+| 2 | Missing balance sheet gives zero net debt | **silent** | `analysis/dcf.py` | **closed by `P10a-nci-bridge`**: `run_dcf` stops and names the missing balance sheet; census 116 → 114 |
 | 3 | Unknown NRI line item guesses a field | **silent** | `analysis/normalizer.py` | **closed at `38b903c`** |
 | 4 | No test suite; `pytest` cannot collect | stopping | `tests/` | **closed** — 146 tests |
 | 5 | Module-global extraction cache, popped on use | mixed | `api/routes_valuation.py` | open |
@@ -80,13 +80,15 @@ rather than lying.
 | 45 | `calculate_beta` checks for a constant market series only after SciPy has already raised | stopping | `analysis/capm.py` | **new at `cde33cb`.** SciPy 1.17.1 raises first, so the stop does not name `market_returns`. **Held by the user, 2026-10-02** |
 | 46 | `.env` overrides the environment, so unsetting a key does not stop a paid call | **silent** | `config.py` | **new at `cde33cb`.** Found by `P9a-session-route`, after it caused one possibly billed API call |
 | 47 | The income statement shown on both pages has no interest income row, so EBT does not add up from the rows shown | — | `cli.py`, `templates/_statements.html` | **new at `cde33cb`.** Display only: the figure is in EBT, but a reader cannot see it |
-| 48 | The equity bridge does not subtract noncontrolling interest | **silent** | `analysis/dcf.py`, `models/`, the Pass 1 schema | **new at `cde33cb`.** Walmart fiscal 2026: 6,563 of noncontrolling interest, about $0.82 a share |
+| 48 | The equity bridge does not subtract noncontrolling interest | **silent** | `analysis/dcf.py`, `models/`, the Pass 1 schema | **closed by `P10a-nci-bridge`**: two printed keys, summed in `total_noncontrolling_interest`. Walmart $28.84 → $28.02 |
 | 49 | Given several PDFs, the API route drops any PDF with no fiscal year and says nothing | **silent** | `cli.py`, `api/routes_valuation.py` | **new at `P9a`.** Route B stops on the same input, so the two routes now differ on it |
 | 50 | Route A returns `[]` when Pass 2 cannot be parsed twice, so "nothing was read" looks like "none found" | **silent** | `ingestion/claude_extractor.py` | **new, found by `P9c`.** The twin of item 8 inside the extractor |
 | 51 | The arithmetic check's `WARN` branch can never run | — | `ingestion/claude_extractor.py` | **new, found by `P9c`.** Dead code |
 | 52 | On a cache hit, `POST /valuation` ignores `files` sent together with `session_file`; a cache miss stops on the same form | — | `api/routes_valuation.py` | **new, found by the `P9b` review.** Reachable only by a hand-built request; moves no figure or label |
 | 53 | `ingestion/session_extraction.py` imports `_NRI_SCHEMA` by its private name | — | `ingestion/` | **new, the `P9d` review's F1, minor.** Export `PASS2_ITEM_FIELDS` from `claude_extractor.py` as `P9a` did for Pass 1, and remove the comment at `session_extraction.py:91-94` |
 | 54 | `GET /assumptions` with no filing named shows an empty form and no message | — | `api/routes_valuation.py` | **new, found by the `P9b` tester.** No extraction runs and no figure is shown; the page just does not say why it is empty |
+| 55 | After `P10b`, only a NaN reaches `calculate_beta`'s NaN check, but its message still blames a market series with no variation | — | `analysis/capm.py` | **new, the `P10b` review's F1, minor.** A NaN in `stock_returns` is reported as a market with no variation; message only |
+| 56 | Four Pass 1 prompt lines ask the model to compute, not read: `capex` (PP&E plus acquisitions), `gross_profit`, `change_in_working_capital` (a sum of lines), and "adjust catch-alls to close any gap" | **silent** | `ingestion/claude_extractor.py` | **new, the `P10a` review.** Rule 1. Read each printed line; sum in Python. A prompt change, so it needs the user |
 
 ---
 
@@ -152,7 +154,13 @@ names every absent field at once. [Rule 3](../2-rules/rules.md).
 **Note the ordering.** Fixing item 1 without item 4 in place means no test detects the
 regression it causes. Do 4 first.
 
-## 2. Missing balance sheet gives zero net debt · **silent**
+## 2. Missing balance sheet gives zero net debt · **CLOSED by `P10a-nci-bridge`**
+
+**Closed 2026-10-02.** `run_dcf` now stops when the latest year has no balance sheet, and
+names net debt, cash and the noncontrolling interests it cannot read. The two
+`if latest_bs else 0.0` lines are deleted. The red test moves into `test_dcf.py` in
+`P10-tests`. The history below is kept as the record.
+
 
 **Fact.** `analysis/dcf.py:80-81`:
 

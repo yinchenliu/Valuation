@@ -118,3 +118,41 @@ The interpreter is `.venv/bin/python`. Fill in the commit from `git log --onelin
 - **Item 1**, the existing `.get(field, 0)` reads. **Item 2**, the missing balance sheet
   (its red test must stay red, for the same reason as before). **Item 10**. **Item 44**,
   units.
+
+---
+
+## Round 2 — amended by the orchestrator after review round 1
+
+The round 1 review (`.agent/journal/2026-10-02T2139-code_reviewer-p10a-nci-bridge.md`)
+returned `changes_requested`. **Finding F1 is the assignment's error, not the code's.**
+Step 1 asked the model for "nonredeemable **plus** redeemable" noncontrolling interest.
+Walmart prints the two on separate lines (6,270 and 293, PDF page 22), and 6,563 is
+printed nowhere. Rule 1 forbids asking the model for a number the filing does not print.
+
+**Replace step 1 and step 2 with these:**
+
+1. Two balance sheet keys in the Pass 1 schema, one per printed line, each `0` when the
+   filing reports none:
+   - `noncontrolling_interest_nonredeemable`: the noncontrolling interest shown inside
+     equity;
+   - `noncontrolling_interest_redeemable`: redeemable noncontrolling interest shown
+     outside equity (mezzanine).
+   Both are memo figures already inside another line, never added to any total. Remove
+   the single `noncontrolling_interest` key and its prompt sentence about adding them.
+2. The parser reads both with no fallback; an absent key is `None`. **The sum is
+   Python's**: one named, typed function returns their total, and stops naming the
+   missing key when either is `None` or NaN. `BalanceSheet` holds the two parts. The
+   bridge subtracts the total, and its source line names both parts and their figures.
+
+**Also in this round, in files already in scope:**
+
+3. **Delete the two lines in `analysis/dcf.py` that round 1 made unreachable** (the
+   `if latest_bs else 0.0` net debt and cash lines, about `:199-200`). They are backlog
+   item 2's defect, and `run_dcf` now stops before them. The census should fall from 116
+   to 114. State the measured figure.
+4. **Finding F3:** the CLI label `Less: Noncontrolling interest` runs into its dollar
+   sign. Align it with the other bridge lines.
+
+Answer every finding by number in a new round 2 entry. Do not edit the round 1 entry.
+`extractions/WMT.json` was edited by the orchestrator, not by you (finding F2); the
+orchestrator updates it to the two keys after this round.

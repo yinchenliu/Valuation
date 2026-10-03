@@ -59,6 +59,14 @@ edits another's.
 | 2026-10-02 | P9d-pass2-checks | code_reviewer | **`approved`** — round 1; failing-test sets compared against `dce8d42`; 19 malformed Walmart copies probed. F1 minor: `_NRI_SCHEMA` imported by its private name (backlog item 53) | [entry](2026-10-02T1720-code_reviewer-p9d-pass2-checks.md) |
 | 2026-10-02 | P9d-tests | tester, run 1 | **stopped by the API usage limit** before its first change. `git status` showed no test file touched; the entry was only opened. Re-dispatched as run 2 | [entry](2026-10-02T1724-tester-p9d-tests.md) |
 | 2026-10-02 | P9d-tests | tester, run 2 | **`pass`** — 3 green tests moved out of the red file, which is deleted; 18 new cases lock every `P9d` stop; 8 mutations each turned a new test red. Gate 376 → 397 passed | [entry](2026-10-02T2101-tester-p9d-tests-run2.md) |
+| 2026-10-02 | P10b-capm-variance | programmer | `ok` — constant-market stop moved before `linregress`; identity test, because `np.var([0.01]*12)` is 3.0e-36; gate 398 passed, 0 failed | [entry](2026-10-02T2127-programmer-p10b-capm-variance.md) |
+| 2026-10-02 | P10b-capm-variance | code_reviewer | **`approved`** — round 1, compared by name in a `54c966f` archive. F1 minor: the NaN message still blames the market (item 55) | [entry](2026-10-02T2130-code_reviewer-p10b-capm-variance.md) |
+| 2026-10-02 | P10a-nci-bridge | programmer, r1 | `ok` — one summed NCI key; `run_dcf` stops on `None`; item 2's red test passes (rule 3 over the assignment); 31 fixtures red | [entry](2026-10-02T2127-programmer-p10a-nci-bridge.md) |
+| 2026-10-02 | P10a-nci-bridge | code_reviewer, r1 | `changes_requested` — **F1 major, the orchestrator's error**: the assignment asked the model to add two printed lines (rule 1). Upheld the item 2 departure | [entry](2026-10-02T2139-code_reviewer-p10a-nci-bridge.md) |
+| 2026-10-02 | P10a-nci-bridge | programmer, r2 | `ok` — two printed keys, sum in `total_noncontrolling_interest`; item 2's dead lines deleted, census 116 → 114 | [entry](2026-10-02T2141-programmer-p10a-nci-bridge-r2.md) |
+| 2026-10-02 | P10a-nci-bridge | code_reviewer, r2 | **`approved`** — all round 1 findings closed; no double count (293 in other NCL, 6,270 in equity) | [entry](2026-10-02T2148-code_reviewer-p10a-nci-bridge-r2.md) |
+| 2026-10-02 | P10c-fiscal-year | programmer | `ok`, 7 of 8 — filename year verified against cover date and column label; LHX stops on 2 filings; 5 fixtures red by step 2's stop | [entry](2026-10-02T2127-programmer-p10c-fiscal-year.md) |
+| 2026-10-02 | P10c-fiscal-year | code_reviewer, r1 | `changes_requested` — F1 major: an unreachable `or ""` (rule 3). F2: **the orchestrator's rule** stops Target-style filers; decided: a printed bare-year label wins within one year of the cover | [entry](2026-10-02T2150-code_reviewer-p10c-fiscal-year.md) |
 
 
 

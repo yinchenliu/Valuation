@@ -60,9 +60,15 @@ This writes a skeleton. It lists each filing with its fiscal year, its sha256, t
 to extract from it and whether to extract its balance sheet. **Do not change the plan.**
 It is the same plan route A uses.
 
-Check the fiscal years in the plan against the filings before you go on. The year comes
-from the filename. A 52- or 53-week company such as L3Harris files its fiscal 2025 10-K
-with a 2026 date. If a year is wrong, stop and tell the user.
+`plan` takes each fiscal year from the filename and verifies it against the filing: the
+cover page's "For the fiscal year ended" date, and the year printed above the income
+statement's columns. A 52- or 53-week company such as L3Harris files its fiscal 2025 10-K
+with a 2026 date, so `plan` stops on it and names the year the filing gives. **Do not
+work around the stop.** Tell the user, and re-run `plan` with `YEAR:PATH` entries only
+when the user agrees, for example `2024:"10K_filings/LHX/…_2025-01-03_….pdf"`.
+
+When a filing labels its columns by date ("January 3, 2025") and not by year, the prompt
+still asks for "fiscal year 2024". Read the column whose date ends that fiscal year.
 
 ### 2. Pass 1, for each filing N
 

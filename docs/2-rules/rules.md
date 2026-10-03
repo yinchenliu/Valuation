@@ -66,14 +66,18 @@ grep -rnE "if [^)]+ else 0(\.0)?\b|\bor +0(\.0)?\b|\.get\([^,]+, *0(\.0)?\)|: *f
   --include=*.py models analysis api ingestion | wc -l
 ```
 
-Two of them are materially dangerous on their own:
+Two of them were materially dangerous on their own. Both are now closed, and they stay
+here as the examples that forced this rule:
 
-- `analysis/dcf.py:80` gives a company **zero net debt** when the balance sheet is
-  missing. Equity value is then overstated by the entire debt balance, on a clean run,
-  with no warning anywhere in the output.
-- `analysis/normalizer.py:46` **guesses** `other_operating_expense` when the model
-  returns a line item name it does not recognise, prints a line to stdout, and continues.
-  The adjustment lands on the wrong line and the margin moves.
+- `analysis/dcf.py:80` gave a company **zero net debt** when the balance sheet was
+  missing. Equity value was then overstated by the entire debt balance, on a clean run,
+  with no warning anywhere in the output. **Closed by `P10a-nci-bridge`**: `run_dcf` now
+  stops and names the missing balance sheet, and the two lines are deleted. The count
+  above fell to **114**.
+- `analysis/normalizer.py:46` **guessed** `other_operating_expense` when the model
+  returned a line item name it did not recognise, printed a line to stdout, and
+  continued. The adjustment landed on the wrong line and the margin moved. Closed at
+  `38b903c`.
 
 A zero that means "we do not know" and a zero that means "zero" are the same bytes. The
 run cannot tell them apart, and neither can the reader.
