@@ -71,6 +71,7 @@ edits another's.
 | 2026-10-02 | P10c-fiscal-year | code_reviewer, r2 | **`approved`** — all round 1 findings closed; failing sets compared in `1089c90` archives. Notes F7 (10-Q upload, item 57), F8 (unquoted remedy, item 58) | [entry](2026-10-02T2203-code_reviewer-p10c-fiscal-year-r2.md) |
 | 2026-10-02 | P10-tests | tester | **`pass`** — 36 fixtures repaired with explicit values, no stop weakened; item 2's test moved out of the red file; 96 new cases; 14 mutations each turned 1 to 15 tests red. Gate 495 passed, 0 failed | [entry](2026-10-02T2205-tester-p10-tests.md) |
 | 2026-10-02 | P11a-printed-lines | programmer, run 1 | **stopped by the API usage limit** before its first change; `git status` showed only the opened entry. Re-dispatched as run 2 | [entry](2026-10-02T2233-programmer-p11a-printed-lines.md) |
+| 2026-10-03 | P11a-printed-lines | programmer, run 2 | **stopped by a user interrupt** at about 10:24, mid-unit. Left 8 files changed (+850/-328), uncommitted: Walmart v2 checks clean, a dropped row FAILs +4,124, v1 refused, census 114 → 67; 40 old-shape fixtures red. Entry incomplete. The user chose run 3 to finish from the tree | [entry](2026-10-03T1010-programmer-p11a-printed-lines-run2.md) |
 
 
 
