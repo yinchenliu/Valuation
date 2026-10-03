@@ -347,6 +347,8 @@
                 <tr><td>Total Debt</td><td class="num">{{ "{:,.0f}".format(bs.total_debt) }}</td></tr>
                 <tr><td>Net Debt</td><td class="num">{{ "{:,.0f}".format(bs.net_debt) }}</td></tr>
                 <tr><td>Net Working Capital</td><td class="num">{{ "{:,.0f}".format(bs.net_working_capital) }}</td></tr>
+                <tr><td>Noncontrolling Interest, nonredeemable (memo: inside equity; in no total)</td><td class="num">{% if bs.noncontrolling_interest_nonredeemable is none %}not extracted{% else %}{{ "{:,.0f}".format(bs.noncontrolling_interest_nonredeemable) }}{% endif %}</td></tr>
+                <tr><td>Noncontrolling Interest, redeemable (memo: outside equity, inside the lines above; in no total)</td><td class="num">{% if bs.noncontrolling_interest_redeemable is none %}not extracted{% else %}{{ "{:,.0f}".format(bs.noncontrolling_interest_redeemable) }}{% endif %}</td></tr>
             </tbody>
         </table>
         {% else %}

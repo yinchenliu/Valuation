@@ -150,7 +150,7 @@ PV(FCFFs)  = Σ  FCFF_t / (1 + WACC)^t                for t = 1..n
 TV         = FCFF_n × (1 + g) / (WACC − g)           Gordon Growth
 PV(TV)     = TV / (1 + WACC)^n
 EV         = PV(FCFFs) + PV(TV)
-equity     = EV − net_debt
+equity     = EV − net_debt − noncontrolling_interest
 price      = equity / diluted_shares
 upside %   = (price / current_price − 1) × 100
 ```
@@ -185,7 +185,36 @@ debt or be returned to shareholders, and excluding them **understates** the comp
 liquidity and so **understates** equity value. This follows standard equity-bridge
 practice and is recorded in the dataclass docstring.
 
-> **Defect, recorded.** `dcf.py:80` uses `latest_bs.net_debt if latest_bs else 0.0`. A
-> missing balance sheet therefore gives **zero net debt** and overstates equity value by
-> the entire debt balance, on a clean run, with no warning. Backlog item 2 — the
-> highest-cost silent defect in the repository.
+### Noncontrolling interest — subtracted since `P10a` (backlog item 48)
+
+```
+noncontrolling_interest = nonredeemable + redeemable        total_noncontrolling_interest
+equity                  = EV − net_debt − noncontrolling_interest
+```
+
+Pass 1 asks for **consolidated** net income and cash flows, which include the share of
+the group that belongs to minority holders, so the enterprise value values the whole
+group. The parent's equity is what is left after net debt **and** the noncontrolling
+interests, at the book value the filing prints. No market value is estimated.
+
+The filing prints the two parts on separate lines and their sum on none, so Pass 1 reads
+each line (`noncontrolling_interest_nonredeemable`, inside equity;
+`noncontrolling_interest_redeemable`, outside it) and
+`analysis/dcf.py:total_noncontrolling_interest` adds them. That function is the only place
+the sum is taken ([rule 1](../2-rules/rules.md)). It **stops**, naming the key and the year,
+when either part is `None` ("not extracted") or NaN. A filing that prints no such line is
+extracted as an explicit `0`.
+
+`run_dcf` carries the total on `DCFResult` as its own field, beside `net_debt`, with a
+source string naming both parts and their figures, and both outputs print it as a "Less:
+Noncontrolling" line.
+
+Walmart fiscal 2026 (PDF page 22): 6,270 nonredeemable + 293 redeemable = 6,563, or
+about $0.82 a share on 8,022 million diluted shares.
+
+### A missing balance sheet stops — backlog item 2, fixed in code by `P10a` round 2
+
+`run_dcf` raises when the latest year has no balance sheet, naming net debt, cash and the
+noncontrolling interests and the year. Before `P10a` it used `latest_bs.net_debt if
+latest_bs else 0.0`: a missing balance sheet gave **zero net debt** and overstated equity
+value by the entire debt balance, on a clean run, with no warning.

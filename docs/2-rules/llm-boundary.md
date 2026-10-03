@@ -56,6 +56,12 @@ for each pass, and is printed beside the figures, never computed from.
 | 1 — statements | I/S, C/F and B/S line items for the target years | the statement tables |
 | 2 — non-recurring | candidate one-time items: description, amount, line item, direction, category | MD&A and the Notes |
 
+Pass 1's balance sheet keys `noncontrolling_interest_nonredeemable` and
+`noncontrolling_interest_redeemable` were added by `P10a` on the user's approval of
+2026-10-02 ("item 48: fix"), as `AGENTS.md` requires for a new field. Each is one printed
+line; the filing prints no total, so `analysis/dcf.py:total_noncontrolling_interest` adds
+them, not the model.
+
 Pass 2 receives the Pass 1 income statement summary as context. That is an **anchor**,
 not a calculation input: it exists so the model cites items that reconcile to figures we
 already hold, rather than inventing a line the statement does not have.

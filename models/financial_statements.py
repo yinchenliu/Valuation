@@ -182,6 +182,20 @@ class BalanceSheet:
     # Equity
     total_equity: float = 0.0
 
+    # Memo: the noncontrolling interests, as the two lines the filing prints —
+    # the nonredeemable amount inside equity, and the redeemable amount shown
+    # outside it (mezzanine). Each is already inside `total_equity` or another
+    # line, so neither is part of any total below nor of the balance check.
+    # The equity bridge subtracts their sum, computed in Python by
+    # `analysis/dcf.py:total_noncontrolling_interest`, because Pass 1's net
+    # income and cash flows are consolidated and so value the whole group.
+    #
+    # None is not a zero default: it means "not extracted", and that function
+    # stops on it and names the key (rule 3). A filing that prints no such line
+    # is extracted as an explicit 0.
+    noncontrolling_interest_nonredeemable: float | None = None
+    noncontrolling_interest_redeemable: float | None = None
+
     # Derived
     @property
     def total_debt(self) -> float:

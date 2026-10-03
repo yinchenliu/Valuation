@@ -205,6 +205,8 @@ _FINANCIALS_BALANCE_SHEET_SCHEMA: dict[str, str] = {
     "long_term_debt": "float — long-term debt beyond 1 year",
     "other_non_current_liabilities": "float — CATCH-ALL for all non-current liabilities not listed above. Includes operating lease liabilities, pension, deferred tax liabilities, etc.",
     "total_equity": "float — total stockholders equity",
+    "noncontrolling_interest_nonredeemable": "float — MEMO: the noncontrolling interest line printed INSIDE equity on the latest balance sheet (e.g. 'Nonredeemable noncontrolling interest'). 0 if the filing prints none. It is already inside total_equity; never add it to any total.",
+    "noncontrolling_interest_redeemable": "float — MEMO: the redeemable noncontrolling interest line printed OUTSIDE equity (mezzanine, between liabilities and equity) on the latest balance sheet. 0 if the filing prints none. It is already inside another line; never add it to any total.",
 }
 
 _FINANCIALS_SCHEMA = {
@@ -257,6 +259,9 @@ _FINANCIALS_SYSTEM_PROMPT = textwrap.dedent(f"""\
     - The balance sheet MUST balance: Total Assets = Total Liabilities + Total Equity.
     - "other_" catch-all fields must capture ALL unmapped line items.
     - After filling fields, verify the balance. Adjust catch-alls to close any gap.
+    - "noncontrolling_interest_nonredeemable" and "noncontrolling_interest_redeemable"
+      are memos, each copied from its own printed line (0 if the filing prints none).
+      Do not combine them. Each is already inside another line; never add it to any total.
 
     If the user says "skip the balance sheet", set latest_balance_sheet to {{}}.""")
 
@@ -690,6 +695,18 @@ def _parse_financials_response(
     # Parse latest_balance_sheet (single object, not per-year)
     bs_data = data.get("latest_balance_sheet", {})
     if bs_data and bs_data.get("year"):
+        # The two noncontrolling interest lines, each as printed, read with no
+        # fallback (rule 3; backlog item 1 is the reads that have one). An absent
+        # or null key stays None, which means "not extracted";
+        # analysis/dcf.py:total_noncontrolling_interest stops on it, naming the
+        # key. A filing that prints no such line is answered with an explicit 0.
+        # They are not added here: the sum is Python's, in that one function.
+        nci_nonredeemable_raw = bs_data.get("noncontrolling_interest_nonredeemable")
+        nci_redeemable_raw = bs_data.get("noncontrolling_interest_redeemable")
+        nci_nonredeemable = (
+            None if nci_nonredeemable_raw is None else float(nci_nonredeemable_raw)
+        )
+        nci_redeemable = None if nci_redeemable_raw is None else float(nci_redeemable_raw)
         balance_sheets.append(BalanceSheet(
             year=int(bs_data.get("year", 0)),
             cash_and_equivalents=float(bs_data.get("cash", 0)),
@@ -709,6 +726,8 @@ def _parse_financials_response(
             long_term_debt=float(bs_data.get("long_term_debt", 0)),
             other_non_current_liabilities=float(bs_data.get("other_non_current_liabilities", 0)),
             total_equity=float(bs_data.get("total_equity", 0)),
+            noncontrolling_interest_nonredeemable=nci_nonredeemable,
+            noncontrolling_interest_redeemable=nci_redeemable,
         ))
 
     financials = FinancialStatements(

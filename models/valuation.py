@@ -315,9 +315,23 @@ class DCFResult:
     cash: float = 0.0
     diluted_shares: float = 0.0
 
+    # The noncontrolling interests' book value on the latest balance sheet: the
+    # two printed lines (Pass 1 'noncontrolling_interest_nonredeemable' and
+    # '_redeemable'), summed by analysis/dcf.py:total_noncontrolling_interest.
+    # Subtracted because the
+    # projected cash flows are consolidated and value the whole group, of which
+    # this share is not the parent's. Keyword-only with NO default: a zero here
+    # would be indistinguishable from "not extracted" (rule 3), so every
+    # constructor must state it. `run_dcf` stops before building a result when
+    # the balance sheet does not carry it.
+    noncontrolling_interest: float = field(kw_only=True)
+    # Where that figure came from, printed beside it in both outputs (rule 4).
+    noncontrolling_interest_source: str = field(kw_only=True)
+
     @property
     def equity_value(self) -> float:
-        return self.enterprise_value - self.net_debt
+        """Equity Value = Enterprise Value - Net Debt - Noncontrolling Interest."""
+        return self.enterprise_value - self.net_debt - self.noncontrolling_interest
 
     @property
     def implied_share_price(self) -> float:

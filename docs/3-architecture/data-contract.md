@@ -112,6 +112,31 @@ apply the adjustment to the line the item actually sits in.
 **`source` is the audit trail.** An item with an empty `source` cannot be traced back to
 a page, which is [rule 4](../2-rules/rules.md). It is not currently enforced.
 
+## `BalanceSheet` noncontrolling interest — two memo lines, and `None` stops
+
+`noncontrolling_interest_nonredeemable: float | None = None` and
+`noncontrolling_interest_redeemable: float | None = None`, added by `P10a` on the user's
+approval of 2026-10-02 (backlog item 48). Each is one line as the filing prints it: the
+noncontrolling interest inside equity, and the redeemable noncontrolling interest shown
+outside equity (mezzanine). Pass 1 reads each from the key of the same name.
+
+- **Memos.** Each is already inside `total_equity` or another line, so neither is part of
+  any derived total — not `total_assets`, `total_liabilities`, `total_equity` nor
+  `balance_check_difference`.
+- **Not summed on the dataclass.** The total is computed in one place,
+  `analysis/dcf.py:total_noncontrolling_interest`, because the filing prints the parts and
+  not the sum ([rule 1](../2-rules/rules.md)).
+- **`None` is not a zero default.** It means "not extracted": route A's parser leaves a part
+  `None` when its key is absent (no `.get(..., 0)`), and route B's loader refuses a session
+  file without either key. `total_noncontrolling_interest` stops on `None` or NaN, naming the
+  key and the year. A filing that prints no such line is extracted as an explicit `0`.
+- **Where it goes.** `run_dcf` puts the total in `DCFResult.noncontrolling_interest`, a
+  keyword-only field with **no default**, beside `noncontrolling_interest_source` (which
+  names both parts and their figures), and `DCFResult.equity_value` is
+  `enterprise_value − net_debt − noncontrolling_interest`. The CLI's balance sheet block and
+  `templates/_statements.html` print the two parts as memo lines, `not extracted` when
+  `None`.
+
 ## `ProjectionAssumptions` — `None` is meaningful
 
 Every override field is `T | None`, and **`None` means "derive from history"**. That is

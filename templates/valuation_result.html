@@ -110,6 +110,8 @@
             <tr><td>PV of Terminal Value</td><td>{{ "{:,.0f}".format(dcf.pv_terminal_value) }}</td></tr>
             <tr class="highlight"><td><strong>Enterprise Value</strong></td><td><strong>{{ "{:,.0f}".format(dcf.enterprise_value) }}</strong></td></tr>
             <tr><td>Less: Net Debt</td><td>({{ "{:,.0f}".format(dcf.net_debt) }})</td></tr>
+            <tr><td>Less: Noncontrolling Interest</td><td>({{ "{:,.0f}".format(dcf.noncontrolling_interest) }})</td></tr>
+            <tr><td class="provenance">Noncontrolling Interest — source</td><td class="provenance">{{ dcf.noncontrolling_interest_source }}</td></tr>
             <tr class="highlight"><td><strong>Equity Value</strong></td><td><strong>{{ "{:,.0f}".format(dcf.equity_value) }}</strong></td></tr>
             <tr><td>Diluted Shares Outstanding</td><td>{{ "{:,.0f}".format(dcf.diluted_shares) }}</td></tr>
             <tr class="highlight"><td><strong>Implied Share Price</strong></td><td><strong>${{ "%.2f"|format(dcf.implied_share_price) }}</strong></td></tr>

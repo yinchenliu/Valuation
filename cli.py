@@ -503,6 +503,16 @@ def print_extracted_financials(financials: FinancialStatements) -> None:
     print(f"\n  Total Debt:           {bs.total_debt:>12,.0f}")
     print(f"  Net Debt:             {bs.net_debt:>12,.0f}")
     print(f"  Net Working Capital:  {bs.net_working_capital:>12,.0f}")
+    # Memo: the two noncontrolling interest lines as printed, each already inside
+    # Equity or another line above, so in no total. None is "not extracted" and
+    # is printed as such, never as 0 (the P8b rule). Not summed here: the one
+    # sum is analysis/dcf.py:total_noncontrolling_interest, shown in the DCF block.
+    for nci_label, nci in (
+        ("NCI, nonredeemable:", bs.noncontrolling_interest_nonredeemable),
+        ("NCI, redeemable:", bs.noncontrolling_interest_redeemable),
+    ):
+        nci_text = "not extracted" if nci is None else f"{nci:,.0f}"
+        print(f"  {nci_label:<22}{nci_text:>12}  (memo; already inside the lines above)")
 
 
 # ---------------------------------------------------------------------------
@@ -748,6 +758,8 @@ def print_dcf_result(dcf) -> None:
     print(f"  {'':->42}")
     print(f"  Enterprise Value:            ${dcf.enterprise_value:>12,.0f}M")
     print(f"\n  Less: Net Debt               ${dcf.net_debt:>12,.0f}M")
+    print(f"  Less: Noncontrolling Int.    ${dcf.noncontrolling_interest:>12,.0f}M")
+    print(f"        source: {dcf.noncontrolling_interest_source}")
     print(f"  Equity Value:                ${dcf.equity_value:>12,.0f}M")
     print(f"\n  Diluted Shares:               {dcf.diluted_shares:>12,.0f}M")
     print(f"  Implied Share Price:         ${dcf.implied_share_price:>11.2f}")

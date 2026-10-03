@@ -2,7 +2,7 @@
 
 Enterprise Value = Sum of PV(FCFFs) + PV(Terminal Value)
 Terminal Value = FCFF_n * (1 + g) / (WACC - g)   [Gordon Growth Model]
-Equity Value = Enterprise Value - Net Debt
+Equity Value = Enterprise Value - Net Debt - Noncontrolling Interest
 Implied Share Price = Equity Value / Diluted Shares Outstanding
 """
 
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import math
 
-from models.financial_statements import FinancialStatements
+from models.financial_statements import BalanceSheet, FinancialStatements
 from models.valuation import DCFResult, ProjectedFCFF, WACCResult
 
 
@@ -38,6 +38,55 @@ def _require_finite(value: float, field: str) -> None:
             "projection or in the figures it was built from. Supply the "
             "missing input; it is not substituted with a default."
         )
+
+
+def total_noncontrolling_interest(balance_sheet: BalanceSheet) -> float:
+    """Total noncontrolling interest = nonredeemable + redeemable, both as printed.
+
+    Pass 1's net income and cash flows are **consolidated**: they include the
+    share of the group that belongs to minority holders, so the enterprise
+    value built from them values the whole group. The parent's equity value is
+    what is left after net debt **and** the noncontrolling interests' book value
+    (backlog item 48).
+
+    The filing prints the two parts on separate lines — the nonredeemable
+    amount inside equity, the redeemable amount outside it — and their sum on
+    none (Walmart FY2026, PDF page 22: 6,270 and 293). So the model reads each
+    line and this function, not the model, adds them (rule 1). It is the only
+    place the sum is taken.
+
+    Each part stops when it is None ("not extracted") or NaN, naming its key
+    and the year, and neither falls back to zero (rule 3): a zero here and "not
+    extracted" are the same bytes, and the second overstates the share price by
+    the whole minority stake. A filing that prints no such line is extracted
+    as an explicit 0, which passes.
+    """
+    parts = (
+        ("noncontrolling_interest_nonredeemable",
+         balance_sheet.noncontrolling_interest_nonredeemable),
+        ("noncontrolling_interest_redeemable",
+         balance_sheet.noncontrolling_interest_redeemable),
+    )
+    total = 0.0
+    for key, value in parts:
+        if value is None:
+            raise ValueError(
+                f"{key} was not extracted for the FY{balance_sheet.year} balance "
+                "sheet, so the equity bridge cannot subtract the noncontrolling "
+                "interests. Re-extract with the current Pass 1 schema, or write "
+                "the figure printed on the balance sheet (0 if the filing prints "
+                "no such line). It is not substituted with zero."
+            )
+        if math.isnan(value):
+            # A comparison cannot detect NaN (see `_require_finite`); subtracted
+            # unchecked it would make equity value and the share price NaN.
+            raise ValueError(
+                f"{key} on the FY{balance_sheet.year} balance sheet is NaN, so "
+                "the equity bridge cannot subtract it. Supply the figure printed "
+                "on the balance sheet; it is not substituted with a default."
+            )
+        total += value
+    return total
 
 
 def calculate_terminal_value(
@@ -112,7 +161,8 @@ def run_dcf(
     Args:
         projected_fcffs: List of projected FCFFs.
         wacc_result: WACC calculation result.
-        financials: Historical financials (for net debt).
+        financials: Historical financials (for net debt and the
+            noncontrolling interest, both from the latest balance sheet).
         terminal_growth_rate: Long-term growth rate (e.g., 0.025).
         current_price: Current stock price for comparison.
         diluted_shares: Diluted shares outstanding.
@@ -137,11 +187,22 @@ def run_dcf(
     tv = calculate_terminal_value(final_fcff, terminal_growth_rate, wacc)
     pv_tv = tv / (1 + wacc) ** n
 
-    # Net debt from latest balance sheet
+    # The bridge from enterprise value to equity value, from the latest balance
+    # sheet: net debt and the noncontrolling interests. With no balance sheet
+    # neither can be read, so the run stops (rule 3; backlog item 2 — this
+    # replaced `net_debt = 0.0` and `cash = 0.0` on that branch).
     latest_year = financials.latest_year
     latest_bs = financials.get_balance_sheet(latest_year)
-    net_debt = latest_bs.net_debt if latest_bs else 0.0
-    cash = latest_bs.cash_and_equivalents if latest_bs else 0.0
+    if latest_bs is None:
+        raise ValueError(
+            f"The latest year (FY{latest_year}) has no balance sheet, so net debt, "
+            "cash and the noncontrolling interests cannot be read and the equity "
+            "bridge cannot be built. Extract the balance sheet for that year; "
+            "none of them is substituted with zero."
+        )
+    noncontrolling_interest = total_noncontrolling_interest(latest_bs)
+    net_debt = latest_bs.net_debt
+    cash = latest_bs.cash_and_equivalents
 
     return DCFResult(
         ticker=financials.ticker,
@@ -156,4 +217,11 @@ def run_dcf(
         cash=cash,
         diluted_shares=diluted_shares,
         current_price=current_price,
+        noncontrolling_interest=noncontrolling_interest,
+        noncontrolling_interest_source=(
+            f"FY{latest_year} balance sheet, read from the filing: nonredeemable "
+            f"{latest_bs.noncontrolling_interest_nonredeemable:,.0f} + redeemable "
+            f"{latest_bs.noncontrolling_interest_redeemable:,.0f}, summed by "
+            "analysis/dcf.py:total_noncontrolling_interest"
+        ),
     )
