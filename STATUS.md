@@ -4,9 +4,9 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `a64818b` (`P12a`), 2026-10-03**, on branch `main`, **on the macOS machine**
+**Measured at `1888ccb` (`P12a-tests`), 2026-10-03**, on branch `main`, **on the macOS machine**
 (`.venv/bin/python`, Python 3.11.6). Every figure before `cde33cb` was measured on the
-Windows machine. **Thirty work units accepted, and not one on its own report.** Every programmer run went to a reviewer that
+Windows machine. **Thirty-one work units accepted, and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; **five** times a reviewer or a
 programmer overturned a claim — twice against a programmer, **three times against the
 orchestrator**. The journal is [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
@@ -23,14 +23,14 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `a64818b` (macOS) |
+| Gate | Command | Result at `1888ccb` (macOS) |
 |---|---|---|
-| Tests | `.venv/bin/python -m pytest -q` | **628 tests. 602 pass, 26 fail**: the 2 red on purpose, and 24 known red (below) |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **602 passed, 24 failed**: every one a fixture of stand-in PDF bytes that `pdfplumber` cannot open, which `P12a`'s page check now opens. 626 of 626 pass with the page check stubbed out (both reviews). `P12a-tests` rewrites them |
+| Tests | `.venv/bin/python -m pytest -q` | **726 tests. 724 pass, 2 fail**: the 2 red on purpose |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **724 passed, 0 failed** |
 | Lint | `.venv/bin/python -m ruff check .` | **5 errors**, every one `BLE001` |
 | Types | `.venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **10 errors in 4 files**, 20 files checked |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
-| **Rule 3 census** | the grep at [rules.md:65](docs/2-rules/rules.md) | **67**, unchanged by `P12a`. `P11a` replaced the Pass 1 parser's `.get(field, 0)` reads (114 at `24a9a90`). Under zsh, quote `'--include=*.py'` or the count reads 0 |
+| **Rule 3 census** | the grep at [rules.md:65](docs/2-rules/rules.md) | **67**, unchanged by `P12a` and `P12a-tests`. `P11a` replaced the Pass 1 parser's `.get(field, 0)` reads (114 at `24a9a90`). Under zsh, quote `'--include=*.py'` or the count reads 0 |
 | **Write guard** | `.venv/bin/python .claude/check_guard.py` | **48/48** |
 
 **There is a fourth gate now, and it is stricter than `import app` ever was.**
@@ -133,10 +133,8 @@ into `test_dcf.py`.
 - `test_routes_session_rule3_red.py`, 1 case: a cache hit ignores `files` sent with
   `session_file`. Backlog item 52.
 
-**A failure other than those two is a real regression**, except the 24 known red at
-`a64818b` listed in `.agent/journal/2026-10-03T1534-programmer-p12a-printed-pages.md`.
-**Until `P12a-tests` lands, `test_routes_session_rule3_red.py` fails in its setup** (the
-stand-in PDF, `:63`), not on item 52's defect at `:74`, so it guards nothing.
+**A failure other than those two is a real regression.** Since `P12a-tests`, the item 52
+test fails at its own assertion (`:74`) again, on a real PDF it writes.
 
 ### `tests/`, measured at `3028627`
 
@@ -167,9 +165,9 @@ api/ TOTAL                       191       9    95%
 models/financial_statements.py   154       1    99%
 models/valuation.py              127       2    98%
 
-ingestion/claude_extractor.py    588     106    82%     at the P11a-tests commit
+ingestion/claude_extractor.py    667     106    84%     at 1888ccb
 ingestion/filings.py             200       0   100%     at 24a9a90
-ingestion/session_extraction.py  473      71    85%     at the P11a-tests commit
+ingestion/session_extraction.py  477      68    86%     at 1888ccb
 ingestion/price_fetcher.py        37      21    43%
 api/routes_upload.py              51       0   100%     at 24a9a90
 api/routes_valuation.py          197       8    96%
@@ -449,12 +447,13 @@ started — **every one of them was found by running the code**, not by reading 
 41 and 42, both found at `6e58f13` by a reviewer exhausting inputs rather than reading
 the branch.
 
-**Phase 12 (every printed line is found on its page) is in progress.** `P12a`
+**Phase 12 (every printed line is found on its page) is done at `1888ccb`.** `P12a`
 (`a64818b`): both routes look up each Pass 1 line's label and figure on its cited page
 with `pdfplumber`, and a line not found is a failed check, shown, figures kept. Walmart:
 89 of 89 lines found, about 0.55 s. An invented row that keeps the balance sheet in
 balance (`Other current assets` = 4,124, page 22) now fails. Three limits are stated in
-`docs/3-architecture/extraction.md`. `P12a-tests` is next.
+`docs/3-architecture/extraction.md`. `P12a-tests` gave the 24 fixtures real PDFs and
+locked each outcome with 98 hand-derived cases.
 
 **Phase 11 (printed lines; Python sums) is done.** `P11a` (`ae27f47`): every Pass 1
 money field is a list of printed rows, Python sums, the balance-sheet plug is gone, and a
