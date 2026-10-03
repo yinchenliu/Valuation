@@ -44,9 +44,11 @@ def calculate_beta(price_data: PriceData) -> tuple[float, float, float]:
 
     Raises:
         ValueError: when the inputs cannot produce a finite beta, naming which
-            input was inadequate. `stats.linregress` raises nothing for an
-            empty or a degenerate series — it returns `nan` for every
-            statistic — and a `nan` beta cannot be detected downstream by a
+            input was inadequate. For most degenerate inputs, such as a NaN
+            observation, `stats.linregress` raises nothing — it returns `nan`
+            for every statistic. For a constant market series SciPy 1.17.1
+            raises its own message, which names no input, so that case is
+            stopped before the call. A `nan` beta cannot be detected downstream by a
             comparison, because `nan <= x` and `nan > x` are both False. This
             function is the source of that value, so it is where the run stops.
 
@@ -76,6 +78,22 @@ def calculate_beta(price_data: PriceData) -> tuple[float, float, float]:
             f"{MINIMUM_REGRESSION_OBSERVATIONS} because the standard error of "
             "the slope divides by (n - 2). Supply a longer price history; a "
             "beta cannot be estimated from this one"
+        )
+
+    # A market series that returns the same figure every period has zero
+    # variance, so the slope Cov(stock, market) / Var(market) divides by zero.
+    # This is tested before `stats.linregress` because SciPy 1.17.1 raises its
+    # own ValueError for it ("all x values are identical"), which names
+    # neither the input nor the reason. Identity is tested rather than
+    # `np.var(...) == 0.0`: a float sum over identical values can leave a tiny
+    # non-zero variance. A NaN observation compares unequal to everything, so
+    # it does not stop here; the NaN check after the call catches it.
+    if bool(np.all(market_returns == market_returns[0])):
+        raise ValueError(
+            "market_returns has the same value "
+            f"({float(market_returns[0])}) in all {market_returns.size} "
+            "observations, so its variance is zero; a market series with no "
+            "variation explains nothing and no beta exists for it"
         )
 
     slope, _intercept, r_value, _p_value, std_err = stats.linregress(
