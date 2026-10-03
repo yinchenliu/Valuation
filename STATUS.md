@@ -4,9 +4,9 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `6db180c`, 2026-10-02**, on branch `main`, **on the macOS machine**
+**Measured at `a375dae`, 2026-10-02**, on branch `main`, **on the macOS machine**
 (`.venv/bin/python`, Python 3.11.6). Every figure before `cde33cb` was measured on the
-Windows machine. **Twenty-two work units accepted, and not one on its own report.** Every programmer run went to a reviewer that
+Windows machine. **Twenty-three work units accepted, and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; **five** times a reviewer or a
 programmer overturned a claim — twice against a programmer, **three times against the
 orchestrator**. The journal is [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
@@ -23,10 +23,10 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `6db180c` (macOS) |
+| Gate | Command | Result at `a375dae` (macOS) |
 |---|---|---|
-| Tests | `.venv/bin/python -m pytest -q` | **383 tests. 379 pass, 4 fail**: 3 red on purpose, and the CAPM test below. **3 more pass inside a red file and the gate skips them** (trap 5); a tester moves them next |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **376 passed, 1 failed**: `test_capm.py:473`. SciPy 1.17.1 raises its own message first. Backlog item 45, **held by the user** |
+| Tests | `.venv/bin/python -m pytest -q` | **401 tests. 397 pass, 4 fail**: 3 red on purpose, one in each `*_rule3_red.py` file, and the CAPM test below |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **397 passed, 1 failed**: `test_capm.py:473`. SciPy 1.17.1 raises its own message first. Backlog item 45, **held by the user** |
 | Lint | `.venv/bin/python -m ruff check .` | **5 errors**, every one `BLE001` |
 | Types | `.venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **10 errors in 4 files**, 20 files checked |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
@@ -124,14 +124,12 @@ same branch produced 21 bytes of `Internal Server Error`.
 `pytest` no longer makes a paid API call during collection. It needs no key, no PDF
 and no network.
 
-**Three test cases fail deliberately.** `ls tests/unit/*_rule3_red.py` returns four files:
+**Three test cases fail deliberately.** `ls tests/unit/*_rule3_red.py` returns three files:
 
 - `test_dcf_rule3_red.py`: `run_dcf` must stop when the balance sheet is absent.
   Backlog item 2, still open.
 - `test_projector_rule3_red.py`: `analysis/projector.py` raises a bare `IndexError` on
   an empty revenue list. Written at `80febe1`, the twin of closed item 14.
-- `test_session_extraction_rule3_red.py`, 3 cases: **green since `33afced`** (`P9d`). They
-  must move out of the red file, or the gate never runs them. A tester run is next.
 - `test_routes_session_rule3_red.py`, 1 case: a cache hit ignores `files` sent with
   `session_file`. Backlog item 52.
 
@@ -442,11 +440,12 @@ started — **every one of them was found by running the code**, not by reading 
 41 and 42, both found at `6e58f13` by a reviewer exhausting inputs rather than reading
 the branch.
 
-**Phase 9 ("two extraction routes, one parser") is in progress.** Route B works from the
+**Phase 9 ("two extraction routes, one parser") is done.** Route B works from the
 CLI since `ad52e1a` and from the web app since `be1c077`. The parse layer both routes
 share is tested since `92549f8`, the web routes since `5294a73`, and the session loader
-checks Pass 2 as strictly as Pass 1 since `33afced`. **Remaining:** a tester run moves
-`P9d`'s three green tests out of the red file.
+checks Pass 2 as strictly as Pass 1 since `33afced`, with every stop tested since
+`a375dae`. **Phase 9 is done at `a375dae`**; `docs/8-build/phases.md` records the
+evidence for each criterion.
 
 **Phase 8 ("Show the chain") is complete at `576d4f0`.** Both `GET /assumptions` and
 `POST /valuation` render the adjusted income statement, cash flow statement, balance sheet
@@ -469,7 +468,7 @@ Things that have already misled a reader of this repository.
    nothing at all. "It ran" is not evidence. Name an input that came from a filing.
 3. **`cli.py` and the web app can disagree.** They build assumptions by separate code
    paths. A figure verified in one is not verified in the other.
-4. **Three test cases are red on purpose.** On macOS `pytest -q` reports `4 failed, 379
+4. **Three test cases are red on purpose.** On macOS `pytest -q` reports `4 failed, 397
    passed`: three red cases and the held CAPM test. That is the expected
    state. Do not fix it by weakening it; fix backlog item 2. The gate
    form that excludes it is `pytest -q --ignore-glob="*_rule3_red.py"`.

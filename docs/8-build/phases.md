@@ -164,7 +164,7 @@ disagreed before, and that disagreement is the finding.
 and `:593` — each a conditional zero or a blank cell standing in for a missing
 statement. A blank cell and a zero cell are the same bytes to a reader.
 
-## Phase 9 — two extraction routes, one parser
+## Phase 9 — two extraction routes, one parser · **done `a375dae`**
 
 **Decided by the user on 2026-10-02.** Every extraction today is a paid API call: two
 per filing, so six for three 10-Ks, plus up to two retries per filing. The user wants a
@@ -189,6 +189,14 @@ pipeline, which is the shape of backlog item 7.
 
 **Constraint.** Route A must not change a number. A test that held before this phase
 holds after it.
+
+**Result at `a375dae`.** Every criterion passes. 1: `plan_filings` and
+`merge_filing_extractions`, one definition each (`ad52e1a`). 2: route equality tests in
+`tests/unit/test_session_extraction.py` (`92549f8`). 3: `cli.py --session-file` with
+every credential removed and `_call_llm` disabled (`ad52e1a`, re-run by review). 4:
+`tests/unit/test_routes_session.py` (`5294a73`), and the real Walmart file through the
+web routes gave the CLI's $28.84. 5: the stage 1 line and both pages name
+`Claude Code session`. 6 and 7: loader stop tests (`92549f8`, `a375dae`).
 
 ---
 
