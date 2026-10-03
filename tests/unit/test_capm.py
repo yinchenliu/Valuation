@@ -39,6 +39,7 @@ two diagnostics — asserting them would bless the defect
 from __future__ import annotations
 
 import math
+import re
 
 import numpy as np
 import pandas as pd
@@ -485,6 +486,93 @@ def test_beta_stops_when_a_return_observation_is_nan() -> None:
         )
 
     assert "beta" in str(excinfo.value).lower()
+
+
+# ---------------------------------------------------------------------------
+# P10b-capm-variance (backlog item 45): the constant-market stop runs BEFORE
+# SciPy, so the repository's message is the one the reader sees, and it names
+# the repeated value and the number of observations.
+# ---------------------------------------------------------------------------
+
+
+class _LinregressMustNotRun:
+    """Stands in for `scipy.stats` so a test can prove the stop came first."""
+
+    @staticmethod
+    def linregress(*args: object, **kwargs: object) -> None:
+        raise AssertionError("stats.linregress was reached; the pre-check must stop first")
+
+
+def test_constant_market_stop_names_the_repeated_value_and_the_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Seven observations, every market return 0.03. The stock series varies, so
+    the only degeneracy is on the regressor. Var([0.03] * 7) = 0 by inspection.
+
+    Expected, from P10b's assignment step 1 (names `market_returns`, says its
+    variance is zero, gives the observation count) and P10-tests step 5 (the
+    repeated value): "market_returns", "variance", 0.03 and 7. SciPy is replaced
+    by a stand-in that fails if called, so the message cannot be SciPy's.
+    """
+    from analysis import capm
+
+    monkeypatch.setattr(capm, "stats", _LinregressMustNotRun)
+    with pytest.raises(ValueError) as excinfo:
+        calculate_beta(
+            _price_data([0.01, 0.05, -0.02, 0.04, 0.00, 0.03, -0.01], [0.03] * 7, 12)
+        )
+
+    message = str(excinfo.value)
+    assert "market_returns" in message
+    assert "variance" in message.lower()
+    assert "0.03" in message, "the repeated value must be named"
+    assert re.search(r"\b7 observations\b", message), "the count must be named"
+
+
+def test_constant_market_stop_fires_on_values_whose_float_variance_is_not_zero() -> None:
+    """Identity, not `np.var(...) == 0.0` (P10b step 1). Twelve copies of 0.1:
+    the float mean of twelve 0.1s is not exactly 0.1, so the float variance is a
+    tiny non-zero number, yet the series is constant and must stop as one.
+    The premise is checked first, so the test cannot pass vacuously.
+    """
+    assert np.var(np.array([0.1] * 12)) != 0.0  # the premise: float variance > 0
+    with pytest.raises(ValueError) as excinfo:
+        calculate_beta(_price_data([0.01 * k for k in range(12)], [0.1] * 12, 12))
+    message = str(excinfo.value)
+    assert "market_returns" in message
+    assert re.search(r"\b12 observations\b", message)
+
+
+@pytest.mark.filterwarnings("ignore::RuntimeWarning")
+@pytest.mark.parametrize(
+    ("stock", "market"),
+    [
+        # one NaN in a market series that is otherwise constant at 0.01: NaN
+        # compares unequal to 0.01, so the identity pre-check must NOT claim it
+        ([0.01, 0.02, 0.03, 0.04, 0.05], [0.01, 0.01, 0.01, 0.01, float("nan")]),
+        # one NaN in an otherwise varied market series
+        ([0.01, 0.02, 0.03, 0.04, 0.05], [0.02, float("nan"), 0.01, 0.03, 0.05]),
+        # one NaN in the stock series, the market varied
+        ([0.01, float("nan"), 0.03, 0.04, 0.05], [0.02, 0.04, 0.01, 0.03, 0.05]),
+    ],
+    ids=["nan-in-constant-market", "nan-in-varied-market", "nan-in-stock"],
+)
+def test_a_nan_observation_still_reaches_the_nan_stop(
+    stock: list[float], market: list[float]
+) -> None:
+    """P10b step 2: the NaN check after the regression is kept, and a NaN
+    observation reaches it. It stops with a ValueError; it is not reported as a
+    constant market (the pre-check's "same value" wording), and no beta returns.
+
+    The NaN stop's wording is backlog item 55 (it still blames market variance),
+    so only what survives that fix is asserted: the type, that "nan" appears (the
+    message reports the NaN statistics), and that it is not the constant stop.
+    """
+    with pytest.raises(ValueError) as excinfo:
+        calculate_beta(_price_data(stock, market, 12))
+    message = str(excinfo.value)
+    assert "nan" in message.lower()
+    assert "same value" not in message
 
 
 # ---------------------------------------------------------------------------

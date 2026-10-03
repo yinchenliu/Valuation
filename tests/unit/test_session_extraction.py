@@ -62,6 +62,7 @@ from ingestion.session_extraction import (
     load_session_extraction,
     main,
 )
+from tests.unit._fiscal_year_stub import stub_evidence_reader
 
 MODEL = "claude-opus-5"
 TICKER = "TST"
@@ -112,6 +113,10 @@ def balance_sheet(year: int) -> dict[str, Any]:
         "accrued_liabilities": 30, "other_current_liabilities": 15,
         "short_term_debt": 25, "long_term_debt": 400,
         "other_non_current_liabilities": 35, "total_equity": 285,
+        # The two NCI memo lines (P10a): explicit 0, this company prints
+        # none. Required by the loader; never added to any total.
+        "noncontrolling_interest_nonredeemable": 0,
+        "noncontrolling_interest_redeemable": 0,
     }
 
 
@@ -437,11 +442,14 @@ BALANCE_SHEET_KEYS = (
     "other_non_current_assets", "accounts_payable", "accrued_liabilities",
     "other_current_liabilities", "short_term_debt", "long_term_debt",
     "other_non_current_liabilities", "total_equity",
+    "noncontrolling_interest_nonredeemable", "noncontrolling_interest_redeemable",
 )
 
 
 def test_the_required_key_lists_are_the_schema() -> None:
-    # 19 keys per year and 17 in the balance sheet, as written in the schema.
+    # 19 keys per year and 19 in the balance sheet, as written in the schema
+    # (17 until P10a added the two printed NCI lines,
+    # ingestion/claude_extractor.py:_FINANCIALS_BALANCE_SHEET_SCHEMA).
     assert PASS1_YEAR_FIELDS == YEAR_KEYS
     assert PASS1_BALANCE_SHEET_FIELDS == BALANCE_SHEET_KEYS
 
@@ -775,11 +783,19 @@ def test_check_exit_codes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) ->
     assert "'sbc'" in capsys.readouterr().out
 
 
-def test_plan_writes_route_a_plan_and_refuses_to_overwrite(tmp_path: Path) -> None:
+def test_plan_writes_route_a_plan_and_refuses_to_overwrite(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     pdfs = {y: make_pdf(tmp_path, y) for y in (2022, 2023, 2024)}
+    # The stand-in bytes are not a filing, so the P10c evidence reader is stubbed
+    # to give each file the year a real 10-K for it would print. The verification
+    # itself still runs (tests/unit/_fiscal_year_stub.py).
+    asked = stub_evidence_reader(
+        monkeypatch, {pdfs[y].name: y for y in (2022, 2023, 2024)})
     out = tmp_path / "skeleton.json"
     args = [f"{y}:{p}" for y, p in sorted(pdfs.items(), reverse=True)]
     assert cmd_plan(args, "tst", "Test Co", out, force=False) == 0
+    assert sorted(asked) == sorted(p.name for p in pdfs.values())
 
     data = json.loads(out.read_text(encoding="utf-8"))
     # The routing table, in plan order; the ticker upper-cased; nothing filled in.

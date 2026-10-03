@@ -135,6 +135,11 @@ def _balance_sheet_2024() -> dict[str, Any]:
         "long_term_debt": 400,
         "other_non_current_liabilities": 35,
         "total_equity": 285,
+        # Memo lines (P10a): each already inside another line, in no total, so
+        # the 860 = 575 + 285 balance above does not move. 7 and 3 are used by
+        # no other key, so a swap or a mis-mapping cannot pass by accident.
+        "noncontrolling_interest_nonredeemable": 7,
+        "noncontrolling_interest_redeemable": 3,
     }
 
 
@@ -262,10 +267,52 @@ def test_pass1_balance_sheet_fields_land_on_their_fields() -> None:
     assert bs.long_term_debt == 400.0
     assert bs.other_non_current_liabilities == 35.0
     assert bs.total_equity == 285.0
+    assert bs.noncontrolling_interest_nonredeemable == 7.0
+    assert bs.noncontrolling_interest_redeemable == 3.0
     # The input balances (860 = 575 + 285, comment above _balance_sheet_2024),
     # so the parsed sheet does too. A field dropped or swapped across the
     # assets/liabilities line would move this.
     assert bs.balance_check_difference == 0.0
+
+
+NCI_KEYS = ("noncontrolling_interest_nonredeemable", "noncontrolling_interest_redeemable")
+NCI_FIELDS = NCI_KEYS  # the BalanceSheet field carries the JSON key's name
+
+
+@pytest.mark.parametrize("key", NCI_KEYS)
+def test_pass1_an_absent_nci_key_is_none_never_zero(key: str) -> None:
+    """Rule 3 at the parser (P10a step 2): an absent key is "not extracted",
+    which is None, and `analysis/dcf.py:total_noncontrolling_interest` stops on
+    it. A `.get(key, 0)` here would make it 0.0 and overstate the share price by
+    the whole minority stake. The other key keeps its value (7 or 3).
+    """
+    balance = _balance_sheet_2024()
+    del balance[key]
+    fin, _ = _parse_one(_year_2024(), balance)
+    (bs,) = fin.balance_sheets
+    assert getattr(bs, key) is None
+    (other,) = [k for k in NCI_FIELDS if k != key]
+    assert getattr(bs, other) == float(_balance_sheet_2024()[other])
+
+
+@pytest.mark.parametrize("key", NCI_KEYS)
+def test_pass1_a_null_nci_key_is_none_never_zero(key: str) -> None:
+    balance = _balance_sheet_2024() | {key: None}
+    fin, _ = _parse_one(_year_2024(), balance)
+    (bs,) = fin.balance_sheets
+    assert getattr(bs, key) is None
+
+
+def test_pass1_explicit_zero_nci_is_kept_as_zero() -> None:
+    """The prompt asks for 0 when the filing prints no such line. That 0 is a
+    value and must land as 0.0, not as None: `is None`, not falsiness, decides."""
+    balance = _balance_sheet_2024() | {key: 0 for key in NCI_KEYS}
+    fin, _ = _parse_one(_year_2024(), balance)
+    (bs,) = fin.balance_sheets
+    assert bs.noncontrolling_interest_nonredeemable == 0.0
+    assert bs.noncontrolling_interest_redeemable == 0.0
+    assert bs.noncontrolling_interest_nonredeemable is not None
+    assert bs.noncontrolling_interest_redeemable is not None
 
 
 def test_pass1_without_a_balance_sheet_gives_none() -> None:

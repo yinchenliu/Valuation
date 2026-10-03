@@ -88,7 +88,11 @@ def _two_year_financials() -> FinancialStatements:
                             diluted_shares_outstanding=100.0),
         ],
         balance_sheets=[
-            BalanceSheet(year=2024, cash_and_equivalents=100.0, long_term_debt=500.0),
+            # NCI: explicit 0.0 for both printed lines; this company has none
+            # (P10a). A value, not a default: None would stop run_dcf.
+            BalanceSheet(year=2024, cash_and_equivalents=100.0, long_term_debt=500.0,
+                         noncontrolling_interest_nonredeemable=0.0,
+                         noncontrolling_interest_redeemable=0.0),
         ],
         cash_flow_statements=[
             CashFlowStatement(year=2023, depreciation_amortization=100.0,

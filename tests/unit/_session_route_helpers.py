@@ -98,6 +98,10 @@ def _balance_sheet(year: int) -> dict[str, Any]:
         "accrued_liabilities": 30, "other_current_liabilities": 15,
         "short_term_debt": 25, "long_term_debt": 400,
         "other_non_current_liabilities": 35, "total_equity": 285,
+        # The two NCI memo lines (P10a): explicit 0, this company prints
+        # none. Required by the loader; never added to any total.
+        "noncontrolling_interest_nonredeemable": 0,
+        "noncontrolling_interest_redeemable": 0,
     }
 
 

@@ -69,6 +69,7 @@ edits another's.
 | 2026-10-02 | P10c-fiscal-year | code_reviewer, r1 | `changes_requested` — F1 major: an unreachable `or ""` (rule 3). F2: **the orchestrator's rule** stops Target-style filers; decided: a printed bare-year label wins within one year of the cover | [entry](2026-10-02T2150-code_reviewer-p10c-fiscal-year.md) |
 | 2026-10-02 | P10c-fiscal-year | programmer, r2 | `ok` — a printed bare-year label wins within the cover year or the year before (Target-style → 2024); two headings; web remedy = rename and upload | [entry](2026-10-02T2153-programmer-p10c-fiscal-year-r2.md) |
 | 2026-10-02 | P10c-fiscal-year | code_reviewer, r2 | **`approved`** — all round 1 findings closed; failing sets compared in `1089c90` archives. Notes F7 (10-Q upload, item 57), F8 (unquoted remedy, item 58) | [entry](2026-10-02T2203-code_reviewer-p10c-fiscal-year-r2.md) |
+| 2026-10-02 | P10-tests | tester | **`pass`** — 36 fixtures repaired with explicit values, no stop weakened; item 2's test moved out of the red file; 96 new cases; 14 mutations each turned 1 to 15 tests red. Gate 495 passed, 0 failed | [entry](2026-10-02T2205-tester-p10-tests.md) |
 
 
 

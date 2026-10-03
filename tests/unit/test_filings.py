@@ -4,10 +4,11 @@ Both routes resolve and hash their PDFs here, and the session route's tie betwee
 figure and its filing (rule 5) is `fingerprint_filings`' sha256. So this file locks
 the hash against `hashlib` computed independently, and the stops.
 
-**Deliberately not tested: the fiscal year `discover_filings` infers from a
-filename.** That is backlog item 43 (the year comes from the filename, not from the
-filing, and is wrong for 52/53-week filers). A test asserting today's inference would
-turn that fix red. Only the stops that survive any fix are locked here.
+**The fiscal year is tested in `test_fiscal_year.py`, not here.** Backlog item 43
+closed with `P10c-fiscal-year`: the year still comes from the filename, and every year
+so given is now verified against the filing's cover date and income statement column
+label. A test here that gives a year with bytes that are not a filing stubs the
+evidence reader (`tests/unit/_fiscal_year_stub.py`); the verification still runs.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from pathlib import Path
 import pytest
 
 from ingestion.filings import discover_filings, fingerprint_filings, parse_pdf_args
+from tests.unit._fiscal_year_stub import stub_evidence_reader
 
 
 def test_fingerprint_is_the_sha256_and_size_of_the_bytes(tmp_path: Path) -> None:
@@ -47,10 +49,15 @@ def test_fingerprint_stops_on_a_missing_file_naming_it(tmp_path: Path) -> None:
         fingerprint_filings([(2024, missing)])
 
 
-def test_parse_pdf_args_reads_year_colon_path() -> None:
+def test_parse_pdf_args_reads_year_colon_path(monkeypatch: pytest.MonkeyPatch) -> None:
     # 'YEAR:path' (docstring): the year is the four digits before the colon.
+    # Since P10c every given year is verified against the filing; these paths are
+    # not filings, so the evidence READER is stubbed to say what a real 10-K for
+    # each year would print (tests/unit/_fiscal_year_stub.py). The comparison runs.
+    asked = stub_evidence_reader(monkeypatch, {"a.pdf": 2024, "b.pdf": 2023})
     assert parse_pdf_args(["2024:/x/a.pdf", "2023:/x/b.pdf"]) == [
         (2024, "/x/a.pdf"), (2023, "/x/b.pdf")]
+    assert asked == ["a.pdf", "b.pdf"]  # each given year was checked
 
 
 def test_parse_pdf_args_refuses_a_folder_among_other_inputs(tmp_path: Path) -> None:

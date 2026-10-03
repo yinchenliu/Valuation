@@ -122,11 +122,14 @@ kept, not deleted** — `tests/compare_models.py` compares provider output and
    user, so `python tests/<name>.py` fails with `ModuleNotFoundError`. Use
    `.venv/Scripts/python.exe -m tests.<name>` until
    [backlog item 16](../9-reference/refactor-backlog.md) lands.
-2. `tests/unit/test_dcf_rule3_red.py` **fails on purpose.** It states the requirement
-   that `run_dcf` must stop when the balance sheet is absent. It goes green when
-   backlog item 2 is fixed, and **it is kept, not deleted**. The phase-1 gate is
-   `pytest -q --ignore-glob="*_rule3_red.py"` → `145 passed` until then.
-   A second red test means a real regression.
+2. A file named `tests/unit/test_<module>_rule3_red.py` **fails on purpose.** It states
+   a requirement the code does not yet meet, and the gate
+   `pytest -q --ignore-glob="*_rule3_red.py"` skips it. At `P10-tests` two remain:
+   `test_projector_rule3_red.py` and `test_routes_session_rule3_red.py` (backlog item
+   52). `STATUS.md` section 1 lists them. Any other failure is a real regression.
+
+   The first one, `test_dcf_rule3_red.py`, went green when `P10a-nci-bridge` closed
+   backlog item 2, and `P10-tests` moved its test into `test_dcf.py` the same day.
 
    **The gate keys on the pattern, not on a filename.** An earlier revision named one
    file by path and went stale the moment a second red test landed. And when a red test

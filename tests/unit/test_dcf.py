@@ -240,23 +240,38 @@ def test_discounting_starts_at_year_one_not_year_zero() -> None:
 def _financials_with_a_balance_sheet() -> FinancialStatements:
     """Two years of statements. 2025 is the latest, so 2025's balance sheet is
     the one `run_dcf` must read. 2024 carries a deliberately absurd debt
-    balance so that reading the wrong year cannot pass by accident.
+    balance and absurd noncontrolling interests so that reading the wrong year
+    cannot pass by accident.
 
     2025 net debt = total_debt - cash - short-term investments
                   = (0 + 0 + 100) - 30 - 0
                   = 70.0
+    2025 NCI      = nonredeemable + redeemable = 0.0 + 0.0 = 0.0
+
+    The two NCI parts are given as an explicit 0.0: this test company prints no
+    noncontrolling interest. An explicit zero is a value, not a default — the
+    field's own default is None ("not extracted"), on which `run_dcf` stops
+    (P10a, backlog item 48).
     """
     return FinancialStatements(
         ticker="TEST",
         company_name="Test Co",
         income_statements=[IncomeStatement(year=2024), IncomeStatement(year=2025)],
         balance_sheets=[
-            BalanceSheet(year=2024, cash_and_equivalents=0.0, long_term_debt=9999.0),
+            BalanceSheet(
+                year=2024,
+                cash_and_equivalents=0.0,
+                long_term_debt=9999.0,
+                noncontrolling_interest_nonredeemable=9999.0,
+                noncontrolling_interest_redeemable=9999.0,
+            ),
             BalanceSheet(
                 year=2025,
                 cash_and_equivalents=30.0,
                 short_term_investments=0.0,
                 long_term_debt=100.0,
+                noncontrolling_interest_nonredeemable=0.0,
+                noncontrolling_interest_redeemable=0.0,
             ),
         ],
     )
@@ -271,7 +286,8 @@ def test_run_dcf_worked_example() -> None:
     PV terminal   525 / 1.25^2 = 525 / 1.5625                    = 336.0
     Enterprise    144.0 + 336.0                                  = 480.0
     Net debt      100 - 30 - 0  (2025 balance sheet)             =  70.0
-    Equity        480.0 - 70.0                                   = 410.0
+    NCI           0 + 0         (2025 balance sheet, explicit)   =   0.0
+    Equity        480.0 - 70.0 - 0.0                             = 410.0
     Share price   410.0 / 10.0 shares                            =  41.00
     Upside        (41.00 / 20.00 - 1) * 100                      = 105.0 %
     """
@@ -299,6 +315,7 @@ def test_run_dcf_worked_example() -> None:
 
     assert result.net_debt == pytest.approx(70.0)
     assert result.cash == pytest.approx(30.0)
+    assert result.noncontrolling_interest == pytest.approx(0.0)
     assert result.equity_value == pytest.approx(410.0)
 
     assert result.diluted_shares == pytest.approx(10.0)
@@ -451,3 +468,271 @@ def test_run_dcf_stops_when_there_are_no_projected_cash_flows() -> None:
             current_price=20.0,
             diluted_shares=10.0,
         )
+
+
+# ---------------------------------------------------------------------------
+# Backlog item 2: the balance sheet is absent.
+#
+# Moved here from `tests/unit/test_dcf_rule3_red.py` by `P10-tests`, unchanged in
+# what it asserts, once `P10a-nci-bridge` made `run_dcf` stop. That file was
+# deleted in the same unit: a green test left inside the `*_rule3_red.py`
+# pattern is a test the gate never runs (backlog item 24).
+# ---------------------------------------------------------------------------
+
+
+def test_run_dcf_stops_when_the_balance_sheet_is_absent() -> None:
+    """Enterprise value cannot be bridged to equity value without net debt.
+
+    Until `P10a-nci-bridge`, `analysis/dcf.py` substituted `net_debt = 0.0` and
+    `cash = 0.0` when the latest year had no balance sheet. On a clean run with
+    no warning anywhere, equity value was then overstated by the entire debt
+    balance and the implied share price with it. A zero that means "we do not
+    know" and a zero that means "zero" are the same bytes.
+
+    The required behaviour is a stop that names the missing input. The
+    exception type asserted here is `ValueError`, which is what the rest of
+    this codebase raises for an absent input.
+    """
+    financials = FinancialStatements(
+        ticker="TEST",
+        company_name="Test Co",
+        income_statements=[IncomeStatement(year=2025)],
+        balance_sheets=[],  # the missing input
+    )
+    wacc_result = WACCResult(
+        cost_of_equity=0.10,
+        cost_of_debt=0.0,
+        tax_rate=0.0,
+        equity_weight=1.0,
+        debt_weight=0.0,
+    )
+    projected = [
+        ProjectedFCFF(
+            year=2026,
+            revenue=0.0,
+            ebit=0.0,
+            nopat=100.0,
+            depreciation_amortization=0.0,
+            capital_expenditures=0.0,
+            change_in_working_capital=0.0,
+        )
+    ]
+
+    with pytest.raises(ValueError) as excinfo:
+        run_dcf(
+            projected_fcffs=projected,
+            wacc_result=wacc_result,
+            financials=financials,
+            terminal_growth_rate=0.0,
+            current_price=20.0,
+            diluted_shares=10.0,
+        )
+
+    message = str(excinfo.value).lower()
+    assert (
+        "balance sheet" in message
+        or "balance_sheet" in message
+        or "net debt" in message
+        or "net_debt" in message
+    ), f"the message must name the missing input, got: {message!r}"
+
+
+# ---------------------------------------------------------------------------
+# P10a-nci-bridge (backlog item 48): the noncontrolling interests.
+#
+# Equity Value = Enterprise Value - Net Debt - (NCI nonredeemable + NCI redeemable)
+# The two parts are two printed lines; Python sums them in
+# `analysis/dcf.py:total_noncontrolling_interest`, which stops on None or NaN.
+# ---------------------------------------------------------------------------
+
+NCI_KEYS = ("noncontrolling_interest_nonredeemable", "noncontrolling_interest_redeemable")
+
+
+def _financials_for_the_bridge(
+    nonredeemable: float | None, redeemable: float | None
+) -> FinancialStatements:
+    """One year, 2025. Net debt = (0 + 0 + 200) - 0 - 0 = 200.0."""
+    return FinancialStatements(
+        ticker="TEST",
+        company_name="Test Co",
+        income_statements=[IncomeStatement(year=2025)],
+        balance_sheets=[
+            BalanceSheet(
+                year=2025,
+                cash_and_equivalents=0.0,
+                short_term_investments=0.0,
+                long_term_debt=200.0,
+                noncontrolling_interest_nonredeemable=nonredeemable,
+                noncontrolling_interest_redeemable=redeemable,
+            ),
+        ],
+    )
+
+
+def test_run_dcf_bridge_subtracts_net_debt_and_both_noncontrolling_interests() -> None:
+    """The bridge with round numbers, by hand. WACC 10%, g 0, one year.
+
+    PV of FCFF   100 / 1.10                                  =   90.909...
+    Terminal     100 * (1 + 0) / (0.10 - 0)                  = 1000.0
+    PV terminal  1000 / 1.10                                 =  909.090...
+    Enterprise   (100 + 1000) / 1.10 = 1100 / 1.10           = 1000.0
+    Net debt     200 - 0 - 0                                 =  200.0
+    NCI          nonredeemable 40 + redeemable 10            =   50.0
+    Equity       1000 - 200 - 50                             =  750.0
+    Share price  750 / 10 shares                             =   75.0
+    """
+    result = run_dcf(
+        projected_fcffs=[make_projected_fcff(2026, 100.0)],
+        wacc_result=make_wacc_result(0.10),
+        financials=_financials_for_the_bridge(40.0, 10.0),
+        terminal_growth_rate=0.0,
+        current_price=50.0,
+        diluted_shares=10.0,
+    )
+
+    assert result.enterprise_value == pytest.approx(1000.0)
+    assert result.net_debt == pytest.approx(200.0)
+    assert result.noncontrolling_interest == pytest.approx(50.0)
+    assert result.equity_value == pytest.approx(750.0)
+    assert result.implied_share_price == pytest.approx(75.0)
+    # Rule 4: the source line names both printed parts, their figures, the year
+    # and the function that summed them (P10a round 2, step 2).
+    source = result.noncontrolling_interest_source
+    assert "nonredeemable 40" in source
+    assert "redeemable 10" in source
+    assert "FY2025" in source
+    assert "total_noncontrolling_interest" in source
+
+
+def test_equity_value_is_ev_less_net_debt_less_nci_on_the_result_itself() -> None:
+    """The property, independent of `run_dcf`: 1000 - 200 - 50 = 750, / 10 = 75."""
+    from models.valuation import DCFResult
+
+    result = DCFResult(
+        ticker="TEST",
+        projection_years=1,
+        terminal_growth_rate=0.0,
+        wacc=0.10,
+        pv_fcffs=400.0,
+        pv_terminal_value=600.0,  # 400 + 600 = 1000 enterprise value
+        net_debt=200.0,
+        diluted_shares=10.0,
+        noncontrolling_interest=50.0,
+        noncontrolling_interest_source="by hand",
+    )
+    assert result.enterprise_value == pytest.approx(1000.0)
+    assert result.equity_value == pytest.approx(750.0)
+    assert result.implied_share_price == pytest.approx(75.0)
+
+
+@pytest.mark.parametrize(
+    ("nonredeemable", "redeemable", "expected"),
+    [
+        (40.0, 10.0, 50.0),   # 40 + 10
+        (6270.0, 293.0, 6563.0),  # Walmart FY2026 shape: 6,270 + 293 = 6,563
+        (0.0, 0.0, 0.0),      # a company that prints neither line: explicit zeros
+        (0.0, 25.0, 25.0),    # 0 + 25: only the redeemable line printed
+    ],
+)
+def test_total_noncontrolling_interest_is_the_sum_of_the_two_printed_parts(
+    nonredeemable: float, redeemable: float, expected: float
+) -> None:
+    from analysis.dcf import total_noncontrolling_interest
+
+    sheet = BalanceSheet(
+        year=2025,
+        noncontrolling_interest_nonredeemable=nonredeemable,
+        noncontrolling_interest_redeemable=redeemable,
+    )
+    assert total_noncontrolling_interest(sheet) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("missing_key", NCI_KEYS)
+@pytest.mark.parametrize("bad_value", [None, NAN], ids=["None", "NaN"])
+def test_total_noncontrolling_interest_stops_naming_the_key_and_the_year(
+    missing_key: str, bad_value: float | None
+) -> None:
+    """Rule 3. One part is None ("not extracted") or NaN; the other is a good 10.0.
+    The stop names the bad key and the balance sheet's year, FY2031 — a year
+    used nowhere else in this file, so the match cannot come from elsewhere.
+    """
+    from analysis.dcf import total_noncontrolling_interest
+
+    values: dict[str, float | None] = {key: 10.0 for key in NCI_KEYS}
+    values[missing_key] = bad_value
+    sheet = BalanceSheet(year=2031, **values)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError) as excinfo:
+        total_noncontrolling_interest(sheet)
+
+    message = str(excinfo.value)
+    assert missing_key in message
+    assert "2031" in message
+    # Only the bad key is named, not the good one.
+    (other_key,) = [key for key in NCI_KEYS if key != missing_key]
+    assert other_key not in message
+
+
+def test_total_noncontrolling_interest_stops_when_neither_part_was_set() -> None:
+    """A `BalanceSheet` built without either field: both are None (not extracted).
+    The stop is a ValueError naming a key, never a total of 0.0."""
+    from analysis.dcf import total_noncontrolling_interest
+
+    with pytest.raises(ValueError, match="noncontrolling_interest_"):
+        total_noncontrolling_interest(BalanceSheet(year=2025))
+
+
+@pytest.mark.parametrize("missing_key", NCI_KEYS)
+def test_run_dcf_stops_when_a_noncontrolling_interest_was_not_extracted(
+    missing_key: str,
+) -> None:
+    """The stop survives the composition: through `run_dcf`, not only directly."""
+    parts: dict[str, float | None] = {key: 10.0 for key in NCI_KEYS}
+    parts[missing_key] = None
+
+    with pytest.raises(ValueError) as excinfo:
+        run_dcf(
+            projected_fcffs=[make_projected_fcff(2026, 100.0)],
+            wacc_result=make_wacc_result(0.10),
+            financials=_financials_for_the_bridge(
+                parts["noncontrolling_interest_nonredeemable"],
+                parts["noncontrolling_interest_redeemable"],
+            ),
+            terminal_growth_rate=0.0,
+            current_price=50.0,
+            diluted_shares=10.0,
+        )
+    assert missing_key in str(excinfo.value)
+    assert "2025" in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    ("nonredeemable", "redeemable"),
+    [(None, None), (0.0, 0.0), (7.0, 3.0)],
+    ids=["not-extracted", "zeros", "seven-and-three"],
+)
+def test_neither_nci_part_enters_any_balance_sheet_total(
+    nonredeemable: float | None, redeemable: float | None
+) -> None:
+    """Both parts are memos, already inside another line (P10a step 3).
+
+    By hand, whatever the two NCI parts are:
+      total_assets      = cash 100 + PP&E 300                 = 400
+      total_liabilities = payables 50 + long-term debt 150    = 200
+      total_equity      = 200 (as given)
+      balance check     = 400 - (200 + 200)                   =   0
+    """
+    sheet = BalanceSheet(
+        year=2025,
+        cash_and_equivalents=100.0,
+        ppe_net=300.0,
+        accounts_payable=50.0,
+        long_term_debt=150.0,
+        total_equity=200.0,
+        noncontrolling_interest_nonredeemable=nonredeemable,
+        noncontrolling_interest_redeemable=redeemable,
+    )
+    assert sheet.total_assets == pytest.approx(400.0)
+    assert sheet.total_liabilities == pytest.approx(200.0)
+    assert sheet.total_equity == pytest.approx(200.0)
+    assert sheet.balance_check_difference == pytest.approx(0.0)

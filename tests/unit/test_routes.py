@@ -67,6 +67,8 @@ from models.financial_statements import (
     FinancialStatements,
     IncomeStatement,
 )
+from tests.unit._fiscal_year_stub import stub_evidence_reader
+from tests.unit._text_pdf import write_10k_pdf
 
 # ---------------------------------------------------------------------------
 # Reading a rendered page
@@ -140,7 +142,11 @@ def _two_year_financials() -> FinancialStatements:
                             diluted_shares_outstanding=100.0),
         ],
         balance_sheets=[
-            BalanceSheet(year=2024, cash_and_equivalents=100.0, long_term_debt=500.0),
+            # NCI: explicit 0.0 for both printed lines; this company has none
+            # (P10a). A value, not a default: None would stop run_dcf.
+            BalanceSheet(year=2024, cash_and_equivalents=100.0, long_term_debt=500.0,
+                         noncontrolling_interest_nonredeemable=0.0,
+                         noncontrolling_interest_redeemable=0.0),
         ],
         cash_flow_statements=[
             # D&A 100/1000 = 10%; CapEx 50/1000 = 5%; WC change -20/1000 -> +2%.
@@ -196,7 +202,11 @@ def _one_year_financials() -> FinancialStatements:
         ],
         balance_sheets=[
             # total debt = 0 + 0 + 500 = 500; net debt = 500 - 100 - 0 = 400.
-            BalanceSheet(year=2024, cash_and_equivalents=100.0, long_term_debt=500.0),
+            # NCI: explicit 0.0 for both printed lines; this company has none
+            # (P10a). A value, not a default: None would stop run_dcf.
+            BalanceSheet(year=2024, cash_and_equivalents=100.0, long_term_debt=500.0,
+                         noncontrolling_interest_nonredeemable=0.0,
+                         noncontrolling_interest_redeemable=0.0),
         ],
     )
 
@@ -346,14 +356,19 @@ def test_get_root_serves_the_upload_form(client: TestClient) -> None:
 
 
 def test_the_form_on_the_front_page_is_accepted_by_the_route_it_targets(
-    client: TestClient,
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Read the form off `/`, submit exactly that, and require it to be accepted.
 
     Expected value: *not* 422. FastAPI answers 422 when a declared `Form`/`File`
     parameter is absent, so "the fields this page offers are the fields that route
     requires" is checkable without knowing anything about either page's text.
+
+    The uploaded bytes are not a filing, so the P10c evidence reader is stubbed to
+    say the file's content gives 2024, as its name does
+    (`tests/unit/_fiscal_year_stub.py`). The verification itself still runs.
     """
+    asked = stub_evidence_reader(monkeypatch, {"goog-10k-2024.pdf": 2024})
     body = client.get("/").text
     form = re.search(r'<form[^>]*action="([^"]+)"', body)
     assert form is not None, f"the front page offered no form: {body[:200]!r}"
@@ -370,6 +385,7 @@ def test_the_form_on_the_front_page_is_accepted_by_the_route_it_targets(
 
     assert response.status_code != 422, response.text
     assert response.status_code == 303
+    assert asked == ["goog-10k-2024.pdf"]  # the year was verified, not skipped
 
 
 # ===========================================================================
@@ -378,7 +394,7 @@ def test_the_form_on_the_front_page_is_accepted_by_the_route_it_targets(
 
 
 def test_post_upload_saves_the_file_and_redirects_naming_it(
-    client: TestClient, tmp_path
+    client: TestClient, tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Expected values, each from a contract stated outside the code path:
 
@@ -390,7 +406,11 @@ def test_post_upload_saves_the_file_and_redirects_naming_it(
       the filename" — and the `year:path` shape the *receiving* parser expects
       (`_parse_files_param`, `api/routes_valuation.py:34-43`).
     * the bytes on disk are the bytes uploaded.
+
+    The bytes are not a filing, so the P10c evidence reader is stubbed to say
+    the content gives 2024, as the name does (`tests/unit/_fiscal_year_stub.py`).
     """
+    asked = stub_evidence_reader(monkeypatch, {"goog-10k-2024.pdf": 2024})
     response = client.post(
         "/upload",
         data={"ticker": "googl", "company_name": "Alphabet Inc"},
@@ -399,6 +419,7 @@ def test_post_upload_saves_the_file_and_redirects_naming_it(
     )
 
     assert response.status_code == 303
+    assert asked == ["goog-10k-2024.pdf"]  # the year was verified, not skipped
     location = response.headers["location"]
     assert urlparse(location).path == "/assumptions"
 
@@ -419,7 +440,8 @@ def test_post_upload_saves_the_file_and_redirects_naming_it(
 
 
 def test_post_upload_journey_reaches_a_rendered_assumptions_page(
-    client: TestClient, extraction_calls: list[tuple], tmp_path
+    client: TestClient, extraction_calls: list[tuple], tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Follow the redirect. The page at the other end must render, not 500.
 
@@ -428,7 +450,11 @@ def test_post_upload_journey_reaches_a_rendered_assumptions_page(
     inside the `year:path` pair must survive the round trip. That is an outcome,
     not a branch: backlog item 26 may change how `files` is parsed without
     changing which file gets read.
+
+    The bytes are not a filing, so the P10c evidence reader is stubbed to say
+    the content gives 2024, as the name does (`tests/unit/_fiscal_year_stub.py`).
     """
+    asked = stub_evidence_reader(monkeypatch, {"testco-10k-2024.pdf": 2024})
     response = client.post(
         "/upload",
         data={"ticker": "testco", "company_name": "Test Company Inc"},
@@ -439,6 +465,7 @@ def test_post_upload_journey_reaches_a_rendered_assumptions_page(
     assert response.status_code == 200
     assert "Internal Server Error" not in response.text
     assert "Valuation Assumptions: TESTCO" in response.text
+    assert asked == ["testco-10k-2024.pdf"]  # the year was verified, not skipped
 
     saved = tmp_path / "uploads" / "TESTCO" / "testco-10k-2024.pdf"
     assert len(extraction_calls) == 1
@@ -447,6 +474,58 @@ def test_post_upload_journey_reaches_a_rendered_assumptions_page(
     assert pdf_path.lower() == str(saved).lower()
     assert ticker == "TESTCO"
     assert company_name == "Test Company Inc"
+
+
+def test_post_upload_with_a_year_the_filing_contradicts_answers_400_and_does_not_redirect(
+    client: TestClient, tmp_path
+) -> None:
+    """P10c step 3: the year in the uploaded name is verified against the filing,
+    and a mismatch re-renders the upload page with the message. No stub here: the
+    PDF is written by the test (`tests/unit/_text_pdf.py`), shaped like the
+    assignment's L3Harris 2026-01-02 row.
+
+    Expected, by the round 2 rule: cover "January 2, 2026", label "2025" -> 2025
+    is the cover year - 1, in range, so the content gives 2025. The name gives
+    2026. So: 400 (the route's documented status), no Location header, and the
+    web remedy (rename to 2025 and upload again), not the CLI's YEAR:PATH.
+    """
+    pdf = write_10k_pdf(tmp_path / "src.pdf", "January 2, 2026",
+                        "(In millions, except per share amounts) 2025 2024 2023")
+    response = client.post(
+        "/upload",
+        data={"ticker": "lhx", "company_name": "Test Filer Inc."},
+        files={"pdf_files": ("LHX_10-K_2026-01-02.pdf", pdf.read_bytes())},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert "location" not in response.headers
+    body = response.text
+    assert "does not match the filing" in body
+    assert "LHX_10-K_2026-01-02.pdf" in body
+    assert "given fiscal year 2026" in body
+    assert "content gives 2025" in body
+    assert "upload it again" in body
+    assert "Pass 2025:" not in body  # no YEAR:PATH remedy on the web
+    assert 'name="pdf_files"' in body  # the upload form is shown again
+
+
+def test_post_upload_of_the_same_filing_renamed_to_its_content_year_redirects(
+    client: TestClient, tmp_path
+) -> None:
+    """The control for the test above: the same bytes, named for 2025, pass the
+    check and reach the 303 redirect with files=2025:<path>."""
+    pdf = write_10k_pdf(tmp_path / "src.pdf", "January 2, 2026",
+                        "(In millions, except per share amounts) 2025 2024 2023")
+    response = client.post(
+        "/upload",
+        data={"ticker": "lhx", "company_name": "Test Filer Inc."},
+        files={"pdf_files": ("LHX_10-K_2025-01-02.pdf", pdf.read_bytes())},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    query = parse_qs(urlparse(response.headers["location"]).query)
+    assert query["files"][0].startswith("2025:")
 
 
 @pytest.mark.parametrize("missing", ["ticker", "pdf_files"])
@@ -714,6 +793,44 @@ def test_post_valuation_renders_the_completed_valuation(
     assert used["D&A (% of Revenue)"] == "10.0%"
     assert used["CapEx (% of Revenue)"] == "5.0%"
     assert used["NWC (% of Revenue)"] == "2.0%"
+
+
+def test_post_valuation_shows_and_subtracts_the_noncontrolling_interests(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P10a step 5: the result page shows the NCI term and its source, and the
+    bridge subtracts it. The inputs are the test above's, with the two printed
+    NCI lines set to 40 (nonredeemable) and 10 (redeemable) instead of 0.
+
+    NCI enters neither the projection nor WACC (`analysis/wacc.py` reads debt
+    and market cap only), so every figure above the bridge is the test above's:
+
+      EV       = 198/1.0945 + (198*1.02/0.0745)/1.0945
+               = 180.905 + 2476.813                    = 2657.718 -> "2,658"
+      net debt = 500 - 100                             =  400     -> "(400)"
+      NCI      = 40 + 10                               =   50     -> "(50)"
+      equity   = 2657.718 - 400 - 50                   = 2207.718 -> "2,208"
+      price    = 2207.718 / 100 shares                 =   22.077 -> "$22.08"
+    """
+    base = _one_year_financials()
+    (sheet,) = base.balance_sheets
+    sheet.noncontrolling_interest_nonredeemable = 40.0
+    sheet.noncontrolling_interest_redeemable = 10.0
+    monkeypatch.setattr(routes_valuation, "extract_financials", lambda *a, **k: (base, []))
+    monkeypatch.setattr(routes_valuation, "fetch_price_data", lambda *a, **k: _price_data())
+
+    body = _run_valuation(client)
+
+    assert "alert-error" not in body, "the success path rendered the error page"
+    bridge = _rows_under(body, "DCF Valuation Bridge")
+    assert bridge["Enterprise Value"] == "2,658"
+    assert bridge["Less: Net Debt"] == "(400)"
+    assert bridge["Less: Noncontrolling Interest"] == "(50)"
+    assert bridge["Equity Value"] == "2,208"
+    assert bridge["Implied Share Price"] == "$22.08"
+    # Rule 4: the source row names both printed parts and their figures.
+    assert "nonredeemable 40 + redeemable 10" in body
+    assert "total_noncontrolling_interest" in body
 
 
 def test_post_valuation_names_who_read_the_filing(
