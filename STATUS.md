@@ -4,9 +4,9 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at the `P11a-tests` commit, 2026-10-03**, on branch `main`, **on the macOS machine**
+**Measured at `a64818b` (`P12a`), 2026-10-03**, on branch `main`, **on the macOS machine**
 (`.venv/bin/python`, Python 3.11.6). Every figure before `cde33cb` was measured on the
-Windows machine. **Twenty-nine work units accepted, and not one on its own report.** Every programmer run went to a reviewer that
+Windows machine. **Thirty work units accepted, and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; **five** times a reviewer or a
 programmer overturned a claim — twice against a programmer, **three times against the
 orchestrator**. The journal is [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
@@ -23,14 +23,14 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at the `P11a-tests` commit (macOS) |
+| Gate | Command | Result at `a64818b` (macOS) |
 |---|---|---|
-| Tests | `.venv/bin/python -m pytest -q` | **628 tests. 626 pass, 2 fail**: the 2 red on purpose |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **626 passed, 0 failed** |
+| Tests | `.venv/bin/python -m pytest -q` | **628 tests. 602 pass, 26 fail**: the 2 red on purpose, and 24 known red (below) |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **602 passed, 24 failed**: every one a fixture of stand-in PDF bytes that `pdfplumber` cannot open, which `P12a`'s page check now opens. 626 of 626 pass with the page check stubbed out (both reviews). `P12a-tests` rewrites them |
 | Lint | `.venv/bin/python -m ruff check .` | **5 errors**, every one `BLE001` |
 | Types | `.venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **10 errors in 4 files**, 20 files checked |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
-| **Rule 3 census** | the grep at [rules.md:65](docs/2-rules/rules.md) | **67**: `P11a` replaced the Pass 1 parser's `.get(field, 0)` reads (114 at `24a9a90`). Under zsh, quote `'--include=*.py'` or the count reads 0 |
+| **Rule 3 census** | the grep at [rules.md:65](docs/2-rules/rules.md) | **67**, unchanged by `P12a`. `P11a` replaced the Pass 1 parser's `.get(field, 0)` reads (114 at `24a9a90`). Under zsh, quote `'--include=*.py'` or the count reads 0 |
 | **Write guard** | `.venv/bin/python .claude/check_guard.py` | **48/48** |
 
 **There is a fourth gate now, and it is stricter than `import app` ever was.**
@@ -133,7 +133,10 @@ into `test_dcf.py`.
 - `test_routes_session_rule3_red.py`, 1 case: a cache hit ignores `files` sent with
   `session_file`. Backlog item 52.
 
-**A failure other than those two is a real regression.**
+**A failure other than those two is a real regression**, except the 24 known red at
+`a64818b` listed in `.agent/journal/2026-10-03T1534-programmer-p12a-printed-pages.md`.
+**Until `P12a-tests` lands, `test_routes_session_rule3_red.py` fails in its setup** (the
+stand-in PDF, `:63`), not on item 52's defect at `:74`, so it guards nothing.
 
 ### `tests/`, measured at `3028627`
 
@@ -373,6 +376,9 @@ the headline. Re-ranked at `622262b`.
 
 | # | Item | Cost |
 |---|---|---|
+| 62 | No failed reading check reaches the web page, for either route | **new at `P12a`.** Route A prints to the server console; route B's failures print in `check` and the CLI. Only the balance `FAIL` shows on the page |
+| 64 | The page check lets a label written across two printed rows take either row's figure | **new, `P12a` round 2 review's F6.** Needs a label the filing does not print; stated in the docs |
+| 63 | A filing with no text layer uses up route A's two retries | **new, `P12a` review's F5.** Not live: all 16 filings have a text layer |
 | 46 | `.env` overrides the environment | **new.** `env -u` does not remove the key; it caused one possibly billed call during `P9a` |
 | 49 | Given several PDFs, the API route drops one with no year, silently | **new.** Route B stops on the same input |
 | 44 | The `units` field is extracted and ignored | **new, latent.** Chipotle reports in thousands |
@@ -435,11 +441,20 @@ the headline. Re-ranked at `622262b`.
 | 48 | The equity bridge did not subtract noncontrolling interest | `dd1e225` |
 | 2 | A missing balance sheet gave zero net debt | `dd1e225` |
 | 43 | The fiscal year came from the filename, unverified | `bf6eb20` |
+| 56 | Pass 1 asked the model to compute | `ae27f47` |
+| 59 | Nothing checked that a printed line is on the page it cites | `a64818b` |
 
-**Twenty-three closed, thirty-three open**, counting items 55 to 58, new in Phase 10. Items 19 to 28 did not exist when this build
+**At `a64818b` these tables hold 24 closed items and 37 open ones** (item 23 appears twice above). They are the headline, not the whole list: items 55, 57, 58, 60 and 61 are open in the backlog and not shown here. Items 19 to 28 did not exist when this build
 started — **every one of them was found by running the code**, not by reading it. So were
 41 and 42, both found at `6e58f13` by a reviewer exhausting inputs rather than reading
 the branch.
+
+**Phase 12 (every printed line is found on its page) is in progress.** `P12a`
+(`a64818b`): both routes look up each Pass 1 line's label and figure on its cited page
+with `pdfplumber`, and a line not found is a failed check, shown, figures kept. Walmart:
+89 of 89 lines found, about 0.55 s. An invented row that keeps the balance sheet in
+balance (`Other current assets` = 4,124, page 22) now fails. Three limits are stated in
+`docs/3-architecture/extraction.md`. `P12a-tests` is next.
 
 **Phase 11 (printed lines; Python sums) is done.** `P11a` (`ae27f47`): every Pass 1
 money field is a list of printed rows, Python sums, the balance-sheet plug is gone, and a
