@@ -58,6 +58,7 @@ edits another's.
 | 2026-10-02 | P9b-route-tests | tester | `fail` **about the code** — 23 route tests pass; `api/` 86% → 97%; 11 mutations each turned a test red. 1 red test locks backlog item 52 | [entry](2026-10-02T1713-tester-p9b-route-tests.md) |
 | 2026-10-02 | P9d-pass2-checks | code_reviewer | **`approved`** — round 1; failing-test sets compared against `dce8d42`; 19 malformed Walmart copies probed. F1 minor: `_NRI_SCHEMA` imported by its private name (backlog item 53) | [entry](2026-10-02T1720-code_reviewer-p9d-pass2-checks.md) |
 | 2026-10-02 | P9d-tests | tester, run 1 | **stopped by the API usage limit** before its first change. `git status` showed no test file touched; the entry was only opened. Re-dispatched as run 2 | [entry](2026-10-02T1724-tester-p9d-tests.md) |
+| 2026-10-02 | P9d-tests | tester, run 2 | **`pass`** — 3 green tests moved out of the red file, which is deleted; 18 new cases lock every `P9d` stop; 8 mutations each turned a new test red. Gate 376 → 397 passed | [entry](2026-10-02T2101-tester-p9d-tests-run2.md) |
 
 
 

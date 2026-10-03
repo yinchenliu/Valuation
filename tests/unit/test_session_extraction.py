@@ -564,15 +564,164 @@ def test_stop_pass2_item_key_absent(tmp_path: Path, key: str) -> None:
     "key", ["year", "description", "amount", "line_item", "direction", "category"],
 )
 def test_stop_pass2_item_other_key_absent(tmp_path: Path, key: str) -> None:
-    # Route A's parser reads these six with item[key], so an absent one raises
-    # KeyError naming the key; the loader wraps it in a ValueError naming the file
-    # and the filing. (It does not name the item's year or description: see the
-    # P9c entry, findings.)
+    # Written by P9c, when route A's parser was the only check and its KeyError
+    # named the key but not the item. Since P9d the loader checks the key itself
+    # before the parser runs; the stronger test, naming the item as well, is
+    # test_stop_pass2_item_missing_a_schema_key below, over all eight keys.
     data = three_filings(tmp_path)
     del data["filings"][1]["pass2"]["non_recurring_items"][1][key]
     path = write(tmp_path, data)
     assert_one_line_names(stop_message(path), str(path.resolve()), "filings[1]",
                           pdf_name(2023), f"'{key}'")
+
+
+# --- Pass 2 shape, checked by the loader itself (P9d-pass2-checks) ------------
+#
+# The first three tests were written red by the P9c tester in
+# tests/unit/test_session_extraction_rule3_red.py and went green at 33afced. They
+# are moved here unchanged in what they assert, so the gate runs them.
+#
+# The rest lock the stops P9d added that only scratch probes had shown. Each one
+# breaks item 1 of one_filing: nri(2023, 3.0, "Legal settlement"). Item 1 rather
+# than item 0 because its year, 2023, is not in the PDF's name (TST_10-K_2024.pdf),
+# so "year 2023" on the line can only have come from the item; and its index, 1,
+# is not the 0 of filings[0]. Every expected part is a name the P9d assignment
+# requires ("the file, the filing index, the PDF name and, for an item, its year
+# and description"), spelled from the builder above, not from a run.
+
+ITEM = "non_recurring_items[1]"
+ITEM_YEAR = "year 2023"          # nri(2023, ...) in one_filing
+ITEM_DESCRIPTION = "Legal settlement"
+
+# The eight keys of a Pass 2 item, written out from the Pass 2 schema
+# (_NRI_SCHEMA in ingestion/claude_extractor.py, the dict the Pass 2 prompt is
+# built from; docs/3-architecture/extraction.md shows it too). Written here by hand,
+# then checked against nri() above, so a key the builder stops writing shows up.
+PASS2_ITEM_KEYS = ("year", "description", "amount", "line_item", "direction",
+                   "category", "confidence", "source")
+
+
+@pytest.mark.parametrize("not_a_list", [{"a": 1}, "restructuring"])
+def test_pass2_items_not_a_list_stops_naming_file_and_filing(
+    tmp_path: Path, not_a_list: Any,
+) -> None:
+    data = one_filing(tmp_path)
+    data["filings"][0]["pass2"] = {"non_recurring_items": not_a_list}
+    path = write(tmp_path, data)
+    # Before P9d: AttributeError: 'str' object has no attribute 'get'.
+    with pytest.raises(ValueError) as excinfo:
+        load_session_extraction(path)
+    assert_one_line_names(str(excinfo.value), str(path.resolve()), "filings[0]",
+                          pdf_name(2024), "non_recurring_items")
+
+
+def test_pass2_item_amount_nan_stops_naming_filing_year_and_description(
+    tmp_path: Path,
+) -> None:
+    data = one_filing(tmp_path)
+    # json.dumps writes float('nan') as NaN, and json.loads reads it back.
+    data["filings"][0]["pass2"]["non_recurring_items"][0]["amount"] = float("nan")
+    path = write(tmp_path, data)
+    # Before P9d: loaded, with amount=nan.
+    with pytest.raises(ValueError) as excinfo:
+        load_session_extraction(path)
+    assert_one_line_names(str(excinfo.value), str(path.resolve()), "filings[0]",
+                          pdf_name(2024), "2024", "Plant closure")
+
+
+def test_the_pass2_item_builder_writes_every_schema_key(tmp_path: Path) -> None:
+    # Guards the parametrisation below: the hand-written list is the schema's eight
+    # keys, and nri() writes all eight, so no case deletes a key that was never there.
+    assert tuple(ce._NRI_SCHEMA["non_recurring_items"][0]) == PASS2_ITEM_KEYS
+    item = one_filing(tmp_path)["filings"][0]["pass2"]["non_recurring_items"][1]
+    assert tuple(item) == PASS2_ITEM_KEYS
+    assert (item["year"], item["description"]) == (2023, ITEM_DESCRIPTION)
+
+
+@pytest.mark.parametrize("key", PASS2_ITEM_KEYS)
+def test_stop_pass2_item_missing_a_schema_key(tmp_path: Path, key: str) -> None:
+    data = one_filing(tmp_path)
+    del data["filings"][0]["pass2"]["non_recurring_items"][1][key]
+    path = write(tmp_path, data)
+    # The item is named by its index always, and by its year and its description
+    # unless that is the key removed (P9d assignment step 1, last bullet).
+    item_names = [ITEM]
+    if key != "year":
+        item_names.append(ITEM_YEAR)
+    if key != "description":
+        item_names.append(ITEM_DESCRIPTION)
+    assert_one_line_names(stop_message(path), str(path.resolve()), "filings[0]",
+                          pdf_name(2024), *item_names, f"'{key}'", "absent")
+
+
+@pytest.mark.parametrize(
+    "bad",
+    # A string that would convert to 12.0, a bool Python counts as 1, a null, and
+    # an infinity json writes as Infinity and reads back. None of them is a finite
+    # JSON number; Pass 1 refuses the same four (test_stop_year_key_not_a_finite_number).
+    ["12", True, None, float("inf")],
+    ids=["string", "bool", "null", "inf"],
+)
+def test_stop_pass2_item_amount_not_a_finite_json_number(
+    tmp_path: Path, bad: Any,
+) -> None:
+    data = one_filing(tmp_path)
+    data["filings"][0]["pass2"]["non_recurring_items"][1]["amount"] = bad
+    path = write(tmp_path, data)
+    assert_one_line_names(stop_message(path), str(path.resolve()), "filings[0]",
+                          pdf_name(2024), ITEM, ITEM_YEAR, ITEM_DESCRIPTION,
+                          "'amount'")
+
+
+@pytest.mark.parametrize("bad", [2025.5, True], ids=["fraction", "bool"])
+def test_stop_pass2_item_year_not_an_integer(tmp_path: Path, bad: Any) -> None:
+    # int() would turn 2025.5 into 2025 and True into 1, silently. The year is the
+    # bad value here, so the item is named by its index and its description.
+    data = one_filing(tmp_path)
+    data["filings"][0]["pass2"]["non_recurring_items"][1]["year"] = bad
+    path = write(tmp_path, data)
+    assert_one_line_names(stop_message(path), str(path.resolve()), "filings[0]",
+                          pdf_name(2024), ITEM, ITEM_DESCRIPTION, "'year'")
+
+
+def test_stop_pass2_item_not_an_object(tmp_path: Path) -> None:
+    # A string has no year and no description, so its index is the only name it has.
+    # "JSON object" says what it should have been, as the "filing not an object" row
+    # of _SHAPE_STOPS does. Without it, a string item reported as "key 'year' is
+    # absent" eight times would also pass: `"year" in "restructuring"` is a
+    # substring test, not a key lookup.
+    data = one_filing(tmp_path)
+    data["filings"][0]["pass2"]["non_recurring_items"][1] = "restructuring"
+    path = write(tmp_path, data)
+    assert_one_line_names(stop_message(path), str(path.resolve()), "filings[0]",
+                          pdf_name(2024), ITEM, "JSON object")
+
+
+def test_stop_pass2_items_absent(tmp_path: Path) -> None:
+    # The one Pass 2 absence P9d leaves to route A's parser (its shape check returns
+    # no problem and lets the parser say why absent and [] differ). Rule 3 still
+    # asks: does it stop, and does one line name the file, the filing and the key?
+    data = one_filing(tmp_path)
+    del data["filings"][0]["pass2"]["non_recurring_items"]
+    path = write(tmp_path, data)
+    assert_one_line_names(stop_message(path), str(path.resolve()), "filings[0]",
+                          pdf_name(2024), "'non_recurring_items'")
+
+
+def test_pass2_item_amount_zero_loads(tmp_path: Path) -> None:
+    """A stop on a bad amount must not become a stop on zero.
+
+    0 is a finite JSON number; the item is a legitimate reading of a note that
+    reports a nil charge. By hand: the two items of one_filing, in order, with
+    item 1's amount the explicit 0 written below.
+    """
+    data = one_filing(tmp_path)
+    data["filings"][0]["pass2"]["non_recurring_items"][1]["amount"] = 0
+    loaded = load_session_extraction(write(tmp_path, data))
+    assert [(i.description, i.amount) for i in loaded.non_recurring] == [
+        ("Plant closure", 12.0), ("Legal settlement", 0.0)]
+    assert loaded.validation_errors == []
+
 
 def test_every_problem_is_listed_in_one_stop(tmp_path: Path) -> None:
     # A session sets the model last, so a null model must not hide Pass 1 problems:
