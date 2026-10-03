@@ -20,8 +20,12 @@ def _escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
-def write_text_pdf(path: Path, pages: list[list[str]]) -> Path:
-    """Write `pages` (a list of pages, each a list of lines) to `path`."""
+def write_text_pdf(path: Path, pages: list[list[str]], *, leading: int = 20) -> Path:
+    """Write `pages` (a list of pages, each a list of lines) to `path`.
+
+    Lines are `leading` points apart, from y = 750 down; the font is 10 points, so
+    any leading above 10 keeps each string on its own `extract_text()` line.
+    """
     objects: list[bytes] = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
         (
@@ -34,7 +38,7 @@ def write_text_pdf(path: Path, pages: list[list[str]]) -> Path:
     for i, lines in enumerate(pages):
         ops = ["BT", "/F1 10 Tf"]
         for row, line in enumerate(lines):
-            ops.append(f"1 0 0 1 50 {750 - 20 * row} Tm ({_escape(line)}) Tj")
+            ops.append(f"1 0 0 1 50 {750 - leading * row} Tm ({_escape(line)}) Tj")
         ops.append("ET")
         stream = "\n".join(ops).encode("latin-1")
         objects.append(

@@ -227,7 +227,7 @@ test of the reading.
 | 4 | a balance check difference above 1 unit is `FAIL`, not the old 2% `OK` | `FAIL` | the CLI and the result page |
 
 
-## Phase 12 — every printed line is found on the page it cites
+## Phase 12 — every printed line is found on the page it cites · **done at `P12a-tests`**
 
 Backlog item 59, from the `P11a` review's F7. Since `P11a` every Pass 1 figure is a list
 of printed lines, but nothing checks that a line was printed: a model can add a row of
@@ -242,6 +242,13 @@ failed balance check.
 | 2 | an invented row that balances is caught | `check` exits 1, naming the field, line, label and page; the balance check stays `OK` | a scratch copy of `WMT.json` |
 | 3 | both routes run one check | one definition; route A's runner and route B's loader each call it | a grep |
 | 4 | route A's retry names the row and states no amount | no gap or total in the retry text | a stubbed run on the real PDF |
+
+**Result.** Every criterion passes. 1 and 2: `P12a` (`a64818b`), re-run by both reviews;
+the invented `Other current assets` = 4,124 on page 22 fails while both balance rows stay
+`OK`. 3: one walk, `_printed_line_failures`, called by `_run_financials_pass` and through
+`printed_line_page_failures` by `load_session_extraction`. 4: the retry names label,
+field and page and no amount. `P12a-tests` locks each outcome with PDFs it writes,
+including the attack end to end (`tests/unit/test_page_check.py`).
 
 ---
 

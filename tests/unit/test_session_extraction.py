@@ -27,8 +27,9 @@ in a comment beside each. No value here was read off the code's output.
 that raises; the route A tests replace it again with a stub that answers only the
 exact (system prompt, user prompt, PDF bytes) triples it was given, and raises on
 anything else. `resolve_provider` is replaced too, so no test depends on what
-`.env` holds (`config.py` loads it with `override=True`). The PDFs are a few bytes
-written under `tmp_path`; nothing reads `10K_filings/`.
+`.env` holds (`config.py` loads it with `override=True`). The PDFs are written under
+`tmp_path` by `tests/unit/_pass1_pdf.py`, each printing its filing's Pass 1 rows on
+the pages they cite (P12a); nothing reads `10K_filings/`.
 """
 
 from __future__ import annotations
@@ -63,6 +64,7 @@ from ingestion.session_extraction import (
     main,
 )
 from tests.unit._fiscal_year_stub import stub_evidence_reader
+from tests.unit._pass1_pdf import reprint_filing_pdf, write_pass1_pdf
 from tests.unit._printed_lines import lines, printed_balance_sheet, printed_year
 
 MODEL = "claude-opus-5"
@@ -138,10 +140,18 @@ def nri(year: int, amount: float, description: str, **overrides: Any) -> dict[st
     return item
 
 
-def make_pdf(directory: Path, fiscal_year: int) -> Path:
-    """A few distinct bytes standing in for a 10-K. Only its hash is read."""
+def make_pdf(directory: Path, fiscal_year: int, p1: dict[str, Any] | None = None) -> Path:
+    """A real PDF for one filing, printing every row of `p1` on the page it cites.
+
+    Since P12a both routes look each printed line up on its cited page, so the
+    stand-in bytes this used to write would stop every run. The pages are built
+    from the filing's own Pass 1 (`tests/unit/_pass1_pdf.py`), which is why each
+    builder below writes its Pass 1 first and its PDF second. The cover names the
+    fiscal year, so each filing's bytes differ. With no `p1` (the `plan` test, whose
+    year reader is stubbed) the PDF is the cover alone.
+    """
     path = directory / f"{TICKER}_10-K_{fiscal_year}.pdf"
-    path.write_bytes(f"%PDF-1.4 stand-in for fiscal {fiscal_year}\n".encode())
+    write_pass1_pdf(path, p1, cover=f"Test filing for fiscal {fiscal_year}")
     return path.resolve()
 
 
@@ -184,8 +194,8 @@ def write(directory: Path, data: dict[str, Any], name: str = "session.json") -> 
 # every year, and the balance sheet. Pass 1 gives 2023 (k=1) and 2024 (k=2).
 
 def one_filing(directory: Path) -> dict[str, Any]:
-    pdf = make_pdf(directory, 2024)
     p1 = pass1([year_entry(2023, 1), year_entry(2024, 2)], balance_sheet(2024))
+    pdf = make_pdf(directory, 2024, p1)
     p2 = {"non_recurring_items": [
         nri(2024, 12.0, "Plant closure"),
         nri(2023, 3.0, "Legal settlement", category="litigation", source=""),
@@ -206,19 +216,21 @@ def one_filing(directory: Path) -> dict[str, Any]:
 # balance sheet, 2024; items A, B, C, D, in that order: 5 in, A's duplicate dropped.
 
 def three_filings(directory: Path) -> dict[str, Any]:
-    pdfs = {y: make_pdf(directory, y) for y in (2022, 2023, 2024)}
+    p1s = {
+        2022: pass1([year_entry(2020, 1), year_entry(2021, 2), year_entry(2022, 3)], {}),
+        2023: pass1([year_entry(2023, 4)], {}),
+        2024: pass1([year_entry(2024, 5)], balance_sheet(2024)),
+    }
+    pdfs = {y: make_pdf(directory, y, p1s[y]) for y in (2022, 2023, 2024)}
     item_a = nri(2022, 5.0, "Restructuring A")
     return session([
-        filing(pdfs[2022], 2022, None, False,
-               pass1([year_entry(2020, 1), year_entry(2021, 2), year_entry(2022, 3)], {}),
+        filing(pdfs[2022], 2022, None, False, p1s[2022],
                {"non_recurring_items": [item_a, nri(2021, 2.0, "Impairment B",
                                                     category="impairment")]}),
-        filing(pdfs[2023], 2023, [2023], False,
-               pass1([year_entry(2023, 4)], {}),
+        filing(pdfs[2023], 2023, [2023], False, p1s[2023],
                {"non_recurring_items": [dict(item_a, description="A, read again"),
                                         nri(2023, 7.0, "Settlement C", confidence="low")]}),
-        filing(pdfs[2024], 2024, [2024], True,
-               pass1([year_entry(2024, 5)], balance_sheet(2024)),
+        filing(pdfs[2024], 2024, [2024], True, p1s[2024],
                {"non_recurring_items": [nri(2024, 9.0, "Severance D", source="")]}),
     ])
 
@@ -340,6 +352,9 @@ def test_a_changed_figure_makes_the_routes_differ(
     fin_a, _, _ = run_route_a(monkeypatch, data, [2024])
     # sbc is one printed row (P11a shape); its value was 25 * 2 = 50.
     data["filings"][0]["pass1"]["historical_years"][1]["sbc"][0]["value"] = 51
+    # The filing now prints 51 (P12a), so the page check passes and the only
+    # difference between the routes is the figure.
+    reprint_filing_pdf(data["filings"][0])
     route_b = load_session_extraction(write(tmp_path, data))
     assert route_b.financials != fin_a
 
@@ -540,6 +555,8 @@ def test_explicit_zero_is_accepted(tmp_path: Path) -> None:
         "total_liabilities_and_equity": lines(
             "total_liabilities_and_equity", [800], balance_sheet=True),
     }
+    # The filing prints the rebuilt sheet (P12a: each row is looked up on its page).
+    reprint_filing_pdf(data["filings"][0])
     loaded = load_session_extraction(write(tmp_path, data))
     # The value is the explicit input, 0, not a default.
     assert loaded.financials.get_cash_flow(2023).stock_based_compensation == 0.0
@@ -815,6 +832,8 @@ def test_check_exit_codes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) ->
     # 2024 gross profit 1300 against 2000 - 800 = 1200 (k = 2): 100 / 1300 = 7.7%.
     data["filings"][0]["pass1"]["historical_years"][1]["gross_profit"] = lines(
         "gross_profit", [1300])
+    # The filing prints 1,300 (P12a), so the arithmetic check is the only failure.
+    reprint_filing_pdf(data["filings"][0])
     assert cmd_check(write(tmp_path, data, "arith.json")) == 1
 
     del data["filings"][0]["pass1"]["historical_years"][1]["sbc"]

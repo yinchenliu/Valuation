@@ -38,7 +38,8 @@ The base figures are those of `test_claude_extractor.py`, one printed row each:
 **No test reaches the API or the network.** An autouse fixture replaces `_call_llm`
 with a function that raises; the route A tests replace it again with a scripted
 stub that raises when called more often than scripted. No test reads
-`10K_filings/` or `extractions/`: the PDFs are a few bytes under `tmp_path`.
+`10K_filings/` or `extractions/`: the PDFs are written under `tmp_path` by
+`tests/unit/_pass1_pdf.py`, printing each answer's rows on the pages they cite.
 """
 
 from __future__ import annotations
@@ -66,6 +67,7 @@ from ingestion.claude_extractor import (
 )
 from ingestion.session_extraction import cmd_check, load_session_extraction
 from models.financial_statements import BalanceSheet, FinancialStatements
+from tests.unit._pass1_pdf import reprint_filing_pdf, write_pass1_pdf
 from tests.unit._printed_lines import lines, printed_balance_sheet, printed_year
 from tests.unit._session_route_helpers import (
     FISCAL_YEAR,
@@ -200,6 +202,8 @@ def test_a_field_of_two_rows_is_their_sum_by_route_b(tmp_path: Path) -> None:
     # as two rows, 100 + 40 = 140; the loader must add them to the same 140.
     data = session_dict(make_pdf(tmp_path))
     data["filings"][0]["pass1"]["historical_years"][1]["capex"] = lines("capex", [100, 40])
+    # The filing prints the two rows (P12a: each is looked up on its page).
+    reprint_filing_pdf(data["filings"][0])
     loaded = load_session_extraction(write_session(tmp_path, data))
     assert loaded.financials.get_cash_flow(2024).capital_expenditures == -140.0
     assert loaded.validation_errors == []
@@ -412,8 +416,13 @@ def run_route_a(
     statements, or the exception raised), and the PDF bytes. A call beyond the
     script raises.
     """
-    pdf = tmp_path / "TST_10-K_2024.pdf"
-    pdf.write_bytes(b"%PDF-1.4 stand-in bytes for the P11a retry tests\n")
+    # A real PDF printing every row any scripted answer cites, on its page (P12a:
+    # route A looks each line up there). So the page check finds every row, and
+    # the failures these tests script are the shape, JSON and arithmetic ones only.
+    pdf = write_pass1_pdf(
+        tmp_path / "TST_10-K_2024.pdf", *(_json_or_none(a) for a in answers),
+        cover="Test filing for the P11a retry tests",
+    )
     pdf_bytes = pdf.read_bytes()
     calls: list[tuple[str, bytes | None]] = []
 
@@ -434,6 +443,14 @@ def run_route_a(
     except ValueError as exc:
         outcome = exc
     return calls, outcome, pdf_bytes
+
+
+def _json_or_none(text: str) -> Any:
+    """A scripted answer as JSON, or None for the one that is not JSON on purpose."""
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return None
 
 
 GOOD = answer([year()], balance())
@@ -761,6 +778,9 @@ def test_the_cli_session_route_shows_a_failed_check_and_keeps_the_figures(
     data["filings"][0]["pass1"]["latest_balance_sheet"] |= {
         field: lines(field, values, balance_sheet=True) for field, values in DROPPED_ROW.items()
     }
+    # The filing prints the sheet as read (P12a), so the failure shown is the
+    # balance check's alone.
+    reprint_filing_pdf(data["filings"][0])
     path = write_session(tmp_path, data)
     args = argparse.Namespace(session_file=str(path), ticker=None, company_name=None)
     fin, _, _, _ = cli._extract_from_session_file(args)

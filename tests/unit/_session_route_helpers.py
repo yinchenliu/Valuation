@@ -11,8 +11,9 @@ rows, built by `tests/unit/_printed_lines.py` with the figures unchanged): one f
 `include_bs = true` (the routing table, `docs/3-architecture/extraction.md`; the same
 plan `tests/unit/test_session_extraction.py::one_filing` writes).
 
-The PDF is a few bytes under `tmp_path`. Its sha256 is taken with `hashlib` here, as
-the test's own record of the bytes. Nothing reads `10K_filings/`.
+The PDF is written under `tmp_path` by `tests/unit/_pass1_pdf.py`, from the Pass 1
+answer below: every row it cites, printed on its cited page (P12a). Its sha256 is
+taken with `hashlib` here, as the test's own record of the bytes. Nothing reads `10K_filings/`.
 
 **No test reaches the API or the network.** `open_closed_client` replaces
 `ingestion.claude_extractor._call_llm`, the route module's `fetch_price_data` and
@@ -48,6 +49,7 @@ from ingestion.claude_extractor import (
 )
 from ingestion.price_fetcher import PriceData
 from ingestion.session_extraction import SESSION_FORMAT
+from tests.unit._pass1_pdf import write_pass1_pdf
 from tests.unit._printed_lines import printed_balance_sheet, printed_year
 
 # ---------------------------------------------------------------------------
@@ -133,9 +135,15 @@ def pass2_answer() -> dict[str, Any]:
 
 
 def make_pdf(directory: Path) -> Path:
-    """A few distinct bytes standing in for a 10-K. Only its hash is read."""
+    """A real PDF printing every row of `pass1_answer()` on the page it cites.
+
+    Since P12a both routes look each printed line up on its cited page, so the
+    stand-in bytes this used to write would stop every run. The pages are built
+    from the answer itself (`tests/unit/_pass1_pdf.py`); a test that changes a row
+    afterwards calls `reprint_filing_pdf` on the filing.
+    """
     path = directory / f"{TICKER}_10-K_{FISCAL_YEAR}.pdf"
-    path.write_bytes(b"%PDF-1.4 stand-in bytes for the P9b route tests\n")
+    write_pass1_pdf(path, pass1_answer(), cover="Test filing for the P9b route tests")
     return path.resolve()
 
 
