@@ -4,9 +4,9 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `1c24af8`, 2026-10-02**, on branch `main`, **on the macOS machine**
+**Measured at `24a9a90`, 2026-10-02**, on branch `main`, **on the macOS machine**
 (`.venv/bin/python`, Python 3.11.6). Every figure before `cde33cb` was measured on the
-Windows machine. **Twenty-three work units accepted, and not one on its own report.** Every programmer run went to a reviewer that
+Windows machine. **Twenty-seven work units accepted, and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; **five** times a reviewer or a
 programmer overturned a claim — twice against a programmer, **three times against the
 orchestrator**. The journal is [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
@@ -23,10 +23,10 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `1c24af8` (macOS) |
+| Gate | Command | Result at `24a9a90` (macOS) |
 |---|---|---|
-| Tests | `.venv/bin/python -m pytest -q` | **401 tests. 363 pass, 38 fail**: 36 fixtures turned red on purpose (31 by `P10a`, 5 by `P10c`; **known red**, `P10-tests` repairs them) and 2 red on purpose |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **362 passed, 36 failed**, all 36 the known fixtures above. The CAPM failure is gone (`P10b`, item 45 closed) |
+| Tests | `.venv/bin/python -m pytest -q` | **497 tests. 495 pass, 2 fail**: the 2 red on purpose, one in each `*_rule3_red.py` file |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **495 passed, 0 failed.** The first fully green gate on the macOS machine |
 | Lint | `.venv/bin/python -m ruff check .` | **5 errors**, every one `BLE001` |
 | Types | `.venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **10 errors in 4 files**, 20 files checked |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
@@ -124,17 +124,16 @@ same branch produced 21 bytes of `Internal Server Error`.
 `pytest` no longer makes a paid API call during collection. It needs no key, no PDF
 and no network.
 
-**Three test cases fail deliberately.** `ls tests/unit/*_rule3_red.py` returns three files:
+**Two test cases fail deliberately.** `ls tests/unit/*_rule3_red.py` returns two files.
+`test_dcf_rule3_red.py` went green when `P10a` closed item 2, and `P10-tests` moved it
+into `test_dcf.py`.
 
-- `test_dcf_rule3_red.py`: `run_dcf` must stop when the balance sheet is absent.
-  Backlog item 2, still open.
 - `test_projector_rule3_red.py`: `analysis/projector.py` raises a bare `IndexError` on
   an empty revenue list. Written at `80febe1`, the twin of closed item 14.
 - `test_routes_session_rule3_red.py`, 1 case: a cache hit ignores `files` sent with
   `session_file`. Backlog item 52.
 
-**On macOS one more test fails**, `test_capm.py:473`, because of the SciPy version
-(item 45, held). **A failure other than those three is a real regression.**
+**A failure other than those two is a real regression.**
 
 ### `tests/`, measured at `3028627`
 
@@ -165,12 +164,14 @@ api/ TOTAL                       191       9    95%
 models/financial_statements.py   154       1    99%
 models/valuation.py              127       2    98%
 
-ingestion/claude_extractor.py    438     133    70%     22% at ad52e1a
-ingestion/filings.py              65      19    71%     new at ad52e1a
-ingestion/session_extraction.py  510      81    84%     new at ad52e1a
+ingestion/claude_extractor.py    442     133    70%     22% at ad52e1a
+ingestion/filings.py             200       0   100%     at 24a9a90
+ingestion/session_extraction.py  510      73    86%     new at ad52e1a
 ingestion/price_fetcher.py        37      21    43%
-api/routes_upload.py              48       0   100%     at 6db180c
-api/routes_valuation.py          197       8    96%     at 6db180c
+api/routes_upload.py              51       0   100%     at 24a9a90
+api/routes_valuation.py          197       8    96%
+analysis/dcf.py                   48       0   100%     at 24a9a90
+analysis/capm.py                  55       0   100%     at 24a9a90
 ```
 
 **`ingestion/` is measured for the first time at `ad52e1a`, and tested since `92549f8`.**
@@ -210,7 +211,7 @@ coverage.py reported `Module app was never imported`.
    any of the other conditional-expression defaults. **Coverage here is not evidence
    that every path is checked.**
 2. **`ingestion/` has tests of its own since `92549f8`**, but route A's retry loops are
-   not run. That is where 49 of the 116
+   not run. That is where 49 of the 114
    zero-default sites live, and where the extraction boundary sits. `api/` was in the
    same position until `742f447`.
 
@@ -372,13 +373,10 @@ the headline. Re-ranked at `622262b`.
 
 | # | Item | Cost |
 |---|---|---|
-| 48 | The equity bridge does not subtract noncontrolling interest | **new at `ad52e1a`.** About $0.82 of Walmart's $28.84. The fix adds an extracted field, so it needs the user |
 | 46 | `.env` overrides the environment | **new.** `env -u` does not remove the key; it caused one possibly billed call during `P9a` |
-| 43 | The fiscal year comes from the filename's date | **new.** Wrong for L3Harris's 2025 and 2026 filings |
 | 49 | Given several PDFs, the API route drops one with no year, silently | **new.** Route B stops on the same input |
 | 44 | The `units` field is extracted and ignored | **new, latent.** Chipotle reports in thousands |
 | 47 | The income statement shown has no interest income row | **new, display.** EBT does not add up from the rows shown |
-| 45 | The CAPM constant-market stop is reached only on older SciPy | **new. Held by the user** |
 | 50 | Route A returns `[]` when Pass 2 cannot be parsed twice | **new, found by `P9c`.** "Nothing was read" looks like "none found" |
 | 52 | A cache hit ignores `files` sent with `session_file` | **new, found by the `P9b` review.** Hand-built requests only |
 | 51 | The arithmetic check's `WARN` branch is dead | **new, found by `P9c`** |
@@ -391,8 +389,7 @@ the headline. Re-ranked at `622262b`.
 | 32 | `models/valuation.py:138` renders a share price of `0.0` on zero diluted shares | same shape as item 2, on the **denominator** of the headline figure |
 | 37 | `analysis/wacc.py`'s new stop states an inference as a fact | the stop is right; the message asserts the extraction failed when a real deleveraging produces the same pattern. **Message only** |
 | 31 | `discount_cash_flows`' `wacc` is unguarded on a **direct** call | **latent.** The `run_dcf` chain stops two lines later, so no current path reaches it |
-| 1 | **116** silent zero-default sites — `models/` 60, `ingestion/` 49, `analysis/` 5, `api/` 2 | **worse than its original description.** It does not produce zeros; it produces a signed, correctly-scaled figure that tracks the filing and reads as a measurement |
-| 2 | `analysis/dcf.py:80` — missing balance sheet gives **zero net debt** | equity value overstated by the whole debt balance. A red test already states the requirement |
+| 1 | **114** silent zero-default sites — `models/` 60, `ingestion/` 49, `analysis/` 3, `api/` 2 | **worse than its original description.** It does not produce zeros; it produces a signed, correctly-scaled figure that tracks the filing and reads as a measurement |
 | 25 | `analysis/normalizer.py:167-170` — an adjustment whose **year** matches no statement is discarded | a valuation labelled "normalised" whose figures are as-reported, with no signal |
 | 8 | Blanket `except Exception` at five sites | **it swallowed the web outage for the life of the repository**, because the error page rendered through the same broken call |
 | 6 | Five `x / 100 if x else None` conversions | a deliberate `0` from the user is read as "not supplied" |
@@ -434,15 +431,19 @@ the headline. Re-ranked at `622262b`.
 | 23b | The NaN tax clamp twin | `2ca620a` |
 | 14 | Empty `projected_fcffs` raised a bare `IndexError` | `ff632df` |
 | 29 | `POST /valuation` with no filing ran an extraction on an empty path | `be1c077` |
+| 45 | The CAPM constant-market stop was reached only on older SciPy | `1ae0069` |
+| 48 | The equity bridge did not subtract noncontrolling interest | `dd1e225` |
+| 2 | A missing balance sheet gave zero net debt | `dd1e225` |
+| 43 | The fiscal year came from the filename, unverified | `bf6eb20` |
 
-**Nineteen closed, thirty-three open.** Items 19 to 28 did not exist when this build
+**Twenty-three closed, thirty-three open**, counting items 55 to 58, new in Phase 10. Items 19 to 28 did not exist when this build
 started — **every one of them was found by running the code**, not by reading it. So were
 41 and 42, both found at `6e58f13` by a reviewer exhausting inputs rather than reading
 the branch.
 
-**Phase 10 (the user's fixes of 2026-10-02) is in progress.** `P10b` (item 45) and
-`P10a` (items 48 and 2) and `P10c` (item 43) are committed at `1ae0069`, `dd1e225` and
-`bf6eb20`. `P10-tests` repairs the 36 fixtures the three units turned red on purpose. Walmart's implied price is $28.02 with the new bridge.
+**Phase 10 (the user's fixes of 2026-10-02) is done at `24a9a90`.** `P10b` closed item
+45, `P10a` closed items 48 and 2, `P10c` closed item 43, and `P10-tests` repaired the 36
+fixtures they turned red on purpose and tested all three. Walmart's implied price is $28.02 with the new bridge.
 
 **Phase 9 ("two extraction routes, one parser") is done.** Route B works from the
 CLI since `ad52e1a` and from the web app since `be1c077`. The parse layer both routes
@@ -472,8 +473,8 @@ Things that have already misled a reader of this repository.
    nothing at all. "It ran" is not evidence. Name an input that came from a filing.
 3. **`cli.py` and the web app can disagree.** They build assumptions by separate code
    paths. A figure verified in one is not verified in the other.
-4. **Three test cases are red on purpose.** On macOS `pytest -q` reports `4 failed, 397
-   passed`: three red cases and the held CAPM test. That is the expected
+4. **Two test cases are red on purpose.** On macOS `pytest -q` reports `2 failed, 495
+   passed`. That is the expected
    state. Do not fix it by weakening it; fix backlog item 2. The gate
    form that excludes it is `pytest -q --ignore-glob="*_rule3_red.py"`.
 5. **A green test inside `*_rule3_red.py` is invisible to the gate.** That happened
