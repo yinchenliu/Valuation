@@ -12,13 +12,14 @@ Two programs run the same eight steps. **They are separate implementations**, wh
 ```
 
 FastAPI, five routes, Jinja2 templates, no JavaScript. Line numbers measured at
-`P9b-session-web`; the function names are the stable reference.
+`P10c-fiscal-year` round 2 (2026-10-02, on top of `1ae0069`), each checked against the
+file; the function names are the stable reference.
 
 | Route | Method | Function | Renders |
 |---|---|---|---|
-| `/` | GET | `upload_page`, `api/routes_upload.py:66` | `upload.html`: two forms, PDFs (route A) and a session file (route B) |
-| `/upload` | POST | `upload_files`, `api/routes_upload.py:78` | 303 → `/assumptions?ticker=…&company_name=…&files=…` |
-| `/upload-session` | POST | `upload_session_file`, `api/routes_upload.py:107` | 303 → `/assumptions?session_file=…` |
+| `/` | GET | `upload_page`, `api/routes_upload.py:70` | `upload.html`: two forms, PDFs (route A) and a session file (route B) |
+| `/upload` | POST | `upload_files`, `api/routes_upload.py:82` | 303 → `/assumptions?ticker=…&company_name=…&files=…`; **400 and `upload.html` with the message** when a filename's year disagrees with the filing (`P10c`) |
+| `/upload-session` | POST | `upload_session_file`, `api/routes_upload.py:129` | 303 → `/assumptions?session_file=…` |
 | `/assumptions` | GET | `assumptions_page`, `api/routes_valuation.py:362` | `assumptions.html` |
 | `/valuation` | POST | `run_valuation`, `api/routes_valuation.py:497` | `valuation_result.html` |
 
@@ -26,9 +27,21 @@ FastAPI, five routes, Jinja2 templates, no JavaScript. Line numbers measured at
 
 1. **Upload**, by one of two routes.
    - **PDFs (route A).** `_save_upload` writes each PDF to `uploads/<TICKER>/`.
-     `_guess_fiscal_year` pulls a 4-digit year from the filename with
-     `re.search(r"(20\d{2})")`. Files are passed on as a comma-separated
-     `year:path,year:path` **query string**.
+     `_guess_fiscal_year` takes the year from the filename with
+     `fiscal_year_from_filename` (`ingestion/filings.py`), the same guesser the CLI
+     and route B use. **Every year so found is then verified against the filing**
+     with `verify_filing_years`: the cover's "For the fiscal year ended" date and the
+     newest column label above the income statement. A mismatch, or a filing whose
+     evidence cannot be read, **stops here**: the upload page is rendered again with
+     the message, HTTP 400, no redirect, and nothing is extracted. The message names
+     the file, the year given, the cover date, the column label, the year the content
+     gives, and the web remedy: rename the file so the year after `10-K` in its name is
+     the year the filing gives, and upload it again (`YEAR:PATH` is the CLI's remedy,
+     and a web user cannot use it). A filing whose evidence could not be read is listed
+     under its own heading, "could not be confirmed", not "does not match". The rule is in
+     [extraction.md](extraction.md), "Where each filing's fiscal year comes from".
+     Otherwise files are passed on as a comma-separated `year:path,year:path`
+     **query string**.
    - **A session file (route B).** `_save_session_upload` writes the `.json` to
      `uploads/session/` (the last path component of its name only; a missing name is a
      400 naming `session_file`). It is **not parsed** here. Its saved path is passed on
@@ -58,9 +71,12 @@ FastAPI, five routes, Jinja2 templates, no JavaScript. Line numbers measured at
 
 ### Four things about this flow that will surprise you
 
-**The fiscal year comes from the filename** (route A). A file named `annual_report.pdf`
-gets year `0`, and `_extract_from_files` then filters it out of the multi-file path. Renaming a
-file changes which years are extracted.
+**The fiscal year comes from the filename, and the filing must agree** (route A). A
+filename year the filing contradicts stops at `/upload` (L3Harris's
+`…_10-K_2026-01-02_….pdf` names 2026; the filing calls that year 2025). A file named
+`annual_report.pdf` gets year `0`, is not verified, and `_extract_from_files` then
+filters it out of the multi-file path (backlog item 49). Renaming a file changes which
+years are extracted.
 
 **File paths travel in the URL.** The query string carries absolute filesystem paths,
 visible to the user and editable by them. `/assumptions?files=...` and

@@ -7,6 +7,10 @@
     <h1>Upload 10-K Filings</h1>
     <p>Upload one or more 10-K/10-Q PDF filings. Financial data will be extracted automatically via LLM.</p>
 
+    {% if error %}
+    <div class="alert alert-error" style="white-space: pre-line">{{ error }}</div>
+    {% endif %}
+
     <form action="/upload" method="post" enctype="multipart/form-data">
         <div class="form-group">
             <label for="ticker">Ticker Symbol</label>

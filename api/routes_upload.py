@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import shutil
 from pathlib import Path
 from urllib.parse import urlencode
@@ -12,6 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from config import BASE_DIR, UPLOAD_DIR
+from ingestion.filings import fiscal_year_from_filename, verify_filing_years
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -57,9 +57,13 @@ def _save_session_upload(file: UploadFile) -> Path:
 
 
 def _guess_fiscal_year(filename: str) -> int | None:
-    """Try to extract a 4-digit year from the filename."""
-    match = re.search(r"(20\d{2})", filename)
-    return int(match.group(1)) if match else None
+    """The fiscal year the filename names, or None.
+
+    Not a second guesser: it is `fiscal_year_from_filename`, the one the CLI and
+    the session route use (P10c, backlog item 43). The year it gives is verified
+    against the filing's content in `upload_files` before anything is extracted.
+    """
+    return fiscal_year_from_filename(filename)
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -81,12 +85,30 @@ async def upload_files(
     company_name: str = Form(""),
     pdf_files: list[UploadFile] = File(...),
 ):
-    """Handle upload of one or more 10-K/10-Q PDF filings."""
+    """Handle upload of one or more 10-K/10-Q PDF filings.
+
+    Every year taken from a filename is verified against the filing's cover and
+    income statement (`verify_filing_years`). A mismatch, or a filing whose
+    evidence cannot be read, re-renders this page with the message (HTTP 400),
+    and nothing is extracted: there is no redirect to /assumptions. A file whose
+    name carries no year is passed on as year 0 and not verified (backlog
+    item 49 owns what happens to it next).
+    """
     file_paths = []
     for f in pdf_files:
         path = _save_upload(f, ticker)
         year = _guess_fiscal_year(f.filename or "")
         file_paths.append((year, str(path)))
+
+    try:
+        verify_filing_years(
+            [(year, path) for year, path in file_paths if year is not None],
+            "rename_and_upload",
+        )
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            request, "upload.html", {"error": str(exc)}, status_code=400
+        )
 
     # Pass file info as comma-separated "year:path" pairs
     file_params = ",".join(

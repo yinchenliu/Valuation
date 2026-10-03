@@ -84,6 +84,72 @@ one function, `merge_filing_extractions`. `extract_multi_year` (route A) and
 year from every filing would call the model three times for the same figures and produce
 three versions of each.
 
+### Where each filing's fiscal year comes from
+
+**The filename names the year; the filing's own text must agree, or nothing is
+extracted.** Backlog item 43, decided by the user on 2026-10-02, landed by `P10c`. All of
+it is in `ingestion/filings.py`, and every route goes through it.
+
+| Step | Function | What it does |
+|---|---|---|
+| name | `fiscal_year_from_filename` | the 4-digit year after a `10-K`/`10K` marker, else the first `19xx`/`20xx` in the name, else `None`. The **one** filename guesser: `discover_filings` and the web upload (`_guess_fiscal_year`) both call it |
+| read | `read_fiscal_year_evidence` | `pdfplumber`, two printed facts and their pages: the cover's `For the fiscal year ended <Month D, YYYY>` (it must follow `ANNUAL REPORT PURSUANT TO SECTION 13 OR 15(d)` in the first 5 pages), and the **newest** column heading in the first line, within 5 lines below a `Consolidated Statement(s) of Income / Earnings / Operations [and Comprehensive Income]` title alone on its line, that carries two or more years or two or more dates |
+| decide | `fiscal_year_from_evidence(cover_date, column_label)` | pure, on two strings; see the rule below |
+| compare | `verify_filing_years(filings, remedy)` | for every filing whose year is given (not 0), stops with one `ValueError`: mismatches under "does not match the filing", unreadable or self-contradicting filings under "could not be confirmed against the filing". `remedy` is `"year_path"` (CLI, route B) or `"rename_and_upload"` (web) |
+
+**The decision rule** (amended in `P10c` round 2, review F2).
+
+- **A bare-year column label is the filing's own name for the year, and wins** when it is
+  the cover date's year or the year before. That covers the calendar filer (December 31,
+  2025 → `2025`), the 52/53-week filer whose year ends in early January (L3Harris:
+  January 2, 2026 → `2025`), and the retailer that names a year for the calendar year it
+  starts in (Target: February 1, 2025 → `2024`).
+- **A bare-year label outside that range stops**, naming the label, the cover date and the
+  page of each: that far from the period end it is more likely a misread than a
+  convention.
+- **With date labels only, the cover rule:** the year of the cover date, **except that a
+  year ending in the first seven days of January belongs to the year before** (the
+  52/53-week convention). The newest date label must equal the cover date, or it stops.
+
+No model is involved; rule 1 does not apply.
+
+Round 1 required a bare-year label to equal the cover rule. That stopped a Target-style
+filing even when the user passed the right year, because the check stopped before
+comparing; the review proved it with `("February 1, 2025", "2024")`.
+
+**Where it runs.** `discover_filings` (a folder), `parse_pdf_args` (including every
+explicit `YEAR:PATH`) — so the CLI's route A and route B's `plan` — and `POST /upload`
+on the web ([entry-points.md](entry-points.md)). A bare path with no year (year 0) asks
+for every year in the filing and is **not** verified.
+
+**What a stop says.** The file, the year given, the cover date and its page, the column
+label and its page, the year the content gives, and the remedy. In the CLI and route B:
+pass `<content year>:<path>`, or rename the file so the year after `10-K` in its name is
+the content year. On the web: rename the file so, and upload it again. A filing whose
+evidence cannot be read stops too, under the heading "could not be confirmed against the
+filing", saying which: no cover line (a 10-Q, a scanned PDF), no income statement
+headings, not a PDF, or a label too far from the cover date.
+
+Measured on the 16 filings under `10K_filings/` on 2026-10-02:
+
+| Filing | Cover | Newest column label | Content year | Filename year |
+|---|---|---|---|---|
+| AbbVie, Chipotle | December 31 of the year | bare year (pages 21–30) | = filename | — |
+| Okta, Walmart | January 31 of the year | bare year (pages 21–65) | = filename | — |
+| L3Harris `…_2023-12-29_…` | December 29, 2023 | `December 29, 2023` (p28) | 2023 | 2023 |
+| L3Harris `…_2025-01-03_…` | January 3, 2025 | `January 3, 2025` (p41) | **2024** | 2025 — **stops** |
+| L3Harris `…_2026-01-02_…` | January 2, 2026 | `2025` (p35) | **2025** | 2026 — **stops** |
+
+`discover_filings` on `10K_filings/LHX` therefore stops; the remedy is
+`2023:<…2023-12-29…> 2024:<…2025-01-03…> 2025:<…2026-01-02…>`, which plans the three
+filings as 2023 (all years), 2024 and 2025 (with the balance sheet).
+
+**Cost.** Reading the evidence extracts text page by page until the income statement:
+about 2 to 4 seconds a filing on the macOS machine (10.5 s for AbbVie's three, 14.9 s
+for Walmart's four).
+
+### The routing
+
 The routing, for filings sorted ascending by fiscal year:
 
 | Filing | Years extracted | Balance sheet? |
@@ -138,8 +204,8 @@ and the prompt route B prints are one string, not two copies.
 `ingestion/session_extraction.py` holds no model client, no prompt text and no
 credential. [llm-boundary.md](../2-rules/llm-boundary.md) still names
 `claude_extractor.py` as the only file that may. Filing discovery and hashing live in
-`ingestion/filings.py` (`discover_filings`, `parse_pdf_args`, `InputFingerprint`,
-`fingerprint_filings`), shared by the CLI and route B.
+`ingestion/filings.py` (`discover_filings`, `parse_pdf_args`, the fiscal-year check,
+`InputFingerprint`, `fingerprint_filings`), shared by the CLI, route B and the web upload.
 
 ### The label
 
@@ -192,7 +258,7 @@ into `filings`.
 
 | Command | Does |
 |---|---|
-| `plan <pdf args> -t TICKER [-n NAME] -o FILE [--force]` | resolves the filings with `parse_pdf_args`, plans them with `plan_filings`, hashes them with `fingerprint_filings`, writes the skeleton. Refuses to overwrite without `--force`. With several filings, refuses one with no fiscal year |
+| `plan <pdf args> -t TICKER [-n NAME] -o FILE [--force]` | resolves the filings with `parse_pdf_args`, plans them with `plan_filings`, hashes them with `fingerprint_filings`, writes the skeleton. Refuses to overwrite without `--force`. With several filings, refuses one with no fiscal year. Stops when a filing's given year disagrees with its content (`verify_filing_years`) |
 | `locate FILE --filing N` | after checking the PDF's sha256, prints the pages holding a statement title (income/operations/earnings, balance sheet, cash flows) and the non-recurring keywords, with match counts. A *title line* is a line holding the title, no digit, at most 80 characters. **Page numbers and counts only, never a figure** |
 | `text FILE --filing N --pages A-B` | after checking the PDF's sha256, prints the text layer of those 1-based pages under `=== page N ===` markers. At most 20 pages per call. Added because the Read tool cannot render PDF pages on the macOS machine (no `pdftoppm`) |
 | `prompt FILE --filing N --pass 1\|2` | prints the system and user prompt from `pass1_prompts` / `pass2_prompts`. Pass 2 requires that filing's Pass 1 to pass the key check first, because its summary is built from it |
@@ -238,11 +304,16 @@ with a warning after its last retry; route B must reach the same result from the
 JSON. Route B has no retry loop: `check` prints the errors, and the session reads the
 page again and corrects the file.
 
-### The fiscal year still comes from the filename
+### The fiscal year is verified against the filing
 
-`discover_filings` takes the year from the filename. L3Harris's fiscal-2025 10-K has a
-2026-01-02 period end and is planned as 2026. Both routes inherit this; it was moved,
-not fixed.
+Until `P10c`, `discover_filings` took the year from the filename unchecked, and
+L3Harris's fiscal-2025 10-K (period end 2026-01-02) was planned as 2026. Both routes now
+go through `verify_filing_years`; see "Where each filing's fiscal year comes from" above.
+
+**Still open: the prompt names a year, never a date.** A filing whose columns carry dates
+(L3Harris before fiscal 2025) is asked for "fiscal year 2024" with no date beside it.
+With the remedy, the 2025-01-03 filing is asked for 2024, and its column is headed
+`January 3, 2025`. The prompts are in `ingestion/claude_extractor.py`, outside `P10c`.
 
 ## Validation
 
