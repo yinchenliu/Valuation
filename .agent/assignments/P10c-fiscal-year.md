@@ -96,3 +96,42 @@ touches these files.
 
 - **Item 49**, the silent drop of a filing with no year in the API route. **Item 44**,
   units.
+
+---
+
+## Round 2 — amended by the orchestrator after review round 1
+
+The round 1 review (`.agent/journal/2026-10-02T2150-code_reviewer-p10c-fiscal-year.md`)
+returned `changes_requested`.
+
+**F2 is the assignment's error.** Step 1 said "when a bare-year label and the cover rule
+disagree, stop". Some retailers name a fiscal year after the calendar year in which it
+**starts**: Target calls the year ended February 1, 2025 "2024". The cover rule gives
+2025, the label says 2024, and the filing then stops even when the user passes
+`2024:<path>`. The label is the filing's own name for the year. A heuristic must not
+overrule it.
+
+**Replace the decision rule in step 1 with this:**
+
+- a bare-year column label wins, **when it is the cover date's year or the year before**.
+  That range covers every convention in the scan and Target's;
+- a bare-year label outside that range stops, because a label that far from the period
+  end is more likely a misread than a convention. Name the label, the cover date and
+  the page of each;
+- with date labels only, the cover rule as before (the first seven days of January
+  belong to the year before).
+
+**Also in this round:**
+
+1. **F1:** delete `or ""` at `ingestion/filings.py:233`. `extract_text()` is declared to
+   return `str`, so the fallback cannot run, and it is a rule 3 pattern.
+2. **F4:** when the evidence could not be read, the heading must say so, not "does not
+   match".
+3. **F5:** on the web, the remedy must say what a web user can do: rename the file to
+   the year the filing gives, and upload it again. `YEAR:PATH` is for the CLI.
+4. **F3:** correct the "measured at" note in `docs/3-architecture/entry-points.md`.
+
+Re-run every criterion, and add one: a Target-style case on strings (cover
+"February 1, 2025", label 2024) gives 2024. Answer every finding by number in a new
+round 2 entry. `.claude/skills/extract-filing/SKILL.md` was edited by the orchestrator
+(F6), not by you.
