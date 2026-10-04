@@ -250,6 +250,31 @@ the invented `Other current assets` = 4,124 on page 22 fails while both balance 
 field and page and no amount. `P12a-tests` locks each outcome with PDFs it writes,
 including the attack end to end (`tests/unit/test_page_check.py`).
 
+## Phase 13 — silent defects first
+
+**The user's decision of 2026-10-03:** "I want to start with silent defects first." This
+moves the silent items ahead of phase 3. The cost of that order is small, and it is
+measured: 13 of the 16 open silent items sit in code that both entry points share
+(`models/`, `analysis/`, `ingestion/`, `config.py`), so one fix reaches both. Only items
+6, 7 and 49, and the yfinance fallback of item 44, sit in the duplicated orchestration.
+
+Wave 1 holds the items that do not touch the LLM boundary. Items 10, 44 and 50 wait for
+the user's decision on the Pass 1 role. Item 23 goes with item 1, because an empty
+statement cannot be told from a zero one until the zero defaults are gone. Item 36 is a
+measurement and needs paid runs or sessions.
+
+| Unit | Items | Files |
+|---|---|---|
+| `P13a-analysis-silent` | 25, 38 | `analysis/normalizer.py`, `analysis/wacc.py` |
+| `P13b-models-silent` | 15, 32, 39, 42 | `models/financial_statements.py`, `models/valuation.py`, `analysis/dcf.py`, `analysis/projector.py` |
+| `P13c-env-override` | 46 | `config.py`, `ingestion/claude_extractor.py`, `docs/8-build/environment.md` |
+
+| # | Criterion | Expected | Measured by |
+|---|---|---|---|
+| 1 | each wave 1 item stops and names its input, or labels what it did | a `ValueError` naming the field, or a clause in the label | the command in each assignment |
+| 2 | no wave 1 unit moves a figure on a complete input | Walmart's normalised statements and assumptions unchanged | `cli.py --session-file extractions/WMT.json`, stages 1 to 5 |
+| 3 | the gates do not get worse | ruff 5 or fewer, mypy 10 or fewer, census 67 or fewer | the gates in [environment.md](environment.md) |
+
 ---
 
 ## Rules for every phase

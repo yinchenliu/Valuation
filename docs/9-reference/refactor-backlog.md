@@ -97,6 +97,11 @@ rather than lying.
 | 62 | A failed reading check (an income statement subtotal, or a printed line not found on its page) never reaches the web page, for either route | **silent**, on the web | `api/routes_valuation.py`, `templates/` | **new, found writing `P12a`.** Route A prints failures to the server console; route B's `validation_errors` print in `check` and the CLI only. The balance check shows `FAIL` on the page because it is recomputed from the memo totals |
 | 63 | A filing with no text layer uses up route A's two Pass 1 retries on lines that can never be confirmed | — | `ingestion/claude_extractor.py` | **new, the `P12a` review's F5.** Every line fails "cannot be confirmed", so the retries cost two full-PDF calls and change nothing. None of the 16 filings here lacks a text layer |
 | 64 | The page check's joined-line form lets a label written across two printed rows take either row's figure | — | `ingestion/claude_extractor.py` | **new, the `P12a` round 2 review's F6.** Needs a label the filing does not print. Candidate: a joined form counts only when the neighbouring line prints no figure; 89 of 89 on Walmart, but Walmart uses no joined form, and it refuses a wrap whose other half prints a year. Measure on a filing with real wrapped rows first |
+| 65 | `DCFResult.upside_downside` returns `0.0` when the current price is `0` | **silent** | `models/valuation.py` | **new, found by the `P13b-models-silent` programmer.** A zero market price reads as "fairly valued". The same kind of silent zero as item 32 |
+| 66 | `derive_assumptions` pads the caller's growth list in place | **silent** | `analysis/projector.py` | **new, found by the `P13b-models-silent` programmer.** `[0.1]` with `projection_years=3` becomes `[0.1, 0.1, 0.1]` in the caller's object, so a second call reads the repeated rates as supplied and loses the `REPEATED` clause (rule 6). Present at `0021845` |
+| 67 | `projection_years` is never checked | — | `analysis/projector.py` | **new, the `P13b` review's F1, minor.** Below 1, the growth label describes a projection that never runs. No path shows that label today: `run_dcf` refuses an empty projection first. Fix: `derive_assumptions` stops when `projection_years < 1`, naming the field |
+| 68 | The CLI prints no assumption label | **silent**, on the CLI | `cli.py` | **new, the `P13b` review's O1.** `print_assumptions` (`cli.py:677-695`) prints the rates and an `(override)` tag, never the label text. So `SUBSTITUTED`, `REPEATED` and `DROPPED` are invisible on the CLI; the web page shows them (rule 6) |
+| 69 | A negative debt balance gives WACC weights above 1 and below 0 | **silent** | `analysis/wacc.py` | **new, found by the `P13a` round 2 programmer, the review's F4.** Market cap 300 with `total_debt` −50 gives `equity_weight 1.2, debt_weight -0.2`, identical at `0021845`. A bad value, not an absent one. Not yet known whether an extraction can produce a negative debt line |
 
 ---
 
@@ -1467,6 +1472,24 @@ wearing a different face, and it is named separately because `fcff.py` is the on
 `analysis/` module with no stop of any kind.
 
 ---
+
+## 38b. Item 38's second face, restated at `P13a` · **silent**
+
+Item 38's own case (market cap plus debt equal to 0, and since `P13a` round 2 a market cap
+of 0 or below) stops. The **second face** described under item 38 does not match what the
+code does. Both reviews of `P13a` re-ran it, identically at `0021845` and after `P13a`:
+
+- **An override with zero debt lines.** Market cap 300, every balance-sheet debt line 0,
+  interest expense 30, a supplied cost of debt 0.05: `calculate_wacc` returns weights
+  1.0 / 0.0, and the supplied rate reaches nothing. The override returns before item 22's
+  interest-against-zero-debt stop runs.
+- **No balance sheet.** `balance_sheet=None` raises a bare `AttributeError` at
+  `analysis/wacc.py:211`. It is reachable from `api/routes_valuation.py:621-634`, and it
+  is the live crash path in item 11.
+
+**Fix, when assigned.** Run the zero-debt stop before the override returns, and stop with
+a named `ValueError` when the balance sheet is `None`.
+
 
 ## Suggested order
 
