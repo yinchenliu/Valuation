@@ -415,6 +415,9 @@ def test_convert_filing_to_millions_thousands_filing() -> None:
             direction="add_back",
             category="restructuring",
             confidence="high",
+            page=1,
+            printed_units="(in thousands)",
+            units_page=1,
             source="Note 5",
         )
     ]
@@ -632,7 +635,7 @@ def test_session_extraction_v2_refused_with_remedy(tmp_path: Path) -> None:
 
     message = str(excinfo.value)
     assert "'session-extraction-v2'" in message
-    assert "'session-extraction-v3'" in message
+    assert "'session-extraction-v4'" in message
     assert "'units'" in message
     assert "'share_units'" in message
     assert "Remedy: run the extract-filing skill again" in message
@@ -651,4 +654,4 @@ def test_old_cli_cache_marker_p11a_refused(tmp_path: Path) -> None:
 
     message = str(excinfo.value)
     assert "not a cache entry written by this CLI" in message
-    assert repr("p14a-units-in-millions-v1") in message
+    assert repr("p14b-pass2-units-v1") in message

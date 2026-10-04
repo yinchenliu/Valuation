@@ -133,12 +133,14 @@ def pass2_answer() -> dict[str, Any]:
     return {"non_recurring_items": [{
         "year": 2024, "description": EXCLUDED_ITEM_DESCRIPTION, "amount": 7.0,
         "line_item": "sga", "direction": "add_back", "category": "restructuring",
-        "confidence": "low", "source": "Note 99 (invented for the test)",
+        "confidence": "low", "page": 50,
+        "units": {"printed": "(in millions)", "page": 50},
+        "source": "Note 99 (invented for the test)",
     }]}
 
 
 def make_pdf(directory: Path) -> Path:
-    """A real PDF printing every row of `pass1_answer()` on the page it cites.
+    """A real PDF printing every row of `pass1_answer()` and `pass2_answer()` on the page it cites.
 
     Since P12a both routes look each printed line up on its cited page, so the
     stand-in bytes this used to write would stop every run. The pages are built
@@ -146,7 +148,7 @@ def make_pdf(directory: Path) -> Path:
     afterwards calls `reprint_filing_pdf` on the filing.
     """
     path = directory / f"{TICKER}_10-K_{FISCAL_YEAR}.pdf"
-    write_pass1_pdf(path, pass1_answer(), cover="Test filing for the P9b route tests")
+    write_pass1_pdf(path, pass1_answer(), pass2_answer(), cover="Test filing for the P9b route tests")
     return path.resolve()
 
 
@@ -164,7 +166,7 @@ def session_dict(pdf: Path) -> dict[str, Any]:
             "size_bytes": len(data),
             "target_years": None,
             "include_bs": True,
-            "pages_read": {"pass1": [50, 51, 52], "pass2": [80]},
+            "pages_read": {"pass1": [50, 51, 52], "pass2": [50]},
             "pass1": pass1_answer(),
             "pass2": pass2_answer(),
         }],

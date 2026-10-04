@@ -729,7 +729,7 @@ def test_a_v1_session_file_stops_naming_both_formats(
     message = str(excinfo.value)
     assert str(path) in message
     assert "'session-extraction-v1'" in message
-    assert "'session-extraction-v3'" in message
+    assert "'session-extraction-v4'" in message
     # Step 4 also says the message tells the reader to extract the filing again:
     # the generic "unknown format" stop would name both formats but not this.
     assert re.search(r"extract the filing again", message, re.IGNORECASE), message

@@ -115,6 +115,26 @@ def pass1_pages(*answers: object) -> dict[int, list[str]]:
                     lines = pages.setdefault(page, [])
                     if printed not in lines:
                         lines.append(printed)
+        nri_items = answer.get("non_recurring_items", [])
+        if isinstance(nri_items, list):
+            for item in nri_items:
+                if isinstance(item, Mapping):
+                    page = item.get("page")
+                    amt = item.get("amount")
+                    desc = item.get("description", "NRI")
+                    if isinstance(page, int) and isinstance(amt, (int, float)) and page >= 1:
+                        text = f"{desc} {printed_figure(amt)}"
+                        lines = pages.setdefault(page, [])
+                        if text not in lines:
+                            lines.append(text)
+                    unit_obj = item.get("units")
+                    if isinstance(unit_obj, Mapping):
+                        u_printed = unit_obj.get("printed")
+                        u_page = unit_obj.get("page")
+                        if isinstance(u_printed, str) and isinstance(u_page, int) and u_page >= 1:
+                            lines = pages.setdefault(u_page, [])
+                            if u_printed not in lines:
+                                lines.append(u_printed)
     for page, lines in pages.items():
         assert len(lines) <= _MAX_LINES_PER_PAGE, (
             f"page {page} would print {len(lines)} lines; write_text_pdf fits "
@@ -144,7 +164,10 @@ def reprint_filing_pdf(filing: dict[str, Any], *, cover: str | None = None) -> N
     sha256 and size of the bytes now on disk, so the loader's hash check still holds.
     """
     path = Path(filing["pdf_path"])
-    write_pass1_pdf(path, filing["pass1"], cover=cover or f"Test filing {path.name}")
+    answers_to_print = [filing["pass1"]]
+    if filing.get("pass2"):
+        answers_to_print.append(filing["pass2"])
+    write_pass1_pdf(path, *answers_to_print, cover=cover or f"Test filing {path.name}")
     data = path.read_bytes()
     filing["pdf_sha256"] = hashlib.sha256(data).hexdigest()
     filing["size_bytes"] = len(data)

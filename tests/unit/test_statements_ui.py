@@ -201,6 +201,9 @@ def _hand_built_two_year_stub() -> tuple[FinancialStatements, list[NonRecurringI
             category="restructuring",
             confidence="high",
             direction="add_back",
+            page=1,
+            printed_units="(Amounts in millions)",
+            units_page=1,
             source="Note 12",
         ),
         NonRecurringItem(
@@ -211,6 +214,9 @@ def _hand_built_two_year_stub() -> tuple[FinancialStatements, list[NonRecurringI
             category="litigation",
             confidence="medium",
             direction="add_back",
+            page=1,
+            printed_units="(Amounts in millions)",
+            units_page=1,
             source="Note 14",
         ),
         NonRecurringItem(
@@ -221,6 +227,9 @@ def _hand_built_two_year_stub() -> tuple[FinancialStatements, list[NonRecurringI
             category="other",
             confidence="low",
             direction="remove",
+            page=1,
+            printed_units="(Amounts in millions)",
+            units_page=1,
             source="Note 16",
         ),
     ]

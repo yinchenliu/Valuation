@@ -124,6 +124,9 @@ def _high_confidence_item() -> NonRecurringItem:
         direction="add_back",
         category="restructuring",
         confidence="high",
+        page=1,
+        printed_units="(Amounts in millions)",
+        units_page=1,
     )
 
 
@@ -142,6 +145,9 @@ def _low_confidence_item() -> NonRecurringItem:
         direction="add_back",
         category="litigation",
         confidence="low",
+        page=1,
+        printed_units="(Amounts in millions)",
+        units_page=1,
     )
 
 

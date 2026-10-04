@@ -85,6 +85,9 @@ def test_an_unrecognised_line_item_stops_the_run() -> None:
         # `high` is applied by `partition_by_confidence`, so this item reaches
         # `apply_adjustments` on a live run; a `low` one would be withheld first.
         confidence="high",
+        page=1,
+        printed_units="(Amounts in millions)",
+        units_page=1,
     )
 
     with pytest.raises(ValueError) as excinfo:
@@ -123,6 +126,9 @@ def test_an_unrecognised_direction_stops_the_run() -> None:
         category="restructuring",
         # `high`, for the same reason as above: an applied item reaches the stop.
         confidence="high",
+        page=1,
+        printed_units="(Amounts in millions)",
+        units_page=1,
     )
 
     with pytest.raises(ValueError) as excinfo:
@@ -162,6 +168,9 @@ def test_an_unrecognised_confidence_stops_the_run() -> None:
         direction="add_back",
         category="restructuring",
         confidence="probably",
+        page=1,
+        printed_units="(Amounts in millions)",
+        units_page=1,
     )
 
     with pytest.raises(ValueError) as excinfo:
@@ -185,10 +194,12 @@ def test_case_and_space_around_a_confidence_are_folded_not_rejected() -> None:
     loud_high = NonRecurringItem(
         year=2021, description="Restructuring", amount=50.0, line_item="sga",
         direction="add_back", category="restructuring", confidence="  HIGH ",
+        page=1, printed_units="(Amounts in millions)", units_page=1,
     )
     loud_low = NonRecurringItem(
         year=2021, description="Litigation", amount=10.0, line_item="sga",
         direction="add_back", category="litigation", confidence="Low",
+        page=1, printed_units="(Amounts in millions)", units_page=1,
     )
 
     applied, excluded = partition_by_confidence([loud_high, loud_low])
@@ -209,14 +220,17 @@ def test_medium_confidence_is_applied_and_low_is_withheld() -> None:
     high = NonRecurringItem(
         year=2021, description="A", amount=1.0, line_item="sga",
         direction="add_back", category="restructuring", confidence="high",
+        page=1, printed_units="(Amounts in millions)", units_page=1,
     )
     medium = NonRecurringItem(
         year=2021, description="B", amount=2.0, line_item="sga",
         direction="add_back", category="restructuring", confidence="medium",
+        page=1, printed_units="(Amounts in millions)", units_page=1,
     )
     low = NonRecurringItem(
         year=2021, description="C", amount=3.0, line_item="sga",
         direction="add_back", category="litigation", confidence="low",
+        page=1, printed_units="(Amounts in millions)", units_page=1,
     )
 
     applied, excluded = partition_by_confidence([high, low, medium])

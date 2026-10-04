@@ -670,6 +670,7 @@ def attack_session(directory: Path, *, honest: bool) -> Path:
     The PDF is written first: the session records its sha256."""
     data = session_dict(filing_pdf(directory))
     data["filings"][0]["pass1"] = attack_answer(honest=honest)
+    data["filings"][0]["pass2"] = {"non_recurring_items": []}
     data["filings"][0]["pages_read"]["pass1"] = [1, 2, 3]
     return write_session(directory, data, name=f"session_{'honest' if honest else 'attack'}.json")
 
@@ -718,6 +719,7 @@ def test_check_exits_1_on_a_page_with_no_text_layer(
     ])
     data = session_dict(pdf.resolve())
     data["filings"][0]["pass1"] = attack_answer(honest=True)
+    data["filings"][0]["pass2"] = {"non_recurring_items": []}
     path = write_session(tmp_path, data)
     assert cmd_check(path) == 1
     out = capsys.readouterr().out

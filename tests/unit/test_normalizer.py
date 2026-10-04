@@ -95,6 +95,9 @@ def _item(
         direction=direction,
         category="restructuring",
         confidence="high",
+        page=1,
+        printed_units="(Amounts in millions)",
+        units_page=1,
     )
 
 

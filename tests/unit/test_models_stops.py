@@ -112,6 +112,9 @@ def test_a_non_recurring_item_without_confidence_cannot_be_built() -> None:
             line_item="sga",
             direction="add_back",
             category="restructuring",
+            page=12,
+            printed_units="(in millions)",
+            units_page=12,
             source="Note 12",
         )
 
@@ -139,6 +142,9 @@ def test_a_supplied_confidence_is_kept_as_given(value: str) -> None:
         direction="add_back",
         category="restructuring",
         confidence=value,
+        page=1,
+        printed_units="(in millions)",
+        units_page=1,
     )
 
     assert item.confidence == value

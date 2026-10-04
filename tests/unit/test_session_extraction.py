@@ -141,25 +141,38 @@ def pass1(years: list[dict[str, Any]], bs: dict[str, Any]) -> dict[str, Any]:
 
 
 def nri(year: int, amount: float, description: str, **overrides: Any) -> dict[str, Any]:
-    item = {"year": year, "description": description, "amount": amount,
-            "line_item": "sga", "direction": "add_back", "category": "restructuring",
-            "confidence": "high", "source": "Note 8"}
+    item = {
+        "year": year,
+        "description": description,
+        "amount": amount,
+        "line_item": "sga",
+        "direction": "add_back",
+        "category": "restructuring",
+        "confidence": "high",
+        "source": "Note 8",
+        "page": 50,
+        "units": {"printed": "(in millions)", "page": 50},
+    }
     item.update(overrides)
     return item
 
 
-def make_pdf(directory: Path, fiscal_year: int, p1: dict[str, Any] | None = None) -> Path:
-    """A real PDF for one filing, printing every row of `p1` on the page it cites.
+def make_pdf(directory: Path, fiscal_year: int, p1: dict[str, Any] | None = None,
+             p2: dict[str, Any] | None = None) -> Path:
+    """A real PDF for one filing, printing every row of `p1` and `p2` on the page it cites.
 
     Since P12a both routes look each printed line up on its cited page, so the
     stand-in bytes this used to write would stop every run. The pages are built
-    from the filing's own Pass 1 (`tests/unit/_pass1_pdf.py`), which is why each
-    builder below writes its Pass 1 first and its PDF second. The cover names the
+    from the filing's own Pass 1 and Pass 2 (`tests/unit/_pass1_pdf.py`), which is why each
+    builder below writes its Pass 1/2 first and its PDF second. The cover names the
     fiscal year, so each filing's bytes differ. With no `p1` (the `plan` test, whose
     year reader is stubbed) the PDF is the cover alone.
     """
     path = directory / f"{TICKER}_10-K_{fiscal_year}.pdf"
-    write_pass1_pdf(path, p1, cover=f"Test filing for fiscal {fiscal_year}")
+    answers = [p1] if p1 is not None else []
+    if p2 is not None:
+        answers.append(p2)
+    write_pass1_pdf(path, *answers, cover=f"Test filing for fiscal {fiscal_year}")
     return path.resolve()
 
 
@@ -203,11 +216,11 @@ def write(directory: Path, data: dict[str, Any], name: str = "session.json") -> 
 
 def one_filing(directory: Path) -> dict[str, Any]:
     p1 = pass1([year_entry(2023, 1), year_entry(2024, 2)], balance_sheet(2024))
-    pdf = make_pdf(directory, 2024, p1)
     p2 = {"non_recurring_items": [
         nri(2024, 12.0, "Plant closure"),
         nri(2023, 3.0, "Legal settlement", category="litigation", source=""),
     ]}
+    pdf = make_pdf(directory, 2024, p1, p2)
     return session([filing(pdf, 2024, None, True, p1, p2)])
 
 
@@ -229,17 +242,19 @@ def three_filings(directory: Path) -> dict[str, Any]:
         2023: pass1([year_entry(2023, 4)], {}),
         2024: pass1([year_entry(2024, 5)], balance_sheet(2024)),
     }
-    pdfs = {y: make_pdf(directory, y, p1s[y]) for y in (2022, 2023, 2024)}
     item_a = nri(2022, 5.0, "Restructuring A")
+    p2s = {
+        2022: {"non_recurring_items": [item_a, nri(2021, 2.0, "Impairment B",
+                                                    category="impairment")]},
+        2023: {"non_recurring_items": [dict(item_a, description="A, read again"),
+                                        nri(2023, 7.0, "Settlement C", confidence="low")]},
+        2024: {"non_recurring_items": [nri(2024, 9.0, "Severance D", source="")]},
+    }
+    pdfs = {y: make_pdf(directory, y, p1s[y], p2s[y]) for y in (2022, 2023, 2024)}
     return session([
-        filing(pdfs[2022], 2022, None, False, p1s[2022],
-               {"non_recurring_items": [item_a, nri(2021, 2.0, "Impairment B",
-                                                    category="impairment")]}),
-        filing(pdfs[2023], 2023, [2023], False, p1s[2023],
-               {"non_recurring_items": [dict(item_a, description="A, read again"),
-                                        nri(2023, 7.0, "Settlement C", confidence="low")]}),
-        filing(pdfs[2024], 2024, [2024], True, p1s[2024],
-               {"non_recurring_items": [nri(2024, 9.0, "Severance D", source="")]}),
+        filing(pdfs[2022], 2022, None, False, p1s[2022], p2s[2022]),
+        filing(pdfs[2023], 2023, [2023], False, p1s[2023], p2s[2023]),
+        filing(pdfs[2024], 2024, [2024], True, p1s[2024], p2s[2024]),
     ])
 
 
@@ -664,12 +679,14 @@ ITEM = "non_recurring_items[1]"
 ITEM_YEAR = "year 2023"          # nri(2023, ...) in one_filing
 ITEM_DESCRIPTION = "Legal settlement"
 
-# The eight keys of a Pass 2 item, written out from the Pass 2 schema
+# The ten keys of a Pass 2 item, written out from the Pass 2 schema
 # (_NRI_SCHEMA in ingestion/claude_extractor.py, the dict the Pass 2 prompt is
 # built from; docs/3-architecture/extraction.md shows it too). Written here by hand,
 # then checked against nri() above, so a key the builder stops writing shows up.
-PASS2_ITEM_KEYS = ("year", "description", "amount", "line_item", "direction",
-                   "category", "confidence", "source")
+PASS2_ITEM_KEYS = (
+    "year", "description", "amount", "line_item", "direction",
+    "category", "confidence", "source", "page", "units",
+)
 
 
 @pytest.mark.parametrize("not_a_list", [{"a": 1}, "restructuring"])
@@ -701,8 +718,8 @@ def test_pass2_item_amount_nan_stops_naming_filing_year_and_description(
 
 
 def test_the_pass2_item_builder_writes_every_schema_key(tmp_path: Path) -> None:
-    # Guards the parametrisation below: the hand-written list is the schema's eight
-    # keys, and nri() writes all eight, so no case deletes a key that was never there.
+    # Guards the parametrisation below: the hand-written list is the schema's ten
+    # keys, and nri() writes all ten, so no case deletes a key that was never there.
     assert tuple(ce._NRI_SCHEMA["non_recurring_items"][0]) == PASS2_ITEM_KEYS
     item = one_filing(tmp_path)["filings"][0]["pass2"]["non_recurring_items"][1]
     assert tuple(item) == PASS2_ITEM_KEYS
@@ -779,19 +796,15 @@ def test_stop_pass2_items_absent(tmp_path: Path) -> None:
                           pdf_name(2024), "'non_recurring_items'")
 
 
-def test_pass2_item_amount_zero_loads(tmp_path: Path) -> None:
-    """A stop on a bad amount must not become a stop on zero.
-
-    0 is a finite JSON number; the item is a legitimate reading of a note that
-    reports a nil charge. By hand: the two items of one_filing, in order, with
-    item 1's amount the explicit 0 written below.
-    """
+def test_pass2_item_amount_zero_stops(tmp_path: Path) -> None:
+    """Rule 3: Pass 2 item amount must be a finite number above 0. 0 stops."""
     data = one_filing(tmp_path)
     data["filings"][0]["pass2"]["non_recurring_items"][1]["amount"] = 0
-    loaded = load_session_extraction(write(tmp_path, data))
-    assert [(i.description, i.amount) for i in loaded.non_recurring] == [
-        ("Plant closure", 12.0), ("Legal settlement", 0.0)]
-    assert loaded.validation_errors == []
+    path = write(tmp_path, data)
+    with pytest.raises(ValueError) as excinfo:
+        load_session_extraction(path)
+    assert_one_line_names(str(excinfo.value), str(path.resolve()), "filings[0]",
+                          pdf_name(2024), ITEM, ITEM_DESCRIPTION, "'amount' must be a finite", "above 0")
 
 
 def test_every_problem_is_listed_in_one_stop(tmp_path: Path) -> None:

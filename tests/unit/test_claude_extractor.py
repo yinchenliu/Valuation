@@ -62,6 +62,7 @@ from models.financial_statements import (
     NonRecurringItem,
 )
 from tests.unit._printed_lines import lines, printed_balance_sheet, printed_year
+from tests.unit._text_pdf import write_text_pdf
 
 
 @pytest.fixture(autouse=True)
@@ -423,6 +424,8 @@ def _item(**overrides: Any) -> dict[str, Any]:
         "direction": "add_back",
         "category": "restructuring",
         "confidence": "high",
+        "page": 24,
+        "units": {"printed": "(Amounts in millions)", "page": 24},
         "source": "Note 8 - Restructuring",
     }
     item.update(overrides)
@@ -446,6 +449,9 @@ def test_pass2_item_fields_land_on_their_fields() -> None:
         direction="add_back",
         category="restructuring",
         confidence="high",
+        page=24,
+        printed_units="(Amounts in millions)",
+        units_page=24,
         source="Note 8 - Restructuring",
     )
 
@@ -566,7 +572,9 @@ def test_merge_prefers_the_filing_whose_fiscal_year_is_the_statement_year() -> N
 def _nri(year: int, amount: float, direction: str, description: str) -> NonRecurringItem:
     return NonRecurringItem(year=year, description=description, amount=amount,
                             line_item="sga", direction=direction, category="other",
-                            confidence="high", source="Note 1")
+                            confidence="high", page=1,
+                            printed_units="(Amounts in millions)", units_page=1,
+                            source="Note 1")
 
 
 def test_merge_keeps_one_item_per_year_amount_direction() -> None:
@@ -658,6 +666,7 @@ def _nri_financials() -> FinancialStatements:
 
 
 def _run_pass2(monkeypatch: pytest.MonkeyPatch, answers: list[str],
+               pdf_bytes: bytes | None = None,
                ) -> tuple[list[bytes | None], Any]:
     """Run `_run_nri_pass` on scripted replies, one per call, in order.
 
@@ -676,7 +685,7 @@ def _run_pass2(monkeypatch: pytest.MonkeyPatch, answers: list[str],
 
     monkeypatch.setattr(ce, "_call_llm", stub)
     try:
-        outcome: Any = ce._run_nri_pass(b"%PDF-stub", _nri_financials(), _NRI_RESOLUTION)
+        outcome: Any = ce._run_nri_pass(pdf_bytes or b"%PDF-stub", _nri_financials(), _NRI_RESOLUTION)
     except ValueError as exc:  # the outcome under test
         outcome = exc
     return calls, outcome
@@ -720,7 +729,7 @@ def test_pass2_unreadable_twice_stops_naming_the_filing_and_both_errors(
 
 
 def test_pass2_unreadable_then_readable_returns_the_items(
-    monkeypatch: pytest.MonkeyPatch, no_network: None,
+    monkeypatch: pytest.MonkeyPatch, no_network: None, tmp_path: Path,
 ) -> None:
     item = {
         "year": 2023,
@@ -730,10 +739,17 @@ def test_pass2_unreadable_then_readable_returns_the_items(
         "direction": "add_back",
         "category": "litigation",
         "confidence": "medium",
+        "page": 1,
+        "units": {"printed": "(Amounts in millions)", "page": 1},
         "source": "Note 11 - Contingencies",
     }
+    pdf_path = write_text_pdf(
+        tmp_path / "nri.pdf",
+        [["Quarry litigation settlement 40.0", "(Amounts in millions)"]],
+    )
     calls, outcome = _run_pass2(
         monkeypatch, [_BAD_FIRST, json.dumps({"non_recurring_items": [item]})],
+        pdf_bytes=pdf_path.read_bytes(),
     )
     assert len(calls) == 2  # the retry was needed, and was made
     # Each expected value is the JSON input, unchanged.
@@ -745,6 +761,9 @@ def test_pass2_unreadable_then_readable_returns_the_items(
         direction="add_back",
         category="litigation",
         confidence="medium",
+        page=1,
+        printed_units="(Amounts in millions)",
+        units_page=1,
         source="Note 11 - Contingencies",
     )]
 
