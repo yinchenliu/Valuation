@@ -323,15 +323,20 @@ such as `extractions/WMT.json`.
 
 ## Phase 15 — two extraction routes · **planned**
 
-**The user's decision of 2026-10-04:** "remove the foundry gateway, we only keep two
-gateway, 1 is the api, another is the chat box from the claude code". Route A reaches
-Claude through the Anthropic API only; route B is the Claude Code session file.
+**The user's decisions of 2026-10-04:** "remove the foundry gateway, we only keep two
+gateway, 1 is the api, another is the chat box from the claude code"; "I dont' have
+anthropic api KEY, i only have gemini and deepseek"; then "1a, 2a". Route A reads a filing
+through the Gemini API, the default provider. Claude reads a filing only in a Claude Code
+session (route B). Foundry and the Anthropic API route are removed. DeepSeek is not added
+now: no source confirmed that its API reads a PDF.
 
 | Unit | What | Items |
 |---|---|---|
-| `P15a-drop-foundry` | delete the Foundry transport, its two credential kinds, `azure-identity` and `ENTRA_TOKEN_SCOPE`; a Foundry variable still set stops the run | — |
+| `P15a-two-routes` | Gemini the default and the only route A provider; `-p claude` stops and names route B; delete Foundry, Entra, the Anthropic API path, `anthropic` and `azure-identity` | — |
 
-It runs after `P14b-note-figures`: both edit `ingestion/claude_extractor.py`.
+It runs after `P14b-reasoning` and before `P14b-note-figures`: all three edit
+`ingestion/claude_extractor.py`, and this order makes route A runnable with the user's
+key first. The first real Gemini call is the user's paid check after acceptance.
 
 **After Phase 14: Phase 3**, on the user's "ok" of 2026-10-04. Items 7, 49 and 72 sit in
 the code that `cli.py` and `api/` duplicate, so one pipeline lets each later fix reach

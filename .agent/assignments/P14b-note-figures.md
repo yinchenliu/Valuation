@@ -2,7 +2,7 @@
 id: P14b-note-figures
 phase: 14 — the Pass 1 role (rule 1 option B, the user's decision of 2026-10-03; check B1, the user's decision of 2026-10-04)
 agent: programmer
-depends_on: [P14b-reasoning]
+depends_on: [P15a-two-routes]
 ---
 
 # Pass 1 may take a printed figure from a note or MD&A; Python checks that each printed row sits under a unit statement of the filing's scale (B1)
@@ -29,8 +29,10 @@ When this unit is done:
 
 ## What is already true — verify, do not redo
 
-Measured by the overall lead at `7d0aa26`, macOS. `P14b-reasoning` lands before this
-unit, so re-take the gate numbers at its commit and use those.
+Measured by the overall lead at `7d0aa26`, macOS. `P14b-reasoning` and `P15a-two-routes`
+land before this unit, so re-take the gate numbers at the `P15a-two-routes` commit and use
+those. After `P15a`, route A is Gemini: the stub in criterion 7 replaces `_call_llm`, so it
+does not depend on the provider.
 
 | Fact | Command | Result |
 |---|---|---|
@@ -124,8 +126,8 @@ Run every command with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`. **Make no paid API 
 | 5 | two scales, read by kind | the real Okta 2026 PDF, `units` millions and `share_units` thousands, a `revenue` row and a `diluted_shares` row on page 58 → 0 failures; the same with `share_units` millions → one failure for the share count | the same scratch call |
 | 6 | the stated limit holds as stated | the real L3Harris 2026-01-02 PDF, a money row on page 62, `units` millions → 0 failures; the same with `units` thousands → 0 failures | the same scratch call |
 | 7 | route A stops after its retries | a stubbed `_call_llm` that returns the Walmart Pass 1 answer with one row on page 2, on the real Walmart PDF → `ValueError` after the retries, listing the page 2 failure; 0 network calls | a scratch script, sockets blocked |
-| 8 | Walmart does not move | stages 1 to 10 identical to the run at the `P14b-reasoning` commit, except the new summary line; $28.02 | `cli.py --session-file extractions/WMT.json`, diffed |
-| 9 | the gates do not get worse | ruff, mypy and census no higher than at the `P14b-reasoning` commit; `GET /` 200 | the gate commands |
+| 8 | Walmart does not move | stages 1 to 10 identical to the run at the `P15a-two-routes` commit, except the new summary line; $28.02 | `cli.py --session-file extractions/WMT.json`, diffed |
+| 9 | the gates do not get worse | ruff, mypy and census no higher than at the `P15a-two-routes` commit; `GET /` 200 | the gate commands |
 | 10 | the false-stop risk is measured | for each of the 16 filings: the income statement, balance sheet and cash flow title pages (`locate`'s "title line" rule) and the page after each, with the money scale found on the page or the page before. List every such page that has none, with its first text line | a scratch script; the table goes in your entry |
 | 11 | every red test is named | expected causes only: fixtures whose printed rows cite a page with no unit statement on it or the page before, and the 2 red on purpose | the full suite, failures grouped by cause |
 
