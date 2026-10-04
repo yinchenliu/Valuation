@@ -20,8 +20,9 @@ that two units may run in parallel.
 | # | Unit | Assignment | State | Backlog items | Notes |
 |---|---|---|---|---|---|
 | 1 | `P14b-pass2-units` | [P14b-pass2-units.md](assignments/P14b-pass2-units.md) | `accepted` | 77 | the user's decision "fix 77a", 2026-10-04. Session format v4 |
-| 2 | `P14b-reasoning` | [P14b-reasoning.md](assignments/P14b-reasoning.md) | `ready` | 81 | rule 1 option 0: route A sends adaptive thinking at a named effort, streamed, with room to finish; the setting is shown. No format change |
-| 2b | `P14b-note-figures` | not written | `planned` | — | rule 1 option B: a Pass 1 figure from a note or MD&A. **Waits for the user's decision** on how its unit is checked |
+| 2 | `P14b-reasoning` | [P14b-reasoning.md](assignments/P14b-reasoning.md) | `building` | 81 | rule 1 option 0: route A sends adaptive thinking at a named effort, streamed, with room to finish; the setting is shown. No format change |
+| 2b | `P14b-note-figures` | [P14b-note-figures.md](assignments/P14b-note-figures.md) | `planned` | — | rule 1 option B, with check B1 (the user's decision of 2026-10-04). Assignment written; `ready` when `P14b-reasoning` is accepted (same file) |
+| 2c | `P15a-drop-foundry` | [P15a-drop-foundry.md](assignments/P15a-drop-foundry.md) | `planned` | — | the user's decision of 2026-10-04: route A through the Anthropic API only, route B unchanged. Assignment written; `ready` when `P14b-note-figures` is accepted. Gemini waits for the user's answer |
 | 3 | `P14b-row-reasons` | not written | `planned` | — | rule 1 option A: a reason for each printed row, shown on both pages. A format change, and Walmart must be extracted again |
 | 4 | `P14c-layout-facts` | not written | `planned` | 10 | rule 1 option C: a layout fact the filing states, page-checked; the D&A decision moves into `analysis/` |
 | 5 | Phase 3 | not written | `planned` | 7, 49, 72 | one pipeline for `cli.py` and the web app |

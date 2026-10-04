@@ -308,7 +308,7 @@ because both sit in the Pass 1 parse.
 | `P14a-units` | read the printed unit statement for money (`units`) and for the share count (`share_units`), each with its page and page-checked; Python reads the scale word and converts to millions once, per filing. The user approved `share_units` on 2026-10-04 | 44 |
 | `P14b-pass2-units` | each Pass 2 item copies its figure as printed, its page, and the printed words that state its unit; Python reads the scale and converts each item. Session format v4. **The user's decision of 2026-10-04: "fix 77a"** | 77 |
 | `P14b-reasoning` | 0: route A sends adaptive thinking at an effort named in `config.py`, streamed, with room to finish; the setting is shown. Also item 81 | 81 |
-| `P14b-note-figures` | B: a Pass 1 figure from a note or MD&A. Waits for the user's decision on how its unit is checked | — |
+| `P14b-note-figures` | B: a Pass 1 figure from a note or MD&A. **The user's decision of 2026-10-04: check B1** — each printed row's page, or the page before, must print a unit statement of the filing's scale for its kind, or the run stops. No new model field | — |
 | `P14b-row-reasons` | A: a reason for each printed row, shown on both pages. A format change; Walmart is extracted again | — |
 | `P14c-layout-facts` | C: a cited layout fact, checked on its page; the D&A decision moves out of the parser into `analysis/` and reads that fact | 10 |
 
@@ -320,6 +320,18 @@ and C both need the model to write new text for each filing. So Walmart is extra
 again once, after both land, and not once for each. The build order and the state of
 each unit are in `.agent/QUEUE.md`. Each unit states what happens to a `v2` session file
 such as `extractions/WMT.json`.
+
+## Phase 15 — two extraction routes · **planned**
+
+**The user's decision of 2026-10-04:** "remove the foundry gateway, we only keep two
+gateway, 1 is the api, another is the chat box from the claude code". Route A reaches
+Claude through the Anthropic API only; route B is the Claude Code session file.
+
+| Unit | What | Items |
+|---|---|---|
+| `P15a-drop-foundry` | delete the Foundry transport, its two credential kinds, `azure-identity` and `ENTRA_TOKEN_SCOPE`; a Foundry variable still set stops the run | — |
+
+It runs after `P14b-note-figures`: both edit `ingestion/claude_extractor.py`.
 
 **After Phase 14: Phase 3**, on the user's "ok" of 2026-10-04. Items 7, 49 and 72 sit in
 the code that `cli.py` and `api/` duplicate, so one pipeline lets each later fix reach
