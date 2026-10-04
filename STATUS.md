@@ -4,9 +4,9 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `P13c-tests` on top of `5b03600`, 2026-10-03**, in the working tree, on branch `main`, **on the macOS machine**
+**Measured at `bce6fae` (wave 2 committed), 2026-10-04**, in the working tree, on branch `main`, **on the macOS machine**
 (`.venv/bin/python`, Python 3.11.6). Every figure before `cde33cb` was measured on the
-Windows machine. **Thirty-six work units accepted, and not one on its own report.** Every programmer run went to a reviewer that
+Windows machine. **Forty-four work units accepted, and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; **five** times a reviewer or a
 programmer overturned a claim — twice against a programmer, **three times against the
 orchestrator**. The journal is [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
@@ -23,12 +23,12 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `P13c-tests` (macOS) |
+| Gate | Command | Result at `bce6fae` (macOS) |
 |---|---|---|
-| Tests | `.venv/bin/python -m pytest -q` | **795 tests. 793 pass, 2 fail**: the 2 red on purpose |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **793 passed, 0 failed** |
-| Lint | `.venv/bin/python -m ruff check .` | **5 errors**, every one `BLE001` |
-| Types | `.venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **10 errors in 4 files**, 20 files checked |
+| Tests | `.venv/bin/python -m pytest -q` | **859 tests. 857 pass, 2 fail**: the 2 red on purpose |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **857 passed, 0 failed** |
+| Lint | `.venv/bin/python -m ruff check .` | **4 errors**, every one `BLE001`. `P13g` removed the one in `_run_nri_pass` |
+| Types | `.venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **9 errors in 4 files**, 20 files checked. `P13f` removed `calculate_wacc`'s `BalanceSheet \| None` |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
 | **Rule 3 census** | the grep at [rules.md:65](docs/2-rules/rules.md) | **65**. `P13b` removed two conditional zeros (`latest_year`, `implied_share_price`). `P11a` replaced the Pass 1 parser's `.get(field, 0)` reads (114 at `24a9a90`). Under zsh, quote `'--include=*.py'` or the count reads 0 |
 | **Write guard** | `.venv/bin/python .claude/check_guard.py` | **48/48** |
@@ -374,19 +374,18 @@ the headline. Re-ranked at `622262b`.
 
 | # | Item | Cost |
 |---|---|---|
-| 69 | A negative debt balance gives WACC weights of 1.2 and −0.2 | **new, found by `P13a` round 2.** Not yet known whether an extraction can produce a negative debt line |
-| 38b | Item 38's second face: a supplied cost of debt with zero debt lines still gives 100% equity; no balance sheet gives a bare `AttributeError` | **restated at `P13a`** from what both reviews ran |
+| 38b | Part (a): a supplied cost of debt with zero debt lines and interest gives 100% equity; a company that really repaid its debt needs a way past item 22's stop | **waits for the user's decision** (an explicit zero-debt confirmation is recommended). Part (b) closed at `5c4fb67` |
 | 68 | The CLI prints no assumption label | **new, the `P13b` review.** `SUBSTITUTED`, `REPEATED` and `DROPPED` show on the web page only (rule 6) |
-| 66 | `derive_assumptions` pads the caller's growth list in place | **new, found by `P13b`.** A second call loses the `REPEATED` clause (rule 6) |
-| 65 | `upside_downside` returns 0.0 on a zero current price | **new, found by `P13b`.** Reads as "fairly valued" |
-| 67 | `projection_years` is never checked | **new, the `P13b` review, minor.** No path shows the wrong label today |
+| 72 | `cli.py:1035` and `:1043` hold conditional zeros the census does not search | **new, found by `P13f`** |
+| 70 | Walmart stage 10 differs by 1M between runs on one tree | **new, the `P13e` review.** Cause not measured |
+| 73 | Some bad first Pass 2 replies stop with no retry and no filing name | **new, the `P13g` review** |
+| 71, 74, 75, 76 | census grep blind to two-line zeros; retry `OverflowError`; the guard's false denials; the form's `projection_years` bound | **new, minor**; see the backlog |
 | 62 | No failed reading check reaches the web page, for either route | **new at `P12a`.** Route A prints to the server console; route B's failures print in `check` and the CLI. Only the balance `FAIL` shows on the page |
 | 64 | The page check lets a label written across two printed rows take either row's figure | **new, `P12a` round 2 review's F6.** Needs a label the filing does not print; stated in the docs |
 | 63 | A filing with no text layer uses up route A's two retries | **new, `P12a` review's F5.** Not live: all 16 filings have a text layer |
 | 49 | Given several PDFs, the API route drops one with no year, silently | **new.** Route B stops on the same input |
 | 44 | The `units` field is extracted and ignored | **new, latent.** Chipotle reports in thousands |
 | 47 | The income statement shown has no interest income row | **new, display.** EBT does not add up from the rows shown |
-| 50 | Route A returns `[]` when Pass 2 cannot be parsed twice | **new, found by `P9c`.** "Nothing was read" looks like "none found" |
 | 52 | A cache hit ignores `files` sent with `session_file` | **new, found by the `P9b` review.** Hand-built requests only |
 | 51 | The arithmetic check's `WARN` branch is dead | **new, found by `P9c`** |
 | 53 | The session loader imports `_NRI_SCHEMA` by its private name | **new, the `P9d` review's F1, minor** |
@@ -447,14 +446,19 @@ the headline. Re-ranked at `622262b`.
 | 32 | Zero diluted shares rendered a share price of `0.0` | `aa6f80d` |
 | 39 | `confidence` defaulted to `"high"` | `aa6f80d` |
 | 42 | A supplied growth list longer than the projection was cut with no label | `aa6f80d` |
-| 46 | `.env` overrode the environment, so unsetting a key did not stop a paid call | `P13c-env-override`, this commit |
+| 46 | `.env` overrode the environment, so unsetting a key did not stop a paid call | `P13c-env-override`, `5b03600` |
+| 65 | `upside_downside` returned 0.0 on a zero price | `2a09d3c` |
+| 66 | `derive_assumptions` padded the caller's growth list | `d1b4ad2` |
+| 67 | `projection_years` was never checked | `d1b4ad2` |
+| 69 | A negative debt balance gave weights above 1 | `5c4fb67` |
+| 50 | Route A returned `[]` when Pass 2 could not be read | `bce6fae` |
 
 **At `a64818b` these tables hold 24 closed items and 37 open ones** (item 23 appears twice above). They are the headline, not the whole list: items 55, 57, 58, 60 and 61 are open in the backlog and not shown here. Items 19 to 28 did not exist when this build
 started — **every one of them was found by running the code**, not by reading it. So were
 41 and 42, both found at `6e58f13` by a reviewer exhausting inputs rather than reading
 the branch.
 
-**Phase 13 (silent defects first, the user's decision of 2026-10-03) is in progress.** Wave 1: `P13a` (`47b8b09`) closes items 25 and 38, `P13b` (`aa6f80d`) closes items 15, 32, 39 and 42, each reviewed and tested. `P13c` (`5b03600`) closes item 46 after three review rounds, and `P13c-tests` locks the key order and both labels without reading the real `.env`. Wave 1 is done. Items 10, 44 and 50 wait for the user's decision on the Pass 1 role. The runs found items 65 to 69 and restated 38b.
+**Phase 13 (silent defects first, the user's decision of 2026-10-03) is in progress.** Wave 1: `P13a` (`47b8b09`) closes items 25 and 38, `P13b` (`aa6f80d`) closes items 15, 32, 39 and 42, each reviewed and tested. `P13c` (`5b03600`) closes item 46 after three review rounds, and `P13c-tests` locks the key order and both labels without reading the real `.env`. Wave 1 is done. **Wave 2 is done at `bce6fae`**: `P13d` item 65, `P13e` items 66 and 67, `P13f` item 69 and 38b part (b), `P13g` item 50, each reviewed and tested. One step of `P13f` was withdrawn as a defect in the assignment: item 38b part (a), a company that repaid its debt, waits for the user's decision. The runs found items 70 to 76. Items 10, 44 and 50 wait for the user's decision on the Pass 1 role. The runs found items 65 to 69 and restated 38b.
 
 **Phase 12 (every printed line is found on its page) is done at `1888ccb`.** `P12a`
 (`a64818b`): both routes look up each Pass 1 line's label and figure on its cited page
@@ -503,8 +507,8 @@ Things that have already misled a reader of this repository.
    nothing at all. "It ran" is not evidence. Name an input that came from a filing.
 3. **`cli.py` and the web app can disagree.** They build assumptions by separate code
    paths. A figure verified in one is not verified in the other.
-4. **Two test cases are red on purpose.** On macOS `pytest -q` reports `2 failed, 793
-   passed` at `P13c-tests`. That is the expected
+4. **Two test cases are red on purpose.** On macOS `pytest -q` reports `2 failed, 857
+   passed` at `bce6fae`. That is the expected
    state. Do not fix it by weakening it; fix backlog item 2. The gate
    form that excludes it is `pytest -q --ignore-glob="*_rule3_red.py"`.
 5. **A green test inside `*_rule3_red.py` is invisible to the gate.** That happened

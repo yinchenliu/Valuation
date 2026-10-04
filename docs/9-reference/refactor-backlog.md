@@ -82,7 +82,7 @@ rather than lying.
 | 47 | The income statement shown on both pages has no interest income row, so EBT does not add up from the rows shown | — | `cli.py`, `templates/_statements.html` | **new at `cde33cb`.** Display only: the figure is in EBT, but a reader cannot see it |
 | 48 | The equity bridge does not subtract noncontrolling interest | **silent** | `analysis/dcf.py`, `models/`, the Pass 1 schema | **closed by `P10a-nci-bridge`**: two printed keys, summed in `total_noncontrolling_interest`. Walmart $28.84 → $28.02 |
 | 49 | Given several PDFs, the API route drops any PDF with no fiscal year and says nothing | **silent** | `cli.py`, `api/routes_valuation.py` | **new at `P9a`.** Route B stops on the same input, so the two routes now differ on it |
-| 50 | Route A returns `[]` when Pass 2 cannot be parsed twice, so "nothing was read" looks like "none found" | **silent** | `ingestion/claude_extractor.py` | **new, found by `P9c`.** The twin of item 8 inside the extractor |
+| 50 | Route A returns `[]` when Pass 2 cannot be parsed twice, so "nothing was read" looks like "none found" | **silent** | `ingestion/claude_extractor.py` | **closed by `P13g-pass2-unread` (`bce6fae`)**: the retry raises, naming the filing and both parse errors. Its follow-ups are items 73 and 74 |
 | 51 | The arithmetic check's `WARN` branch can never run | — | `ingestion/claude_extractor.py` | **new, found by `P9c`.** Dead code |
 | 52 | On a cache hit, `POST /valuation` ignores `files` sent together with `session_file`; a cache miss stops on the same form | — | `api/routes_valuation.py` | **new, found by the `P9b` review.** Reachable only by a hand-built request; moves no figure or label |
 | 53 | `ingestion/session_extraction.py` imports `_NRI_SCHEMA` by its private name | — | `ingestion/` | **new, the `P9d` review's F1, minor.** Export `PASS2_ITEM_FIELDS` from `claude_extractor.py` as `P9a` did for Pass 1, and remove the comment at `session_extraction.py:91-94` |
@@ -97,11 +97,18 @@ rather than lying.
 | 62 | A failed reading check (an income statement subtotal, or a printed line not found on its page) never reaches the web page, for either route | **silent**, on the web | `api/routes_valuation.py`, `templates/` | **new, found writing `P12a`.** Route A prints failures to the server console; route B's `validation_errors` print in `check` and the CLI only. The balance check shows `FAIL` on the page because it is recomputed from the memo totals |
 | 63 | A filing with no text layer uses up route A's two Pass 1 retries on lines that can never be confirmed | — | `ingestion/claude_extractor.py` | **new, the `P12a` review's F5.** Every line fails "cannot be confirmed", so the retries cost two full-PDF calls and change nothing. None of the 16 filings here lacks a text layer |
 | 64 | The page check's joined-line form lets a label written across two printed rows take either row's figure | — | `ingestion/claude_extractor.py` | **new, the `P12a` round 2 review's F6.** Needs a label the filing does not print. Candidate: a joined form counts only when the neighbouring line prints no figure; 89 of 89 on Walmart, but Walmart uses no joined form, and it refuses a wrap whose other half prints a year. Measure on a filing with real wrapped rows first |
-| 65 | `DCFResult.upside_downside` returns `0.0` when the current price is `0` | **silent** | `models/valuation.py` | **new, found by the `P13b-models-silent` programmer.** A zero market price reads as "fairly valued". The same kind of silent zero as item 32 |
-| 66 | `derive_assumptions` pads the caller's growth list in place | **silent** | `analysis/projector.py` | **new, found by the `P13b-models-silent` programmer.** `[0.1]` with `projection_years=3` becomes `[0.1, 0.1, 0.1]` in the caller's object, so a second call reads the repeated rates as supplied and loses the `REPEATED` clause (rule 6). Present at `0021845` |
-| 67 | `projection_years` is never checked | — | `analysis/projector.py` | **new, the `P13b` review's F1, minor.** Below 1, the growth label describes a projection that never runs. No path shows that label today: `run_dcf` refuses an empty projection first. Fix: `derive_assumptions` stops when `projection_years < 1`, naming the field |
+| 65 | `DCFResult.upside_downside` returns `0.0` when the current price is `0` | **silent** | `models/valuation.py` | **closed by `P13d-upside-price` (`2a09d3c`)**: `run_dcf` and `upside_downside` stop on a price that is not finite and above 0 |
+| 66 | `derive_assumptions` pads the caller's growth list in place | **silent** | `analysis/projector.py` | **closed by `P13e-growth-input` (`d1b4ad2`)**: `derive_assumptions` works on a copy |
+| 67 | `projection_years` is never checked | — | `analysis/projector.py` | **closed by `P13e-growth-input` (`d1b4ad2`)**: a `projection_years` that is not an int of 1 or more stops by name |
 | 68 | The CLI prints no assumption label | **silent**, on the CLI | `cli.py` | **new, the `P13b` review's O1.** `print_assumptions` (`cli.py:677-695`) prints the rates and an `(override)` tag, never the label text. So `SUBSTITUTED`, `REPEATED` and `DROPPED` are invisible on the CLI; the web page shows them (rule 6) |
-| 69 | A negative debt balance gives WACC weights above 1 and below 0 | **silent** | `analysis/wacc.py` | **new, found by the `P13a` round 2 programmer, the review's F4.** Market cap 300 with `total_debt` −50 gives `equity_weight 1.2, debt_weight -0.2`, identical at `0021845`. A bad value, not an absent one. Not yet known whether an extraction can produce a negative debt line |
+| 69 | A negative debt balance gives WACC weights above 1 and below 0 | **silent** | `analysis/wacc.py` | **closed by `P13f-wacc-debt` (`5c4fb67`)**: each debt line and the total must be finite and not negative |
+| 70 | Walmart's stage 10 is not reproducible: PV of terminal value reads 214,819M or 214,820M between runs on one tree | — | stage 6 onward | **new, the `P13e` review's F3.** Cause not measured; live market data is the first suspect |
+| 71 | The rule 3 census grep cannot see a conditional zero written on two lines | — | `docs/2-rules/rules.md` | **new, the `P13d` programmer and review.** `if x == 0:` / `return 0.0` is not counted, so the census undercounts |
+| 72 | `cli.py:1035` and `:1043` hold conditional zeros (`shares`, `latest_bs.total_debt if latest_bs else 0`) | **silent** | `cli.py` | **new, the `P13f` programmer and review.** The census does not search `cli.py` |
+| 73 | Some bad first Pass 2 replies stop with no retry and no filing name | — | `ingestion/claude_extractor.py` | **new, the `P13g` review's F2.** `_extract_json(raw)` sits outside the first `try`, and that `except` catches only `JSONDecodeError` and `KeyError`. Pass the PDF path in so the filing can be named (F3) |
+| 74 | An `OverflowError` or `RecursionError` from the Pass 2 retry escapes without naming the filing | — | `ingestion/claude_extractor.py` | **new, the `P13g` review's F1, minor.** The run still stops; the comment at the catch overstates the four types |
+| 75 | The write guard reads text inside a Bash command as a file path | — | `.claude/hooks/guard_paths.py` | **new, five testers and reviewers.** A `>` or `=` inside a quoted pattern or heredoc, `sed -i`, and `2>/dev/null` are refused; in-repo `scratchpad/` paths are refused. No wrong write was allowed |
+| 76 | The web form's `projection_years` has no lower bound, and the stop it reaches shows at HTTP 200 | — | `api/routes_valuation.py` | **new, the `P13e` review's F4.** The 200 comes from item 8's blanket `except` |
 
 ---
 
@@ -847,7 +854,7 @@ and the output does not say a file was ignored.
 **Fix, when assigned.** Stop and name the file, as route B does. Make the change in both
 entry points, or after item 7 in one place.
 
-## 50. Route A returns `[]` when Pass 2 cannot be parsed twice · **silent**
+## 50. Route A returns `[]` when Pass 2 cannot be parsed twice · **CLOSED at `bce6fae`**
 
 **Fact.** `_run_nri_pass` retries once when the Pass 2 reply does not parse. If the retry
 also fails, a blanket `except Exception` prints a warning and returns `[]`
@@ -1473,7 +1480,7 @@ wearing a different face, and it is named separately because `fcff.py` is the on
 
 ---
 
-## 38b. Item 38's second face, restated at `P13a` · **silent**
+## 38b. Item 38's second face, restated at `P13a` · **part (b) CLOSED at `5c4fb67`; part (a) waits for the user**
 
 Item 38's own case (market cap plus debt equal to 0, and since `P13a` round 2 a market cap
 of 0 or below) stops. The **second face** described under item 38 does not match what the
