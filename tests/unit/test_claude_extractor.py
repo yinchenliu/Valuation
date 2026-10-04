@@ -626,7 +626,9 @@ def test_merge_keeps_one_item_per_year_amount_direction() -> None:
 _REAL_CALL_LLM = ce._call_llm
 
 _NRI_RESOLUTION = ProviderResolution(
-    provider="claude", model="stub-model", transport="anthropic-direct",
+    provider="claude", model="stub-model",
+    reasoning_label="adaptive thinking, effort 'high' (config.EXTRACTION_EFFORT)",
+    transport="anthropic-direct",
     transport_label="stub", credential="anthropic-api-key",
     credential_source="stub: no call is made",
 )

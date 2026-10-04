@@ -263,7 +263,9 @@ def three_filings(directory: Path) -> dict[str, Any]:
 # ===========================================================================
 
 _RESOLUTION = ProviderResolution(
-    provider="claude", model=MODEL, transport="anthropic-direct",
+    provider="claude", model=MODEL,
+    reasoning_label="adaptive thinking, effort 'high' (config.EXTRACTION_EFFORT)",
+    transport="anthropic-direct",
     transport_label="stub", credential="anthropic-api-key",
     credential_source="stub: no call is made",
 )
@@ -839,6 +841,8 @@ def test_session_label_names_the_session_route_and_the_declared_model(
     line = describe_resolution(resolution)
     assert "Claude Code session" in line
     assert MODEL in line
+    assert resolution.reasoning_label == "as the Claude Code session ran; not set by this code"
+    assert f"Model: {MODEL}  |  Reasoning: {resolution.reasoning_label}" in line
 
 
 # ===========================================================================

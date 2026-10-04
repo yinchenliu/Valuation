@@ -410,7 +410,9 @@ def test_a_difference_of_the_tolerance_passes_and_one_more_fails(
 # ===========================================================================
 
 _RESOLUTION = ProviderResolution(
-    provider="claude", model="stub-model", transport="anthropic-direct",
+    provider="claude", model="stub-model",
+    reasoning_label="adaptive thinking, effort 'high' (config.EXTRACTION_EFFORT)",
+    transport="anthropic-direct",
     transport_label="stub", credential="anthropic-api-key",
     credential_source="stub: no call is made",
 )

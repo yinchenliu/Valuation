@@ -733,7 +733,9 @@ def test_check_exits_1_on_a_page_with_no_text_layer(
 # ===========================================================================
 
 _RESOLUTION = ProviderResolution(
-    provider="claude", model="stub-model", transport="anthropic-direct",
+    provider="claude", model="stub-model",
+    reasoning_label="adaptive thinking, effort 'high' (config.EXTRACTION_EFFORT)",
+    transport="anthropic-direct",
     transport_label="stub", credential="anthropic-api-key",
     credential_source="stub: no call is made",
 )
