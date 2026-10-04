@@ -4,9 +4,9 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `bc30be4` (`P13h` committed), 2026-10-04**, in the working tree, on branch `main`, **on the macOS machine**
+**Measured at `69436d9` (`P14a` committed), 2026-10-04**, in the working tree, on branch `main`, **on the macOS machine**
 (`.venv/bin/python`, Python 3.11.6). Every figure before `cde33cb` was measured on the
-Windows machine. **Forty-five work units accepted, and not one on its own report.** Every programmer run went to a reviewer that
+Windows machine. **Forty-seven work units accepted, and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; **five** times a reviewer or a
 programmer overturned a claim — twice against a programmer, **three times against the
 orchestrator**. The journal is [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
@@ -23,10 +23,10 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `bc30be4` (macOS) |
+| Gate | Command | Result at `69436d9` (macOS) |
 |---|---|---|
-| Tests | `.venv/bin/python -m pytest -q` | **859 tests. 857 pass, 2 fail**: the 2 red on purpose |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **857 passed, 0 failed** |
+| Tests | `.venv/bin/python -m pytest -q` | **956 tests. 954 pass, 2 fail**: the 2 red on purpose |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **954 passed, 0 failed** |
 | Lint | `.venv/bin/python -m ruff check .` | **4 errors**, every one `BLE001`. `P13g` removed the one in `_run_nri_pass` |
 | Types | `.venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **9 errors in 4 files**, 20 files checked. `P13f` removed `calculate_wacc`'s `BalanceSheet \| None` |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
@@ -452,13 +452,16 @@ the headline. Re-ranked at `622262b`.
 | 67 | `projection_years` was never checked | `d1b4ad2` |
 | 69 | A negative debt balance gave weights above 1 | `5c4fb67` |
 | 50 | Route A returned `[]` when Pass 2 could not be read | `bce6fae` |
+| 44 | The Pass 1 schema asked for units as a free string, unread | `bf428d3` (`P14a`), locked at `69436d9` (`P14a-tests`) |
 
 **At `a64818b` these tables hold 24 closed items and 37 open ones** (item 23 appears twice above). They are the headline, not the whole list: items 55, 57, 58, 60 and 61 are open in the backlog and not shown here. Items 19 to 28 did not exist when this build
 started — **every one of them was found by running the code**, not by reading it. So were
 41 and 42, both found at `6e58f13` by a reviewer exhausting inputs rather than reading
 the branch.
 
-**Phase 13 (silent defects first, the user's decision of 2026-10-03) is in progress.** Wave 1: `P13a` (`47b8b09`) closes items 25 and 38, `P13b` (`aa6f80d`) closes items 15, 32, 39 and 42, each reviewed and tested. `P13c` (`5b03600`) closes item 46 after three review rounds, and `P13c-tests` locks the key order and both labels without reading the real `.env`. Wave 1 is done. **Wave 2 is done at `bce6fae`**: `P13d` item 65, `P13e` items 66 and 67, `P13f` item 69 and 38b part (b), `P13g` item 50, each reviewed and tested. One step of `P13f` was withdrawn as a defect in the assignment: item 38b part (a), a company that repaid its debt, waits for the user's decision. The runs found items 70 to 76. The runs found items 65 to 69 and restated 38b. **Wave 3, on the user's option 1 of 2026-10-04:** `P13h` (`bc30be4`) closes item 38b part (a) with `--confirm-zero-debt` and a "Confirm zero debt" checkbox, approved in round 1; its tester is in progress. Gates at `bc30be4`, measured: gate 857 passed, full 2 failed (the known two), ruff 4, mypy 9 in 4 files, census 65. `P14a-units` (item 44) is in progress; the user approved `share_units` on 2026-10-04.
+**Phase 14 (read printed unit statements, check on page, convert in Python) is in progress.** `P14a` (`bf428d3`) closes item 44: Pass 1 reads `units` and `share_units` with pages, page check verifies whole statements on income statement / share pages, Python converts once to millions per filing in both routes, balance sheet tolerance is 1 printed unit (0.001 $M for thousands) with `printed_unit_in_millions`, session files are `v3`. `P14a-tests` (`69436d9`) repaired 291 fixtures and added 44 new tests locking all unit behaviors. Gates at `69436d9`, measured: gate 954 passed, full 2 failed (the known two), ruff 4, mypy 9 in 4 files, census 65, route 200, guard 48/48.
+
+**Phase 13 (silent defects first, the user's decision of 2026-10-03) is complete at `98b908e`.** Wave 1: `P13a` (`47b8b09`) closes items 25 and 38, `P13b` (`aa6f80d`) closes items 15, 32, 39 and 42, each reviewed and tested. `P13c` (`5b03600`) closes item 46 after three review rounds, and `P13c-tests` locks the key order and both labels without reading the real `.env`. Wave 1 is done. **Wave 2 is done at `bce6fae`**: `P13d` item 65, `P13e` items 66 and 67, `P13f` item 69 and 38b part (b), `P13g` item 50, each reviewed and tested. **Wave 3, on the user's option 1 of 2026-10-04:** `P13h` (`bc30be4`) closes item 38b part (a) with `--confirm-zero-debt` and a "Confirm zero debt" checkbox; `P13h-tests` (`98b908e`) locked all 53 cases.
 
 **Phase 12 (every printed line is found on its page) is done at `1888ccb`.** `P12a`
 (`a64818b`): both routes look up each Pass 1 line's label and figure on its cited page
