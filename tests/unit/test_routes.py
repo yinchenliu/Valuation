@@ -941,3 +941,249 @@ def test_post_valuation_stops_and_names_a_missing_required_field(
 
     assert response.status_code == 422
     assert missing in response.text
+
+
+# ===========================================================================
+# The "Confirm zero debt" checkbox. Backlog item 38b (a), `P13h-zero-debt-confirm`.
+#
+# The contract, from step 4 of `.agent/assignments/P13h-zero-debt-confirm.md`
+# and the HTML specification of a checkbox: a checked box sends "on", an
+# unchecked one sends nothing, which `Form("")` receives as "". So "on" is
+# True, absent or "" is False, and any other value did not come from the box
+# and stops, naming the field and the value (rule 3). The value reaches
+# `calculate_wacc` as `zero_debt_confirmed`.
+#
+# `calculate_wacc` is wrapped by a spy that records the keyword and then calls
+# the real function, so the page is the real page.
+#
+# No network: the `client` fixture closes the three boundaries and the
+# `_no_socket` fixture below refuses any socket connection, so a test that
+# reached the network would fail rather than wait.
+# ===========================================================================
+
+
+@pytest.fixture
+def _no_socket(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Refuse every outbound connection for the length of one test."""
+    import socket
+
+    def _refused(*args: object, **kwargs: object) -> None:
+        raise AssertionError(f"a unit test opened a network connection: {args!r}")
+
+    monkeypatch.setattr(socket.socket, "connect", _refused)
+    monkeypatch.setattr(socket.socket, "connect_ex", _refused)
+    monkeypatch.setattr(socket, "create_connection", _refused)
+
+
+def _repaid_debt_financials() -> FinancialStatements:
+    """`_one_year_financials()` with no debt on the balance sheet and 30 of
+    interest expense on the income statement: item 22's pattern, which is also
+    a company that repaid all its debt during the year.
+    """
+    return FinancialStatements(
+        ticker="TESTCO",
+        company_name="Test Company Inc",
+        income_statements=[
+            IncomeStatement(year=2024, revenue=1000.0, sga=800.0, tax_expense=50.0,
+                            interest_expense=30.0, diluted_shares_outstanding=100.0),
+        ],
+        balance_sheets=[
+            # total debt = 0 + 0 + 0 = 0; net debt = 0 - 100 = -100 (net cash).
+            BalanceSheet(year=2024, cash_and_equivalents=100.0, long_term_debt=0.0,
+                         noncontrolling_interest_nonredeemable=0.0,
+                         noncontrolling_interest_redeemable=0.0),
+        ],
+    )
+
+
+_NOT_PASSED = "<zero_debt_confirmed not passed>"
+
+
+@pytest.fixture
+def wacc_calls(client: TestClient, monkeypatch: pytest.MonkeyPatch, _no_socket: None) -> list:
+    """Fake extraction and price; record what `calculate_wacc` was handed."""
+    monkeypatch.setattr(
+        routes_valuation, "extract_financials", lambda *a, **k: (_repaid_debt_financials(), [])
+    )
+    monkeypatch.setattr(routes_valuation, "fetch_price_data", lambda *a, **k: _price_data())
+
+    calls: list = []
+    real = routes_valuation.calculate_wacc
+
+    def spy(*args: object, **kwargs: object):
+        calls.append(kwargs.get("zero_debt_confirmed", _NOT_PASSED))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(routes_valuation, "calculate_wacc", spy)
+    return calls
+
+
+def _post_zero_debt(client: TestClient, **fields: str) -> str:
+    form = dict(VALUATION_FORM, cost_of_debt_override="")
+    form.update(fields)
+    response = client.post("/valuation", data=form)
+    assert response.status_code == 200
+    assert "Internal Server Error" not in response.text
+    return response.text
+
+
+def _error_text(body: str) -> str:
+    """The text of the error block, unescaped, or "" when there is none."""
+    import html
+
+    match = re.search(r'<div class="alert alert-error">(.*?)</div>', body, re.DOTALL)
+    return html.unescape(_strip_tags(match.group(1))) if match else ""
+
+
+def test_get_assumptions_shows_the_confirm_zero_debt_checkbox_inside_the_valuation_form(
+    client: TestClient, extraction_calls: list[tuple], _no_socket: None
+) -> None:
+    """Step 5 of the specification: a checkbox named `confirm_zero_debt`, with
+    the visible label "Confirm zero debt", inside the form that posts to
+    `/valuation`, and not checked by default (an unchecked box is the state
+    "the user confirmed nothing").
+    """
+    response = client.get(
+        "/assumptions",
+        params={
+            "ticker": "TESTCO",
+            "company_name": "Test Company Inc",
+            "files": "2024:c:/tmp/p13h-never-opened.pdf",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.text
+    tag = _input_tag(body, "confirm_zero_debt")
+    assert 'type="checkbox"' in tag
+    assert "checked" not in tag
+    assert "Confirm zero debt" in body
+
+    form_start = body.index('<form action="/valuation"')
+    form_end = body.index("</form>", form_start)
+    assert form_start < body.index('name="confirm_zero_debt"') < form_end
+
+
+def test_post_valuation_with_the_box_checked_values_the_company_with_no_debt(
+    client: TestClient, wacc_calls: list
+) -> None:
+    """"on" reaches `calculate_wacc` as True, and the run completes.
+
+    Every figure by hand, before running anything. Projection as in
+    `test_post_valuation_renders_the_completed_valuation`:
+
+      revenue 1000 * 1.10 = 1100, EBIT 220, NOPAT 165, D&A 110, CapEx 55,
+      dNWC 22, FCFF = 165 + 110 - 55 - 22                    =  198
+
+      CAPM   Re  = 4% + 1.0 * 6%                             =   10%
+      WACC   E   = 45.00 * 100 shares = 4500, D = 0 (confirmed)
+             E/V = 4500 / 4500 = 100%, D/V = 0%
+             WACC = 1.0 * 10% + 0 * Rd * (1 - 25%)           =   10.00%
+
+      DCF    PV(FCFF) = 198 / 1.10                           =  180
+             TV       = 198 * 1.02 / (0.10 - 0.02)
+                      = 201.96 / 0.08                        = 2524.5
+             PV(TV)   = 2524.5 / 1.10                        = 2295
+             EV       = 180 + 2295                           = 2475  -> "2,475"
+             net debt = 0 - 100                              = -100
+             equity   = 2475 + 100                           = 2575  -> "2,575"
+             price    = 2575 / 100 shares                    =   25.75 -> "$25.75"
+    """
+    body = _post_zero_debt(client, confirm_zero_debt="on")
+
+    assert wacc_calls == [True]
+    assert _error_text(body) == "", "the success path rendered the error page"
+    assert re.search(
+        r'<h3>Implied Share Price</h3>\s*<div class="big-number">\$25\.75</div>', body
+    )
+    capm = _rows_under(body, "CAPM & WACC")
+    assert capm["Equity Weight (E/V)"] == "100.0%"
+    assert capm["Debt Weight (D/V)"] == "0.0%"
+    assert capm["WACC"] == "10.00%"
+    bridge = _rows_under(body, "DCF Valuation Bridge")
+    assert bridge["Enterprise Value"] == "2,475"
+    assert bridge["Equity Value"] == "2,575"
+    # Rule 6: the page says the zero was the user's confirmation.
+    assert "--confirm-zero-debt" in body
+    assert "confirmed" in body.lower()
+
+
+def test_post_valuation_with_the_box_checked_and_an_override_says_the_rate_reaches_nothing(
+    client: TestClient, wacc_calls: list
+) -> None:
+    """A 5% override beside the confirmation: D/V is 0, so the WACC is still
+    1.0 * 10% = 10.00% and the price is the test above's $25.75 whatever the
+    rate. The page says the rate does not reach the WACC (rule 6).
+    """
+    body = _post_zero_debt(client, confirm_zero_debt="on", cost_of_debt_override="5")
+
+    assert wacc_calls == [True]
+    assert _error_text(body) == ""
+    assert _rows_under(body, "CAPM & WACC")["WACC"] == "10.00%"
+    assert re.search(
+        r'<h3>Implied Share Price</h3>\s*<div class="big-number">\$25\.75</div>', body
+    )
+    assert "does not reach the WACC" in body
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        pytest.param({}, id="absent"),
+        pytest.param({"confirm_zero_debt": ""}, id="empty"),
+        pytest.param({"cost_of_debt_override": "5"}, id="absent-with-override"),
+    ],
+)
+def test_post_valuation_with_the_box_unchecked_stops_at_item_22(
+    client: TestClient, wacc_calls: list, fields: dict[str, str]
+) -> None:
+    """An unchecked box reaches `calculate_wacc` as False, and item 22's stop
+    reaches the page. A cost of debt override does not get past it in the
+    route either (the bypass is gone). No valuation figure is shown.
+    """
+    body = _post_zero_debt(client, **fields)
+
+    assert wacc_calls == [False]
+    error = _error_text(body)
+    assert "--confirm-zero-debt" in error
+    assert "Confirm zero debt" in error
+    assert "big-number" not in body, "a stopped run showed a valuation figure"
+
+
+@pytest.mark.parametrize("value", ["yes", "ON", "true", "1", " on"])
+def test_post_valuation_with_a_value_no_checkbox_sends_stops_and_names_it(
+    client: TestClient, wacc_calls: list, value: str
+) -> None:
+    """Rule 3. Only "on" and nothing come from a checkbox, so any other value
+    is not read as checked or as unchecked. It stops before the WACC, and the
+    page names the field and the value.
+    """
+    body = _post_zero_debt(client, confirm_zero_debt=value)
+
+    assert wacc_calls == []
+    error = _error_text(body)
+    assert "confirm_zero_debt" in error
+    assert repr(value) in error
+    assert "big-number" not in body
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [pytest.param("on", True, id="on"), pytest.param("", False, id="empty")],
+)
+def test_the_checkbox_reader_maps_only_the_two_browser_values(
+    value: str, expected: bool, _no_socket: None
+) -> None:
+    """The HTML contract, on the reader itself: "on" is checked, "" is not."""
+    assert routes_valuation._checkbox_checked("confirm_zero_debt", value) is expected
+
+
+@pytest.mark.parametrize("value", ["yes", "ON", "off", "0", "false"])
+def test_the_checkbox_reader_stops_on_any_other_value_and_names_it(
+    value: str, _no_socket: None
+) -> None:
+    with pytest.raises(ValueError) as raised:
+        routes_valuation._checkbox_checked("confirm_zero_debt", value)
+    message = str(raised.value)
+    assert "confirm_zero_debt" in message
+    assert repr(value) in message

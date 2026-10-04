@@ -28,11 +28,21 @@ the defect permanent and turn its fix red
 1. When the company carries debt but reports no interest expense,
    `config.DEFAULT_COST_OF_DEBT` is substituted. The branch is executed here;
    the substituted rate is not asserted. Backlog item 9, rule 6.
-2. Backlog item 38b (a): a cost-of-debt override beside a balance sheet with
-   no debt lines and a reported interest expense returns weights 1.0 / 0.0,
-   because the override returns before item 22's stop. The user is deciding
-   its replacement (an explicit confirmation of a zero debt balance). No test
-   here asserts that behaviour, either way.
+2. With a debt balance above 0 and a cost-of-debt override, a NaN interest
+   expense is not refused, because on that path nothing reads it: the
+   override replaces the rate and the weights come from the balance sheet.
+   The review of `P13h-zero-debt-confirm` accepted that reading of its table.
+   No test here asserts that path, either way.
+
+Until `P13h-zero-debt-confirm`, an entry stood here: a cost-of-debt override
+beside a total debt of 0 and a reported interest expense returned weights
+1.0 / 0.0, because the override returned before item 22's stop (backlog item
+38b (a)). The user decided on 2026-10-04 (option 1) that only an explicit
+confirmation of the zero (`--confirm-zero-debt`, the "Confirm zero debt"
+checkbox, `zero_debt_confirmed`) gets past that stop. The override no longer
+does, a confirmation beside a debt balance above 0 stops, and every label on
+the zero-debt rows says whether the rate reaches the WACC. All of it is locked
+in the "confirming a zero debt balance" section at the end of this file.
 
 Until `P13a-analysis-silent`, an entry stood here: when
 `market_cap + total_debt == 0` the weights were set to 100% equity rather than
@@ -454,9 +464,10 @@ def test_cost_of_equity_passes_through_unchanged_where_the_weights_can_be_formed
 # Neither message may state why the input is zero: the function cannot tell.
 # Backlog item 37 records that mistake ("did not extract") in this same file.
 #
-# Not asserted here, on purpose: item 38b (a), an override beside zero debt
-# lines and a reported interest expense. A NEGATIVE debt balance (item 69) now
-# stops; it is locked in the "debt balance" section at the end of this file.
+# An override beside zero debt lines and a reported interest expense (item
+# 38b (a)) is not this section's subject; it is locked in the "confirming a
+# zero debt balance" section. A NEGATIVE debt balance (item 69) now stops; it
+# is locked in the "debt balance" section at the end of this file.
 #
 # The expected side of every assertion is an input the test supplied: the
 # field names are the arguments, the values are the numbers passed in.
@@ -477,7 +488,7 @@ def _wacc_on(market_cap: float, total_debt: float) -> None:
     case with debt uses the fixture's 20 of interest, so that neither reaches
     item 22's interest-against-zero-debt stop and the weights stop is the one
     under test. No cost-of-debt override is passed: an override beside zero
-    debt lines is backlog item 38b.
+    debt lines is item 38b (a), locked in its own section below.
     """
     interest = 0.0 if total_debt == 0 else 20.0
     calculate_wacc(
@@ -1144,9 +1155,9 @@ def test_an_infinite_tax_override_stops_before_the_clamp(tax: float) -> None:
 # "interest expense of nan", as if the income statement had reported it. The
 # stop must name `income_statement.interest_expense` instead.
 #
-# No cost-of-debt override is passed anywhere here: with an override the
-# interest expense is not read (item 38b (a), open), and this file asserts
-# nothing about that path.
+# No cost-of-debt override or confirmation is passed here. Both beside zero
+# debt are item 38b (a): a non-finite interest expense under either is locked
+# in the "confirming a zero debt balance" section below.
 # ---------------------------------------------------------------------------
 
 _NOT_FINITE = [
@@ -1176,3 +1187,361 @@ def test_a_non_finite_interest_stops_cost_of_debt_with_source_and_names_it(
     for balance_sheet in (_balance_sheet_without_debt(), _balance_sheet_with_debt()):
         with pytest.raises(ValueError, match="income_statement.interest_expense"):
             cost_of_debt_with_source(_income_statement(interest_expense=interest), balance_sheet)
+
+
+# ---------------------------------------------------------------------------
+# Confirming a zero debt balance. Backlog item 38b (a), the user's decision of
+# 2026-10-04 (option 1), implemented by `P13h-zero-debt-confirm` at `bc30be4`.
+#
+# The specification is the table in step 1 of
+# `.agent/assignments/P13h-zero-debt-confirm.md`, reproduced in the docstring
+# of `cost_of_debt_with_source`:
+#
+#   total debt | interest | confirmed | override | result
+#   0          | not 0    | no        | any      | stop (item 22)
+#   0          | not 0    | yes       | none     | 0.0, labelled as confirmed
+#   0          | not 0    | yes       | given    | the override, "does not reach the WACC"
+#   0          | 0        | either    | none     | 0.0, debt-free (+ confirmed)
+#   0          | 0        | either    | given    | the override, "does not reach the WACC"
+#   above 0    | any      | yes       | any      | stop: names balance_sheet.total_debt
+#   above 0    | any      | no        | any      | unchanged
+#
+# Every expected weight and WACC below is hand arithmetic from the module
+# docstring of `analysis/wacc.py`:
+#
+#     WACC = (E/V) * Re + (D/V) * Rd * (1 - T),   V = E + D
+#
+# with Re = 0.04 + 1.2 * 0.05 = 0.10 (the CAPM fixture). With D = 0 the
+# identity WACC = 1.0 * Re + 0.0 * Rd * (1 - T) = Re holds for every Rd and T,
+# and it holds exactly in floating point: 300 / 300 is 1.0, 0 / 300 is 0.0,
+# 1.0 * 0.10 is 0.10 and 0.0 * anything finite is 0.0. Each expected rate is
+# either an input the test supplied (an override) or the table's 0.0. Each
+# expected field name is the specification's. No expected value here was read
+# from a run.
+#
+# The company: market cap 300, interest expense 30 (so it cannot be confused
+# with the debt figure 0, the fixture's 20, or the market cap), tax rate
+# supplied as 0.25 so that no assertion leans on the fixture's derived rate.
+# ---------------------------------------------------------------------------
+
+_ZERO_DEBT_MARKET_CAP = 300.0
+_REPAID_INTEREST = 30.0
+
+
+def _zero_debt_wacc(
+    interest: float = _REPAID_INTEREST,
+    override: float | None = None,
+    **kwargs: bool,
+):
+    """`calculate_wacc` on a balance sheet with no debt lines (payables only)."""
+    return calculate_wacc(
+        capm_result=_capm_result(),
+        income_statement=_income_statement(interest_expense=interest),
+        balance_sheet=_balance_sheet_without_debt(),
+        market_cap=_ZERO_DEBT_MARKET_CAP,
+        cost_of_debt_override=override,
+        tax_rate_override=0.25,
+        **kwargs,
+    )
+
+
+_OVERRIDE_OR_NOT = [
+    pytest.param(None, id="no-override"),
+    pytest.param(0.05, id="override-0.05"),
+]
+
+
+# --- Row 1: zero debt beside interest, not confirmed: the stop, override or not
+
+
+@pytest.mark.parametrize("override", _OVERRIDE_OR_NOT)
+@pytest.mark.parametrize("confirmed", [{}, {"zero_debt_confirmed": False}], ids=["omitted", "false"])
+def test_zero_debt_beside_interest_stops_and_names_the_confirmation(
+    override: float | None, confirmed: dict[str, bool]
+) -> None:
+    """Rule 3 and item 38b (a). The run stops whether or not a cost of debt is
+    supplied: before `P13h` the 0.05 override returned before the stop and
+    valued the company at weights 1.0 / 0.0, an unstated "the zero is real".
+
+    The message must name the remedy the user chose: `--confirm-zero-debt` on
+    the CLI and the "Confirm zero debt" checkbox on the form (the
+    specification's row 1). It must not offer `--cost-of-debt` as the way
+    past (P13h criterion 1: the remedy "no longer names `--cost-of-debt`"),
+    because that was the bypass. And it names the interest figure it saw, 30.
+    """
+    with pytest.raises(ValueError) as raised:
+        _zero_debt_wacc(override=override, **confirmed)
+    message = str(raised.value)
+
+    assert "--confirm-zero-debt" in message
+    assert "Confirm zero debt" in message
+    assert "--cost-of-debt" not in message
+    assert any(float(n.replace(",", "")) == 30.0 for n in _numbers_in(message)), message
+
+
+@pytest.mark.parametrize("override", _OVERRIDE_OR_NOT)
+def test_zero_debt_beside_interest_stops_cost_of_debt_with_source_too(
+    override: float | None,
+) -> None:
+    """The same stop on a direct call, where the bypass used to sit."""
+    with pytest.raises(ValueError, match="--confirm-zero-debt"):
+        cost_of_debt_with_source(
+            _income_statement(interest_expense=_REPAID_INTEREST),
+            _balance_sheet_without_debt(),
+            override,
+        )
+
+
+# --- Row 2: zero debt beside interest, confirmed, no override
+
+
+def test_a_confirmed_zero_debt_is_valued_with_no_debt() -> None:
+    """The specification's row 2: rate 0.0, labelled as the user's confirmation.
+
+        E    300, D 0 (the user confirmed it), V = 300 + 0 = 300
+        E/V  300 / 300                         = 1.0
+        D/V    0 / 300                         = 0.0
+        Rd   the table's 0.0 (no rate is measured; its weight is 0)
+        WACC 1.0 * 0.10 + 0.0 * 0.0 * (1 - 0.25)
+           = 0.10 + 0.0                        = 0.10 = Re, exactly
+    """
+    result = _zero_debt_wacc(zero_debt_confirmed=True)
+
+    assert result.equity_weight == 1.0
+    assert result.debt_weight == 0.0
+    assert result.cost_of_debt == 0.0
+    assert result.wacc == result.cost_of_equity
+    assert result.wacc == pytest.approx(COST_OF_EQUITY)
+
+
+def test_the_confirmed_zero_label_says_the_user_confirmed_it() -> None:
+    """Rule 6. The 0.0 is neither read from the filing nor derived from it, so
+    the label must say where it came from: the user confirmed total debt of 0
+    although the income statement reports interest expense 30 for 2025, and
+    the confirmation came from `--confirm-zero-debt` or the checkbox. It must
+    not read as a supplied rate or as the debt-free measurement (the 0 / 0
+    row), which is a different case.
+    """
+    rate, label = cost_of_debt_with_source(
+        _income_statement(interest_expense=_REPAID_INTEREST),
+        _balance_sheet_without_debt(),
+        zero_debt_confirmed=True,
+    )
+    _rate, debt_free_label = cost_of_debt_with_source(
+        _income_statement(interest_expense=0.0), _balance_sheet_without_debt()
+    )
+
+    assert rate == 0.0
+    lowered = label.lower()
+    assert "confirmed" in lowered
+    assert "--confirm-zero-debt" in label
+    assert "Confirm zero debt" in label
+    assert any(float(n.replace(",", "")) == 30.0 for n in _numbers_in(label)), label
+    assert "2025" in label
+    assert "supplied by the caller" not in lowered
+    assert label != debt_free_label
+
+
+def test_calculate_cost_of_debt_passes_the_confirmation_through() -> None:
+    """The float-returning wrapper takes the same keyword and reaches the same
+    branches: without the confirmation it stops, with it the rate is the
+    table's 0.0.
+    """
+    with pytest.raises(ValueError, match="--confirm-zero-debt"):
+        calculate_cost_of_debt(
+            _income_statement(interest_expense=_REPAID_INTEREST),
+            _balance_sheet_without_debt(),
+        )
+    assert (
+        calculate_cost_of_debt(
+            _income_statement(interest_expense=_REPAID_INTEREST),
+            _balance_sheet_without_debt(),
+            zero_debt_confirmed=True,
+        )
+        == 0.0
+    )
+
+
+# --- Row 3: zero debt beside interest, confirmed, override given
+
+
+def test_a_confirmed_zero_with_an_override_keeps_the_rate_and_it_reaches_nothing() -> None:
+    """The specification's row 3: the supplied rate is reported, and the label
+    says it does not reach the WACC.
+
+        E/V  300 / 300                         = 1.0
+        D/V    0 / 300                         = 0.0
+        Rd   supplied                          = 0.05
+        WACC 1.0 * 0.10 + 0.0 * 0.05 * 0.75
+           = 0.10 + 0.0                        = 0.10 = Re, exactly
+    """
+    result = _zero_debt_wacc(override=0.05, zero_debt_confirmed=True)
+
+    assert result.cost_of_debt == 0.05
+    assert result.equity_weight == 1.0
+    assert result.debt_weight == 0.0
+    assert result.wacc == result.cost_of_equity
+    assert result.wacc == pytest.approx(COST_OF_EQUITY)
+
+    lowered = result.cost_of_debt_source.lower()
+    assert "supplied" in lowered
+    assert "confirmed" in lowered
+    assert "not reach the wacc" in lowered
+
+
+# --- Rows 4 and 5: zero debt, zero interest (a debt-free company)
+
+
+@pytest.mark.parametrize("confirmed", [False, True], ids=["not-confirmed", "confirmed"])
+def test_a_debt_free_company_with_an_override_says_the_rate_reaches_nothing(
+    confirmed: bool,
+) -> None:
+    """The specification's row 5 (rule 6): the override is reported, and the
+    label adds that with a debt weight of 0 it does not reach the WACC. Before
+    `P13h` the label let a reader think the rate had been used.
+
+        WACC 1.0 * 0.10 + 0.0 * 0.05 * 0.75 = 0.10 = Re
+
+    When confirmed, the label also says the user confirmed the zero (the
+    table's "if confirmed, the label also says").
+    """
+    result = _zero_debt_wacc(interest=0.0, override=0.05, zero_debt_confirmed=confirmed)
+
+    assert result.cost_of_debt == 0.05
+    assert result.debt_weight == 0.0
+    assert result.wacc == result.cost_of_equity
+
+    lowered = result.cost_of_debt_source.lower()
+    assert "not reach the wacc" in lowered
+    assert ("confirmed" in lowered) is confirmed
+
+
+def test_a_debt_free_company_that_confirms_the_zero_is_still_measured_at_zero() -> None:
+    """The specification's row 4, confirmed: the debt-free 0.0, and the label
+    adds that the user confirmed the zero.
+
+        WACC 1.0 * 0.10 + 0.0 * 0.0 * 0.75 = 0.10 = Re
+    """
+    result = _zero_debt_wacc(interest=0.0, zero_debt_confirmed=True)
+
+    assert result.cost_of_debt == 0.0
+    assert result.debt_weight == 0.0
+    assert result.wacc == result.cost_of_equity
+    assert "confirmed" in result.cost_of_debt_source.lower()
+
+
+# --- Row 6: a confirmation beside a debt balance above 0
+
+
+@pytest.mark.parametrize(
+    ("interest", "override"),
+    [
+        pytest.param(5.0, None, id="interest-5"),
+        pytest.param(5.0, 0.05, id="interest-5-override"),
+        pytest.param(0.0, None, id="no-interest"),
+    ],
+)
+def test_a_confirmation_beside_debt_stops_and_names_the_balance(
+    interest: float, override: float | None
+) -> None:
+    """Rule 3. The balance sheet says 100 and the user says 0. One of the two
+    inputs is wrong and the code cannot tell which, so neither is used.
+
+    The message names `balance_sheet.total_debt`, its value 100, its three
+    lines, the year 2025, and the confirmation (the specification's row 6).
+    """
+    for call in ("calculate_wacc", "cost_of_debt_with_source"):
+        with pytest.raises(ValueError) as raised:
+            if call == "calculate_wacc":
+                calculate_wacc(
+                    capm_result=_capm_result(),
+                    income_statement=_income_statement(interest_expense=interest),
+                    balance_sheet=_balance_sheet_with_debt_of(100.0),
+                    market_cap=300.0,
+                    cost_of_debt_override=override,
+                    tax_rate_override=0.25,
+                    zero_debt_confirmed=True,
+                )
+            else:
+                cost_of_debt_with_source(
+                    _income_statement(interest_expense=interest),
+                    _balance_sheet_with_debt_of(100.0),
+                    override,
+                    zero_debt_confirmed=True,
+                )
+        message = str(raised.value)
+
+        assert "balance_sheet.total_debt" in message, call
+        assert any(float(n.replace(",", "")) == 100.0 for n in _numbers_in(message)), message
+        for line in ("short_term_debt", "current_portion_lt_debt", "long_term_debt"):
+            assert line in message, (call, line)
+        assert "2025" in message
+        assert "confirmed" in message.lower()
+        assert "--confirm-zero-debt" in message
+
+
+# --- Row 7: a debt balance above 0, not confirmed: unchanged
+
+
+@pytest.mark.parametrize("confirmed", [{}, {"zero_debt_confirmed": False}], ids=["omitted", "false"])
+def test_debt_above_zero_without_a_confirmation_forms_the_weights_by_hand(
+    confirmed: dict[str, bool],
+) -> None:
+    """The specification's row 7: unchanged by `P13h`.
+
+        E    300, D 100 (long-term debt only), V = 300 + 100 = 400
+        E/V  300 / 400                         = 0.75
+        D/V  100 / 400                         = 0.25
+        Rd   5 / 100                           = 0.05
+        T    supplied                          = 0.25
+        WACC 0.75 * 0.10 + 0.25 * 0.05 * (1 - 0.25)
+           = 0.075       + 0.25 * 0.0375
+           = 0.075       + 0.009375
+           = 0.084375
+    """
+    result = calculate_wacc(
+        capm_result=_capm_result(),
+        income_statement=_income_statement(interest_expense=5.0),
+        balance_sheet=_balance_sheet_with_debt_of(100.0),
+        market_cap=300.0,
+        tax_rate_override=0.25,
+        **confirmed,
+    )
+
+    assert result.equity_weight == pytest.approx(0.75)
+    assert result.debt_weight == pytest.approx(0.25)
+    assert result.cost_of_debt == pytest.approx(0.05)
+    assert result.tax_rate == pytest.approx(0.25)
+    assert result.wacc == pytest.approx(0.084375)
+
+
+# --- A non-finite interest expense beside zero debt, under an override or a
+# --- confirmation. Item 38b (a) moved `_require_finite` onto every zero-debt
+# --- path: `nan != 0` is True, so without it a NaN would be printed in item
+# --- 22's stop as a reported figure, or be confirmed as a real one.
+
+
+@pytest.mark.parametrize("interest", _NOT_FINITE)
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param({"override": 0.05}, id="override"),
+        pytest.param({"zero_debt_confirmed": True}, id="confirmed"),
+        pytest.param({"override": 0.05, "zero_debt_confirmed": True}, id="confirmed-and-override"),
+    ],
+)
+def test_a_non_finite_interest_beside_zero_debt_stops_under_an_override_or_a_confirmation(
+    interest: float, kwargs: dict
+) -> None:
+    with pytest.raises(ValueError, match=re.escape("income_statement.interest_expense")):
+        _zero_debt_wacc(interest=interest, **kwargs)
+
+    override = kwargs.get("override")
+    confirmed = kwargs.get("zero_debt_confirmed", False)
+    with pytest.raises(ValueError, match=re.escape("income_statement.interest_expense")):
+        cost_of_debt_with_source(
+            _income_statement(interest_expense=interest),
+            _balance_sheet_without_debt(),
+            override,
+            zero_debt_confirmed=confirmed,
+        )
