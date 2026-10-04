@@ -905,3 +905,196 @@ def test_run_dcf_positive_share_count_gives_the_bridge_price_by_hand() -> None:
     assert result.equity_value == pytest.approx(450.0)
     assert result.diluted_shares == pytest.approx(18.0)
     assert result.implied_share_price == pytest.approx(25.0)
+
+
+# ---------------------------------------------------------------------------
+# Backlog item 65: no current price is no upside. Added by `P13d-tests`.
+#
+# Before `P13d-upside-price`, `DCFResult.upside_downside` returned 0.0 when
+# `current_price` was zero, so a result with no market price read as "fairly
+# valued". It returned a figure on a negative price, NaN on a NaN price and
+# -100% on an infinite one, and `run_dcf` checked nothing. Rule 3: the absent
+# input stops and names itself. Rule 5: the price is market data, and the
+# `run_dcf` message says so.
+#
+# Nothing below asserts an upside of 0.0 for a zero price. That is the default
+# the unit removed. Nothing below relies on the `current_price: float = 0.0`
+# field default either (backlog item 1): every result here states its price.
+# ---------------------------------------------------------------------------
+
+NO_CURRENT_PRICE = [
+    pytest.param(0.0, id="zero"),
+    pytest.param(0, id="integer-zero"),
+    pytest.param(-10.0, id="negative"),
+    pytest.param(math.nan, id="nan"),
+    pytest.param(math.inf, id="inf"),
+    pytest.param(-math.inf, id="minus-inf"),
+]
+
+
+@pytest.mark.parametrize("price", NO_CURRENT_PRICE)
+def test_run_dcf_stops_on_no_current_price_and_names_it(price: float) -> None:
+    """Every other input is clean, so only the price can stop the run.
+
+    With a valid price these inputs give a result (the bridge test above uses
+    the same balance sheet and the same share count), so a run that returned
+    anything here returned an upside for a valuation that has no market price.
+    """
+    with pytest.raises(ValueError) as excinfo:
+        run_dcf(
+            projected_fcffs=[make_projected_fcff(2026, 100.0)],
+            wacc_result=make_wacc_result(0.10),
+            financials=_financials_for_the_bridge(40.0, 10.0),
+            terminal_growth_rate=0.0,
+            current_price=price,
+            diluted_shares=10.0,
+        )
+
+    message = str(excinfo.value)
+    assert "current_price" in message   # the field
+    assert repr(price) in message       # the value that was refused
+    assert "market data" in message     # rule 5: labelled as market data
+
+
+@pytest.mark.parametrize("price", NO_CURRENT_PRICE)
+def test_run_dcf_checks_the_current_price_before_it_discounts_anything(
+    price: float,
+) -> None:
+    """The price check comes before discounting and before the balance sheet.
+
+    The share count is valid (10.0), so the share check, which runs first,
+    passes. The later inputs are poisoned so that each later check would raise
+    with a different message:
+
+      * the one projected FCFF is NaN, so `discount_cash_flows` would stop
+        naming "the projected FCFF for year 2026";
+      * there is no balance sheet, so the bridge would stop naming the
+        balance sheet.
+
+    Only a price check that runs before both can produce a message naming
+    `current_price`.
+    """
+    financials = FinancialStatements(
+        ticker="TEST",
+        income_statements=[IncomeStatement(year=2025)],
+        balance_sheets=[],
+    )
+
+    with pytest.raises(ValueError) as excinfo:
+        run_dcf(
+            projected_fcffs=[make_projected_fcff(2026, math.nan)],
+            wacc_result=make_wacc_result(0.10),
+            financials=financials,
+            terminal_growth_rate=0.0,
+            current_price=price,
+            diluted_shares=10.0,
+        )
+
+    message = str(excinfo.value)
+    assert "current_price" in message
+    assert "projected FCFF" not in message
+    assert "balance sheet" not in message
+
+
+def _result_with_price(price: float) -> DCFResult:
+    """EV 400 + 600 = 1000, net debt 250, NCI 150 -> equity 600; / 40 shares = 15.0.
+
+    The share count is valid, so `implied_share_price` cannot be the stop.
+    """
+    return DCFResult(
+        ticker="TEST",
+        projection_years=1,
+        terminal_growth_rate=0.0,
+        wacc=0.10,
+        pv_fcffs=400.0,
+        pv_terminal_value=600.0,
+        net_debt=250.0,
+        diluted_shares=40.0,
+        current_price=price,
+        noncontrolling_interest=150.0,
+        noncontrolling_interest_source="by hand",
+    )
+
+
+@pytest.mark.parametrize("price", NO_CURRENT_PRICE)
+def test_upside_on_a_result_built_directly_stops_on_no_current_price(
+    price: float,
+) -> None:
+    """The property guards a result that never passed through `run_dcf`.
+
+    `ValueError` specifically: with the guard removed, a zero price would raise
+    `ZeroDivisionError`, which must not pass for the named stop.
+    """
+    result = _result_with_price(price)
+
+    with pytest.raises(ValueError) as excinfo:
+        _ = result.upside_downside
+
+    message = str(excinfo.value)
+    assert "current_price" in message
+    assert repr(price) in message
+
+
+def test_upside_on_a_result_built_directly_is_implied_over_current_less_one() -> None:
+    """The control for the stop, a downside, by hand from the bridge.
+
+    Enterprise  400 + 600                    = 1000.0
+    Equity      1000 - 250 - 150             =  600.0
+    Implied     600 / 40 shares              =   15.0
+    Upside      (15.0 / 24.0 - 1) * 100
+              = (0.625 - 1) * 100            =  -37.5 %
+    """
+    result = _result_with_price(24.0)
+
+    assert result.implied_share_price == pytest.approx(15.0)
+    assert result.upside_downside == pytest.approx(-37.5)
+
+
+def test_run_dcf_positive_current_price_gives_the_upside_by_hand() -> None:
+    """One positive case through `run_dcf`, every step by hand. WACC 25%, g 0, one year.
+
+    PV of FCFF   250 / 1.25                                  =  200.0
+    Terminal     250 * (1 + 0) / (0.25 - 0)                  = 1000.0
+    PV terminal  1000 / 1.25                                 =  800.0
+    Enterprise   200 + 800                                   = 1000.0
+    Net debt     (0 + 0 + 300) - cash 100 - STI 0            =  200.0
+    NCI          nonredeemable 60 + redeemable 40            =  100.0
+    Equity       1000 - 200 - 100                            =  700.0
+    Implied      700 / 14 shares                             =   50.0
+    Upside       (50.0 / 40.0 - 1) * 100 = (1.25 - 1) * 100  =   25.0 %
+    """
+    financials = FinancialStatements(
+        ticker="TEST",
+        income_statements=[IncomeStatement(year=2025)],
+        balance_sheets=[
+            BalanceSheet(
+                year=2025,
+                cash_and_equivalents=100.0,
+                short_term_investments=0.0,
+                short_term_debt=0.0,
+                current_portion_lt_debt=0.0,
+                long_term_debt=300.0,
+                noncontrolling_interest_nonredeemable=60.0,
+                noncontrolling_interest_redeemable=40.0,
+            ),
+        ],
+    )
+
+    result = run_dcf(
+        projected_fcffs=[make_projected_fcff(2026, 250.0)],
+        wacc_result=make_wacc_result(0.25),
+        financials=financials,
+        terminal_growth_rate=0.0,
+        current_price=40.0,
+        diluted_shares=14.0,
+    )
+
+    assert result.pv_fcffs == pytest.approx(200.0)
+    assert result.pv_terminal_value == pytest.approx(800.0)
+    assert result.enterprise_value == pytest.approx(1000.0)
+    assert result.net_debt == pytest.approx(200.0)
+    assert result.noncontrolling_interest == pytest.approx(100.0)
+    assert result.equity_value == pytest.approx(700.0)
+    assert result.implied_share_price == pytest.approx(50.0)
+    assert result.current_price == pytest.approx(40.0)
+    assert result.upside_downside == pytest.approx(25.0)

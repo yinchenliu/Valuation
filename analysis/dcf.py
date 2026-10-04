@@ -164,7 +164,9 @@ def run_dcf(
         financials: Historical financials (for net debt and the
             noncontrolling interest, both from the latest balance sheet).
         terminal_growth_rate: Long-term growth rate (e.g., 0.025).
-        current_price: Current stock price for comparison.
+        current_price: Current stock price for comparison. Market data, not a
+            filing figure. Must be finite and greater than zero, or the run
+            stops.
         diluted_shares: Diluted shares outstanding.
 
     Returns:
@@ -188,6 +190,20 @@ def run_dcf(
             "diluted share count greater than zero, in the units of the "
             "filing, to divide equity value into a share price. It is not "
             "substituted; supply the count printed in the filing."
+        )
+
+    # The current price is the other side of the upside comparison. Zero, a
+    # negative price, NaN or infinity is no market price, and the result would
+    # read as 0% upside ("fairly valued") or as NaN. Stop before discounting
+    # anything, with the same test as the share count above. Rule 3; backlog
+    # item 65. Rule 5: the price is market data, so the message says so.
+    if not (math.isfinite(current_price) and current_price > 0):
+        raise ValueError(
+            f"current_price is {current_price!r}: the DCF needs a finite "
+            "current market price greater than zero to compare the implied "
+            "share price with. The current price is market data (the last "
+            "close from the price series), not a filing figure. It is not "
+            "substituted, and the upside is not reported as 0%."
         )
 
     wacc = wacc_result.wacc

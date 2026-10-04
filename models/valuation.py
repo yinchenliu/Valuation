@@ -367,9 +367,25 @@ class DCFResult:
 
     @property
     def upside_downside(self) -> float:
-        """Percentage upside (+) or downside (-) vs current price."""
-        if self.current_price == 0:
-            return 0.0
+        """Percentage upside (+) or downside (-) vs current price.
+
+        Raises `ValueError` when `current_price` is not a finite number greater
+        than zero. This used to return 0.0 on a price of zero, so a result with
+        no market price read as "fairly valued": an absence reported as a
+        measurement. Rule 3; backlog item 65. `run_dcf` stops on the same input
+        before it discounts anything; this guards a result built directly. The
+        test is the one `implied_share_price` applies to `diluted_shares`:
+        `isfinite` first, because a comparison such as `<= 0` lets NaN through,
+        and infinity would return -100% from a price nobody observed.
+        """
+        if not (math.isfinite(self.current_price) and self.current_price > 0):
+            raise ValueError(
+                f"current_price is {self.current_price!r}, so there is no upside "
+                "or downside: the implied share price is compared with the "
+                "current market price (market data, not a filing figure), and "
+                "that price must be a number greater than zero. It is not "
+                "reported as 0%."
+            )
         return (self.implied_share_price / self.current_price - 1) * 100
 
 
