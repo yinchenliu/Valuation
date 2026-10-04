@@ -54,6 +54,14 @@ model may return two printed unit statements, each with the page it is printed o
 units. The page check confirms each text on its page. Python reads the scale word from
 the text and converts every figure to millions. The model converts nothing.
 
+**Allowed, on the user's decision of 2026-10-04** ("fix 77a"), for backlog item 77. Pass
+2 asked for each `amount` "in the same units as financials", so the model converted a
+note's "$0.7 billion" to 700. Now each Pass 2 item copies its figure as printed, with
+its page, and the printed words that state the figure's unit, with their page: the
+figure with the scale word printed after it (`$0.7 billion`), or the unit statement of
+the statement or table the figure is printed in. The page check confirms both. Python
+reads the scale and converts each item. The model converts nothing.
+
 ## Rule 2 — Every number comes from one named function with a fixed, typed signature.
 
 One function, one number, one meaning. Arguments are named and typed. No `**kwargs`, no

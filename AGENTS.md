@@ -45,39 +45,54 @@ build, and it is why `.claude/agents/tester.md` spends its first section on one 
 running the code, reading the output, and asserting that. A test written that way
 verifies nothing and passes forever.
 
-### A builder outside Claude Code (Antigravity, from 2026-10-04)
+### Two teams: the overall lead and the build team (from 2026-10-04)
 
-**The user's decision of 2026-10-04:** Antigravity, with Gemini, builds. The Claude Code
-session stays the orchestrator: it writes assignments, reviews, commits and reports.
+**The user's decisions of 2026-10-04.** Antigravity, with Gemini, builds. Its main agent
+is the **build lead**, and it dispatches the three roles above as its own subagents. The
+Claude Code main session is the **overall lead**. It reviews each unit itself.
+
+| Who | Owns | Writes |
+|---|---|---|
+| **Overall lead** (Claude Code) | the plan, the user's decisions, the rules, acceptance | `.agent/assignments/<id>.md` (the programmer assignment), `.agent/QUEUE.md` rows and the `accepted` / `rework` states, `STATUS.md`, `docs/`, the backlog, `.claude/`, `extractions/`, the acceptance line in `.agent/journal/INDEX.md` |
+| **Build lead** (Antigravity) | one unit at a time, from `ready` to `for acceptance` | the `building`, `for acceptance` and `blocked` states in `.agent/QUEUE.md`, `.agent/assignments/<id>-tests.md`, a `## Round N amendment (build lead)` or `## Handoff` section at the end of an assignment, the line for each of its runs in `.agent/journal/INDEX.md`, its commits |
+| Its programmer, code reviewer, tester | one run each | as in the roles table above, plus its own journal entry |
+
+**In a role card, "the orchestrator" means the build lead.** The role cards are
+`.claude/agents/programmer.md`, `code-reviewer.md` and `tester.md`. They are plain text.
+A Gemini subagent skips their "Claude Code harness notes" section.
 
 **The write guard and the seal are Claude Code hooks. They do not run in Antigravity.**
-So no permission stops a Gemini run from writing outside its role. The split above then
-holds only if each run keeps to these rules, and the orchestrator checks the diff.
+So no permission stops a Gemini subagent from writing outside its role. The build lead
+must check `git status` after each run, and reject a run that wrote outside its role.
 
-1. **One conversation, one role, one unit.** Start a new conversation for each run. A
-   programmer run and the tester run of the same unit are never one conversation.
-2. **Read your role card first.** A programmer reads `.claude/agents/programmer.md`. A
-   tester reads `.claude/agents/tester.md`. They are plain text. Skip their "Claude Code
-   harness notes" section.
-3. **Write only the files your role may write.** A programmer writes the assignment's
-   **Files in scope** and its own journal entry. A tester writes `tests/` and its own
-   journal entry. Nothing else.
-4. **Never write** `STATUS.md`, `.agent/journal/INDEX.md`, `.agent/assignments/`,
-   `.claude/` or `extractions/`. The orchestrator owns them.
-5. **Never commit, and never review your own unit.** Stop when your journal entry is
-   written. The orchestrator reviews the diff, re-runs the done-criteria, commits, and
-   logs the line in `.agent/journal/INDEX.md`.
-6. **A tester starts only after the orchestrator records `approved`** for the unit in
-   `.agent/journal/INDEX.md`.
-7. **Make no paid API call.** Run every command with the keys empty, for example
-   `ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q`. Never a bare
-   `python` ([docs/0-start.md](docs/0-start.md)).
-8. **If an instruction conflicts with a rule or with the code, stop and say so in your
-   entry.** Do not work around it. The orchestrator answers in the assignment, under a
-   heading `## Orchestrator notes`.
+**The loop for one unit:**
 
-**The orchestrator rejects a run whose `git status` shows a file outside its role**,
-whatever the quality of the change.
+1. The overall lead writes the assignment and sets the unit `ready` in
+   `.agent/QUEUE.md`.
+2. The build lead sets it `building`, and runs programmer, code reviewer, revisions
+   (stop at round 3), then the tester, as this file describes for the orchestrator.
+3. The build lead commits the unit after its tester passes. It writes a `## Handoff`
+   section at the end of the assignment: the commits, the verdicts, the gates, every
+   new finding, and every question. It sets the unit `for acceptance` and stops.
+4. The overall lead reviews the diff and re-runs the done-criteria. It sets the unit
+   `accepted`, or `rework` with numbered findings in a `## Overall lead review` section
+   of the assignment. A `rework` goes back to step 2 with those findings.
+5. On `accepted`, the overall lead updates `STATUS.md` and the backlog, commits, and
+   sets the next unit `ready`.
+
+**Rules for the build team:**
+
+- **One unit in flight at a time**, unless the queue marks two units as parallel.
+- **Never change** an assignment's Objective, Files in scope or Done-criteria. A
+  question goes in the assignment under `## Questions for the overall lead`, and the
+  unit goes `blocked`. Escalate there everything this file says to escalate, and
+  every change to what the model returns.
+- **Never write** `STATUS.md`, `docs/`, `.claude/` or `extractions/`. A new defect goes
+  in the handoff, and the overall lead records it in the backlog.
+- **Make no paid API call.** Run every command with the keys empty, for example
+  `ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q`. Never a bare
+  `python` ([docs/0-start.md](docs/0-start.md)).
+- **A handoff states measurements, never plans.** Each number has the command beside it.
 
 ---
 
@@ -145,7 +160,9 @@ both sides cite and still disagree, escalate; do not pick a side.
 1. Read its log entry at the path it returned. The summary is a pointer; the entry is
    the record.
 2. Append one line to `.agent/journal/INDEX.md`. **The orchestrator is its only
-   writer**, which is what keeps it free of concurrent-append conflicts.
+   writer**, which is what keeps it free of concurrent-append conflicts. With two
+   teams, the build lead and the overall lead both write it, but never at the same
+   time: the state in `.agent/QUEUE.md` says whose turn it is.
 3. Decide: accept, re-dispatch, or escalate.
 4. **When a unit is accepted, commit it.** Then, not at session end.
 5. **Update [STATUS.md](STATUS.md) after the commit, in the same turn.** Re-measure;
@@ -176,8 +193,9 @@ Two rules bound the commit:
 ```
 .agent/
 ├── assignments/         one file per work unit, written by the orchestrator
+├── QUEUE.md             the units in order, and whose turn each one is (two teams)
 ├── journal/
-│   ├── INDEX.md         one line per entry — the orchestrator is the sole writer
+│   ├── INDEX.md         one line per entry — written by the lead whose turn it is (QUEUE.md)
 │   └── <entry>.md       one file per entry — subagents write their own, never edit others'
 ├── TEMPLATE-assignment.md
 ├── TEMPLATE-log-entry.md      programmer and tester

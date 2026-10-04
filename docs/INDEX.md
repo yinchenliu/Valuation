@@ -79,6 +79,7 @@ rule wins.**
 | `../CLAUDE.md` | Claude Code, in every session | the pointer a Claude session starts from. It delegates to [0-start.md](0-start.md) |
 | `../AGENTS.md` | Codex, OpenCode, and the other tools that follow the `AGENTS.md` convention | who does the work and how they hand off. It delegates to [0-start.md](0-start.md) |
 | `../STATUS.md` | nothing. An agent opens it | how far the build has got. **Measured, never planned** |
+| `../.agent/QUEUE.md` | nothing. Both leads open it | the units in build order, and whose turn each one is. The bus between the two teams in `AGENTS.md` |
 | `../README.md` | nothing. A human opens it | what this repository is, for a human arriving at it |
 
 **Neither entry point owns an orientation fact.** Both send you to

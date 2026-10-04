@@ -383,7 +383,7 @@ the headline. Re-ranked at `622262b`.
 | 64 | The page check lets a label written across two printed rows take either row's figure | **new, `P12a` round 2 review's F6.** Needs a label the filing does not print; stated in the docs |
 | 63 | A filing with no text layer uses up route A's two retries | **new, `P12a` review's F5.** Not live: all 16 filings have a text layer |
 | 49 | Given several PDFs, the API route drops one with no year, silently | **new.** Route B stops on the same input |
-| 77 | Pass 2 asks the model to convert a note's figure into the statements' units | **silent, waits for the user's decision.** Walmart's session file holds 700 from "Printed as $0.7 billion": the model converted, against rule 1. For a filing in thousands, the amount depends on whether the model converts. The `P14a` review's F3 |
+| 77 | Pass 2 asks the model to convert a note's figure into the statements' units | **silent. The user decided "fix 77a" on 2026-10-04; assigned to `P14b-pass2-units`.** Walmart's session file holds 700 from "Printed as $0.7 billion": the model converted, against rule 1. For a filing in thousands, the amount depends on whether the model converts. The `P14a` review's F3 |
 | 78 | The "already converted" guard sees balance sheets only | **new, the `P14a` review's F5.** No call site converts twice today |
 | 79 | Route A's unit stop does not name the PDF | **new, the `P14a` programmer.** The same shape as item 73 |
 | 80 | The arithmetic check table and route B's failed-check messages are in printed units, with no label | **new, the `P14a` programmer.** For a filing in thousands, `printed=11,313,853` shows beside statements in $M |

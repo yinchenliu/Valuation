@@ -306,11 +306,18 @@ because both sit in the Pass 1 parse.
 | Unit | What | Items |
 |---|---|---|
 | `P14a-units` | read the printed unit statement for money (`units`) and for the share count (`share_units`), each with its page and page-checked; Python reads the scale word and converts to millions once, per filing. The user approved `share_units` on 2026-10-04 | 44 |
-| `P14b-reasoning` | 0: route A asks the model to reason first. A: a reason per field, shown on both pages. B: the prompt allows a printed figure from a note or MD&A | — |
+| `P14b-pass2-units` | each Pass 2 item copies its figure as printed, its page, and the printed words that state its unit; Python reads the scale and converts each item. Session format v4. **The user's decision of 2026-10-04: "fix 77a"** | 77 |
+| `P14b-reasoning` | 0: route A asks the model to reason first. B: the prompt allows a printed figure from a note or MD&A. Prompt only | — |
+| `P14b-row-reasons` | A: a reason for each printed row, shown on both pages. A format change; Walmart is extracted again | — |
 | `P14c-layout-facts` | C: a cited layout fact, checked on its page; the D&A decision moves out of the parser into `analysis/` and reads that fact | 10 |
 
 All three touch `ingestion/claude_extractor.py` and the session file format, so they run
-in sequence, after wave 2's `P13g`. Each unit states what happens to a `v2` session file
+in sequence, after wave 2's `P13g`.
+
+**`P14b` is split in three, on 2026-10-04,** so each unit fits one build run. Options A
+and C both need the model to write new text for each filing. So Walmart is extracted
+again once, after both land, and not once for each. The build order and the state of
+each unit are in `.agent/QUEUE.md`. Each unit states what happens to a `v2` session file
 such as `extractions/WMT.json`.
 
 **After Phase 14: Phase 3**, on the user's "ok" of 2026-10-04. Items 7, 49 and 72 sit in
