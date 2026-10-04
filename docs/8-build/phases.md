@@ -296,7 +296,7 @@ CLI. A supplied cost of debt no longer counts as that confirmation.
 
 `P13h` and `P14a` both edit `cli.py`, so `P14a` starts after `P13h`'s code review approves.
 
-## Phase 14 — the Pass 1 role · **planned**
+## Phase 14 — the Pass 1 role · **`P14a` done at `69436d9`; `P14b`, `P14c` not started**
 
 **The user's decision of 2026-10-03:** options 0, A, B and C, recorded under rule 1 in
 [rules.md](../2-rules/rules.md); options D and E refused. This is the approval

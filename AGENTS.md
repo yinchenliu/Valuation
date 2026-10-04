@@ -45,6 +45,40 @@ build, and it is why `.claude/agents/tester.md` spends its first section on one 
 running the code, reading the output, and asserting that. A test written that way
 verifies nothing and passes forever.
 
+### A builder outside Claude Code (Antigravity, from 2026-10-04)
+
+**The user's decision of 2026-10-04:** Antigravity, with Gemini, builds. The Claude Code
+session stays the orchestrator: it writes assignments, reviews, commits and reports.
+
+**The write guard and the seal are Claude Code hooks. They do not run in Antigravity.**
+So no permission stops a Gemini run from writing outside its role. The split above then
+holds only if each run keeps to these rules, and the orchestrator checks the diff.
+
+1. **One conversation, one role, one unit.** Start a new conversation for each run. A
+   programmer run and the tester run of the same unit are never one conversation.
+2. **Read your role card first.** A programmer reads `.claude/agents/programmer.md`. A
+   tester reads `.claude/agents/tester.md`. They are plain text. Skip their "Claude Code
+   harness notes" section.
+3. **Write only the files your role may write.** A programmer writes the assignment's
+   **Files in scope** and its own journal entry. A tester writes `tests/` and its own
+   journal entry. Nothing else.
+4. **Never write** `STATUS.md`, `.agent/journal/INDEX.md`, `.agent/assignments/`,
+   `.claude/` or `extractions/`. The orchestrator owns them.
+5. **Never commit, and never review your own unit.** Stop when your journal entry is
+   written. The orchestrator reviews the diff, re-runs the done-criteria, commits, and
+   logs the line in `.agent/journal/INDEX.md`.
+6. **A tester starts only after the orchestrator records `approved`** for the unit in
+   `.agent/journal/INDEX.md`.
+7. **Make no paid API call.** Run every command with the keys empty, for example
+   `ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q`. Never a bare
+   `python` ([docs/0-start.md](docs/0-start.md)).
+8. **If an instruction conflicts with a rule or with the code, stop and say so in your
+   entry.** Do not work around it. The orchestrator answers in the assignment, under a
+   heading `## Orchestrator notes`.
+
+**The orchestrator rejects a run whose `git status` shows a file outside its role**,
+whatever the quality of the change.
+
 ---
 
 ## The orchestrator does not write implementation code

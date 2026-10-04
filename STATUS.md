@@ -4,7 +4,7 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `69436d9` (`P14a` committed), 2026-10-04**, in the working tree, on branch `main`, **on the macOS machine**
+**Measured at `69436d9` (`P14a` committed), 2026-10-04, and re-measured by the orchestrator at `6830188` with identical results**, in the working tree, on branch `main`, **on the macOS machine**
 (`.venv/bin/python`, Python 3.11.6). Every figure before `cde33cb` was measured on the
 Windows machine. **Forty-seven work units accepted, and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; **five** times a reviewer or a
@@ -374,7 +374,6 @@ the headline. Re-ranked at `622262b`.
 
 | # | Item | Cost |
 |---|---|---|
-| 38b | Part (a): a supplied cost of debt with zero debt lines and interest gives 100% equity; a company that really repaid its debt needs a way past item 22's stop | **waits for the user's decision** (an explicit zero-debt confirmation is recommended). Part (b) closed at `5c4fb67` |
 | 68 | The CLI prints no assumption label | **new, the `P13b` review.** `SUBSTITUTED`, `REPEATED` and `DROPPED` show on the web page only (rule 6) |
 | 72 | `cli.py:1035` and `:1043` hold conditional zeros the census does not search | **new, found by `P13f`** |
 | 70 | Walmart stage 10 differs by 1M between runs on one tree | **new, the `P13e` review.** Cause not measured |
@@ -384,7 +383,10 @@ the headline. Re-ranked at `622262b`.
 | 64 | The page check lets a label written across two printed rows take either row's figure | **new, `P12a` round 2 review's F6.** Needs a label the filing does not print; stated in the docs |
 | 63 | A filing with no text layer uses up route A's two retries | **new, `P12a` review's F5.** Not live: all 16 filings have a text layer |
 | 49 | Given several PDFs, the API route drops one with no year, silently | **new.** Route B stops on the same input |
-| 44 | The `units` field is extracted and ignored | **new, latent.** Chipotle reports in thousands |
+| 77 | Pass 2 asks the model to convert a note's figure into the statements' units | **silent, waits for the user's decision.** Walmart's session file holds 700 from "Printed as $0.7 billion": the model converted, against rule 1. For a filing in thousands, the amount depends on whether the model converts. The `P14a` review's F3 |
+| 78 | The "already converted" guard sees balance sheets only | **new, the `P14a` review's F5.** No call site converts twice today |
+| 79 | Route A's unit stop does not name the PDF | **new, the `P14a` programmer.** The same shape as item 73 |
+| 80 | The arithmetic check table and route B's failed-check messages are in printed units, with no label | **new, the `P14a` programmer.** For a filing in thousands, `printed=11,313,853` shows beside statements in $M |
 | 47 | The income statement shown has no interest income row | **new, display.** EBT does not add up from the rows shown |
 | 52 | A cache hit ignores `files` sent with `session_file` | **new, found by the `P9b` review.** Hand-built requests only |
 | 51 | The arithmetic check's `WARN` branch is dead | **new, found by `P9c`** |
@@ -453,6 +455,7 @@ the headline. Re-ranked at `622262b`.
 | 69 | A negative debt balance gave weights above 1 | `5c4fb67` |
 | 50 | Route A returned `[]` when Pass 2 could not be read | `bce6fae` |
 | 44 | The Pass 1 schema asked for units as a free string, unread | `bf428d3` (`P14a`), locked at `69436d9` (`P14a-tests`) |
+| 38b (a) | A supplied cost of debt with zero debt lines gave 100% equity | `bc30be4` (`P13h`), locked at `98b908e` (`P13h-tests`) |
 
 **At `a64818b` these tables hold 24 closed items and 37 open ones** (item 23 appears twice above). They are the headline, not the whole list: items 55, 57, 58, 60 and 61 are open in the backlog and not shown here. Items 19 to 28 did not exist when this build
 started — **every one of them was found by running the code**, not by reading it. So were
@@ -460,6 +463,12 @@ started — **every one of them was found by running the code**, not by reading 
 the branch.
 
 **Phase 14 (read printed unit statements, check on page, convert in Python) is in progress.** `P14a` (`bf428d3`) closes item 44: Pass 1 reads `units` and `share_units` with pages, page check verifies whole statements on income statement / share pages, Python converts once to millions per filing in both routes, balance sheet tolerance is 1 printed unit (0.001 $M for thousands) with `printed_unit_in_millions`, session files are `v3`. `P14a-tests` (`69436d9`) repaired 291 fixtures and added 44 new tests locking all unit behaviors. Gates at `69436d9`, measured: gate 954 passed, full 2 failed (the known two), ruff 4, mypy 9 in 4 files, census 65, route 200, guard 48/48.
+
+**`P14a` round 2 review, `P14a-tests` and the three commits from `bf428d3` ran outside Claude Code** (no Claude co-author line), so the write guard did not run. The orchestrator re-checked them at `6830188`: the gates above, re-run; the tester's changes to old tests only add `printed_unit_in_millions=1.0` and the v3 shape, and change no expected value; the unit page check on the real Okta 10-Ks (pages 64, 58, 57) does not find `(in thousands)` and finds the whole statement. `bf428d3` also carries an unrelated change to `.claude/output-styles/ste100.md`.
+
+**The two orchestrator follow-ups of `P14a` are done.** `extractions/WMT.json` (not in git) is now `session-extraction-v3`: `units` and `share_units` both `(Amounts in millions, except per share data)`, page 21; the v2 copy is in the session scratchpad. `session_extraction check` exits 0: 89 of 89 lines found, both unit statements found, total L + E 284,668 = 284,668. `cli.py --session-file extractions/WMT.json` with both keys empty: revenue 713,163 (page 21, FY2026), PV of terminal value 214,819M, implied price $28.02, downside -73.1%, unchanged. The `extract-filing` skill now teaches the v3 unit statements; it said before that two scales must stop.
+
+**From 2026-10-04 Antigravity, with Gemini, builds.** `AGENTS.md`, "A builder outside Claude Code", holds the rules that replace the hooks.
 
 **Phase 13 (silent defects first, the user's decision of 2026-10-03) is complete at `98b908e`.** Wave 1: `P13a` (`47b8b09`) closes items 25 and 38, `P13b` (`aa6f80d`) closes items 15, 32, 39 and 42, each reviewed and tested. `P13c` (`5b03600`) closes item 46 after three review rounds, and `P13c-tests` locks the key order and both labels without reading the real `.env`. Wave 1 is done. **Wave 2 is done at `bce6fae`**: `P13d` item 65, `P13e` items 66 and 67, `P13f` item 69 and 38b part (b), `P13g` item 50, each reviewed and tested. **Wave 3, on the user's option 1 of 2026-10-04:** `P13h` (`bc30be4`) closes item 38b part (a) with `--confirm-zero-debt` and a "Confirm zero debt" checkbox; `P13h-tests` (`98b908e`) locked all 53 cases.
 

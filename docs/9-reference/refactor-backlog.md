@@ -63,7 +63,7 @@ rather than lying.
 | 26 | The `files` branch tests for a character every path contains | stopping, **latent** | `api/routes_valuation.py` | **new.** Live only on the legacy no-year branch |
 | 27 | `GET /` and `GET /assumptions` return **500** | stopping | `api/` | **closed at `622262b`** |
 | 28 | `api/routes_upload.py:27` — `str \| None` used as a path segment | stopping | `api/routes_upload.py` | **new.** The last type error in that file |
-| 29 | `POST /valuation` with no `files` runs an extraction on an empty path | **silent** | `api/routes_valuation.py` | **new.** A rule 3 break with no field named |
+| 29 | `POST /valuation` with no `files` runs an extraction on an empty path | **silent** | `api/routes_valuation.py` | **closed at `be1c077` (`P9b`)**: `POST /valuation` with no filing stops: "No filing named: session_file, files and file_path are all empty". Re-run by the orchestrator at `6830188`. It renders at HTTP 200, through item 8's blanket `except` |
 | 30 | A NaN in one `ProjectedFCFF` reaches the share price | **silent** | `analysis/dcf.py` | **closed at `2ca620a`** |
 | 31 | `discount_cash_flows`' `wacc` is unguarded on a direct call | **silent** | `analysis/dcf.py` | **new, latent.** The `run_dcf` chain stops two lines later |
 | 32 | `models/valuation.py:138` renders a share price of `0.0` on zero diluted shares | **silent** | `models/valuation.py` | **closed by `P13b-models-silent` (`aa6f80d`)**: `run_dcf` and `implied_share_price` stop on a share count that is not a finite number above 0 |
@@ -76,7 +76,7 @@ rather than lying.
 | 37 | `analysis/wacc.py`'s new stop states an inference as a fact | — | `analysis/wacc.py` | **new.** Message only; 23 of 23 wacc tests stay green with the rewrite |
 | 38 | `analysis/wacc.py` fabricates a 100% equity weighting when market cap and debt are both zero | **silent** | `analysis/wacc.py` | **closed by `P13a-analysis-silent` (`47b8b09`)**: a sum of 0, and a market cap of 0 or below, stop. Its second face is item 38b, open |
 | 43 | The fiscal year comes from the filename's date, not from the filing | **silent** | `ingestion/filings.py`, `api/routes_upload.py` | **closed by `P10c-fiscal-year`**: the filename year is verified against the cover date and the column label, and a mismatch stops |
-| 44 | The `units` field is extracted and then ignored | **silent**, latent | `ingestion/claude_extractor.py`, `api/routes_valuation.py` | **new at `cde33cb`; assigned to `P14a-units`.** A filing in thousands is labelled `M`; one fallback mixes scales. Okta prints money in millions and shares in thousands, so the share count and the money figures are on different scales. The user approved `share_units` on 2026-10-04 |
+| 44 | The `units` field is extracted and then ignored | **silent**, latent | `ingestion/claude_extractor.py`, `api/routes_valuation.py` | **closed by `P14a-units` (`bf428d3`), locked at `69436d9`**: Pass 1 returns two printed unit statements, `units` and `share_units`, each page-checked; Python reads the scale word and converts each filing to millions once, on both routes. Its follow-ups are items 77 to 80 |
 | 45 | `calculate_beta` checks for a constant market series only after SciPy has already raised | stopping | `analysis/capm.py` | **new at `cde33cb`.** SciPy 1.17.1 raises first, so the stop does not name `market_returns`. **Held by the user, 2026-10-02** |
 | 46 | `.env` overrides the environment, so unsetting a key does not stop a paid call | **silent** | `config.py` | **closed by `P13c-env-override`, round 3**: `.env` fills only absent names, so a shell value wins and an empty one turns the key off; `config.credential_origin` labels a key `(.env file)` or `(shell or parent process, not .env)` by comparing values. Open note, the round 3 review's F5: a value set inside the process by a test or notebook also reads the second label; no shipped code does that |
 | 47 | The income statement shown on both pages has no interest income row, so EBT does not add up from the rows shown | — | `cli.py`, `templates/_statements.html` | **new at `cde33cb`.** Display only: the figure is in EBT, but a reader cannot see it |
@@ -733,7 +733,7 @@ year by the calendar year in which it ends, so the date and the label agree.
 **Fix, when assigned.** Read the fiscal year from the filing's cover page, or require it
 from the user, and stop when the filename and the filing disagree.
 
-## 44. The `units` field is extracted and then ignored · **silent**, latent
+## 44. The `units` field is extracted and then ignored · **CLOSED by `P14a-units`**
 
 **Fact.** `_FINANCIALS_SCHEMA` asks for `"units"` (`claude_extractor.py:158`), and the
 prompt says to keep the source's units. `_parse_financials_response` never reads the
@@ -1132,7 +1132,7 @@ favourable result available.
 
 `analysis/fcff.py` is still open on item 23's other half.
 
-## 29. `POST /valuation` with no `files` runs an extraction on an empty path · **silent**
+## 29. `POST /valuation` with no `files` runs an extraction on an empty path · **CLOSED at `be1c077`**
 
 **Fact.** `api/routes_valuation.py:131` declares `files: str = Form("")`, and `:154`
 branches on it without ever checking that it holds anything:

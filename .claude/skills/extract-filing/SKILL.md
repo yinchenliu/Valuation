@@ -39,10 +39,11 @@ Read [docs/2-rules/llm-boundary.md](../../../docs/2-rules/llm-boundary.md) befor
 - **Never adjust a figure to make `check` pass.** An arithmetic error means you misread
   or mismapped a line. Open the page again and find which one. There is no exception:
   the old rule that let the catch-alls close the balance sheet is gone.
-- **Units are the filing's units.** Most 10-Ks report in millions. Some, such as
-  Chipotle, report in thousands. Copy the filing's scale and write it in the `units`
-  field. Shares use the same scale as the money figures in that filing. If the money and
-  share scales differ, stop and tell the user. The pipeline assumes one scale.
+- **Copy every figure in the filing's own units. Never convert one.** Most 10-Ks print
+  in millions. Chipotle prints in thousands. Okta prints money in millions and shares in
+  thousands. You copy the words that state the unit, with their page, into `units` and
+  `share_units` (step 2.4). Python reads the scale word and converts every figure to
+  millions (`P14a`). The two scales may differ. That is not a reason to stop.
 
 ## Steps
 
@@ -99,7 +100,31 @@ still asks for "fiscal year 2024". Read the column whose date ends that fiscal y
    `filings[N].pages_read.pass1`. Write a JSON object, not a string. Write every key the
    schema names.
 
-   **Every money field is a list of printed rows** (format `session-extraction-v2`):
+   **The two printed unit statements** (format `session-extraction-v3`, `P14a`):
+
+   ```json
+   "units":       {"printed": "(Amounts in millions, except per share data)", "page": 21},
+   "share_units": {"printed": "(Amounts in millions, except per share data)", "page": 21}
+   ```
+
+   - `units` is the statement of the unit of the money figures, usually just under the
+     income statement's title. `share_units` is the statement of the unit of the
+     diluted share count. When one statement covers both, `share_units` copies it with
+     its page.
+   - Copy the **whole** statement exactly as `text` prints it, with its parentheses.
+     `check` looks for it as one whole parenthesised group, or one whole text line, on
+     the page it cites. A fragment is not found: `(in thousands)` is not found on
+     Okta's page 58, which prints `(dollars in millions, shares in thousands, except
+     per share data)`.
+   - `units` must cite a page that an income statement row cites. `share_units` must
+     cite the `units` page or a page that a `diluted_shares` row cites. Words such as
+     `(In thousands)` above a stock-award table are not the statement.
+   - A unit statement that `check` cannot find **stops** the run (exit 2), because a
+     wrong scale moves every figure by a factor of 1,000. So does a statement with no
+     `thousands`, `millions` or `billions`, and one that excepts shares. Tell the user.
+     Never write a scale word the filing does not print.
+
+   **Every money field is a list of printed rows**:
 
    ```json
    "capex": [
