@@ -198,8 +198,10 @@ same functions from that JSON onwards. Each of these has one definition, in
 | Pass 1 JSON → statements, as printed, + failed checks | `parse_pass1` |
 | Pass 2 JSON → items | `parse_pass2` |
 | a printed unit statement → its scale | `printed_scale` (`P14a`) |
+| a Pass 2 item's unit words and amount → scale and multiplier | `pass2_amount_scale` (`P14b`) |
 | Pass 1 JSON → its two unit statements and their scales | `filing_units` |
 | each unit statement looked up on its page | `unit_statement_page_failures` (route B); `_unit_statement_failures` (route A) |
+| each Pass 2 item's figure and units looked up on its page | `pass2_page_failures` (route B); `_pass2_item_failures` (route A) (`P14b`) |
 | one filing's statements and items → millions | `convert_filing_to_millions`, after that filing's Pass 2, before any merge |
 | per-filing results → one result | `merge_filing_extractions` (several filings only; one filing is returned as converted, by both routes) |
 
@@ -222,14 +224,14 @@ session file and says the model ID is as declared and cannot be verified; the cr
 label says no API call was made. `_build_claude_client` refuses this resolution, so it
 can never be used to make a call.
 
-### The session file, `session-extraction-v3`
+### The session file, `session-extraction-v4`
 
 JSON, UTF-8, one file per company run, kept under `extractions/` (git-ignored: it is
 data).
 
 ```json
 {
-  "format": "session-extraction-v3",
+  "format": "session-extraction-v4",
   "ticker": "CMG",
   "company_name": "Chipotle Mexican Grill, Inc.",
   "extracted_by": {"model": null, "tool": "Claude Code", "date": null},
@@ -251,14 +253,15 @@ data).
 
 - `pass1` is the object `_FINANCIALS_SCHEMA` describes, `pass2` the one `_NRI_SCHEMA`
   describes: exactly what route A parses. Stored as JSON objects, not strings. The
-  shape of `pass1` is below.
+  shape of `pass1` is below; `pass2` items hold `page` and `units` (`printed`, `page`)
+  as printed.
 - `pages_read` holds the 1-based PDF pages read for each pass. A locator: recorded and
   printed, never computed from.
 - `extracted_by.model` is printed as declared. `tool` and `date` are a record for a
   human and are not read.
 - A single bare PDF gets `fiscal_year` 0, exactly as `parse_pdf_args` gives route A.
 
-**Three formats, one readable.** `session-extraction-v1` (before `P11a`) held one figure
+**Four formats, one readable.** `session-extraction-v1` (before `P11a`) held one figure
 per Pass 1 field, and some of those figures were sums the session worked out: capex,
 the working capital change, short-term debt, every catch-all. `session-extraction-v2`
 holds the printed lines and Python adds them. **A v1 file stops**, with a message that
@@ -272,9 +275,16 @@ string no code read into a printed unit statement with its page, and adds
 with a message that names the change and the remedy: run the `extract-filing` skill
 again, or add the two keys to each filing's `pass1` from the filing's printed unit
 statement and set `format` to `session-extraction-v3`. Its figures are not wrong; only
-their unit was never read. The CLI's pickle cache marker changed with it
-(`p11a-printed-lines-v1` → `p14a-units-in-millions-v1`): a cache written before held
-figures never converted to millions.
+their unit was never read.
+
+`session-extraction-v4` (`P14b`, backlog item 77, user decision "fix 77a" of 2026-10-04)
+changes `pass2` items so each copies its printed `amount`, its `page`, and its `units`
+(`{"printed": ..., "page": ...}`). Python scales each item with `pass2_amount_scale`.
+**A v3 file stops**, with a message that names both formats, the two new keys (`page`
+and `units`), and the remedy: run the `extract-filing` skill again, or add `page` and
+`units` to each Pass 2 item from the page where its figure is printed, and write `amount`
+as printed. The CLI's pickle cache marker changed with it (`p14a-units-in-millions-v1` →
+`p14b-pass2-units-v1`): a cache written before held Pass 2 items with no page or units.
 
 ### The Pass 1 shape: printed lines, and Python's sums
 
@@ -400,22 +410,22 @@ and stops, and `check` exits 2. The reason: the scale converts every figure, a w
 one moves every figure by a factor of 1,000, and nothing downstream can detect it.
 
 **The conversion, once per filing.** `convert_filing_to_millions(financials,
-non_recurring, units)` converts every money figure of the filing's statements and its
-Pass 2 amounts with the money scale, the diluted share count with the share scale, and
-sets each balance sheet's `printed_unit_in_millions`. One operation per figure, after
-its printed lines are summed: divide by 1,000 for thousands, multiply by 1,000 for
-billions, multiply by 1 (exact) for millions, so a filing in millions does not move by
-a bit. It stops on a balance sheet already converted, and on a statement field it does
-not list. Both routes call it **after that filing's Pass 2 and before any merge**:
-route A in `extract_financials` (so the one-filing path and `extract_multi_year` both
-get converted statements), route B in `load_session_extraction`. Pass 2's prompt is
-built from the statements as printed, so the context figures the model sees are in the
-filing's own units. Pass 2's schema asks for each `amount` in the "same units as
-financials", and Python converts the amounts with the filing's money scale. **That
-schema asks the model to scale a note's figure when the note prints another scale**:
-Walmart's session file holds `700` from a note printed as "$0.7 billion". That is a
-conversion by the model, against rule 1; it is backlog item 77, and the user decides
-the fix.
+non_recurring, units)` converts every money figure of the filing's statements with the
+money scale, the diluted share count with the share scale, and each Pass 2 item with its
+own scale via `pass2_amount_scale(item.printed_units, item.amount)` (`P14b`, backlog
+item 77, user decision "fix 77a" on 2026-10-04). It sets each balance sheet's
+`printed_unit_in_millions`. One operation per figure, after its printed lines are summed:
+divide by 1,000 for thousands, multiply by 1,000 for billions, multiply by 1 (exact) for
+millions, so a filing in millions does not move by a bit. It stops on a balance sheet
+already converted, and on a statement field it does not list. Both routes call it
+**after that filing's Pass 2 and before any merge**: route A in `extract_financials` (so
+the one-filing path and `extract_multi_year` both get converted statements), route B in
+`load_session_extraction`. Pass 2's prompt is built from the statements as printed, so
+the context figures the model sees are in the filing's own units. Pass 2's schema asks for
+each `amount` as printed, its `page`, and its unit words (`units.printed`) with their
+`page` (`units.page`). Both routes confirm each Pass 2 item's figure and unit words on
+their cited pages (`pass2_page_failures` / `_pass2_item_failures`), stopping on any
+failure. The model converts nothing.
 `parse_pass1` alone returns the statements as printed.
 
 ### The subcommands
@@ -441,9 +451,11 @@ their scales).
 It raises `ValueError`, naming the file, the filing index and its PDF, and the year and
 key where one applies, when:
 
-- `format` is not `session-extraction-v3` (a `session-extraction-v1` file is refused by
+- `format` is not `session-extraction-v4` (a `session-extraction-v1` file is refused by
   name: extract it again; a `session-extraction-v2` file is refused by name: extract it
-  again, or add `units` and `share_units` from the filing's printed unit statement);
+  again, or add `units` and `share_units` from the filing's printed unit statement; a
+  `session-extraction-v3` file is refused by name: run the `extract-filing` skill again,
+  or add `page` and `units` to each Pass 2 item and write `amount` as printed);
 - `ticker` is absent or empty, or `company_name` is absent or not a string;
 - `extracted_by.model` is absent or empty;
 - the filings are not in `plan_filings` order, or a recorded `target_years` or
@@ -468,9 +480,14 @@ key where one applies, when:
   or it is false and `latest_balance_sheet` is not `{}`;
 - `pass2.non_recurring_items` is not a list, an item is not an object, an item lacks
   any key `_NRI_SCHEMA` names, its `amount` is not a finite JSON number (`NaN`, `"12"`,
-  `true` and `null` all stop), or its `year` is not a JSON integer. Each problem names
-  the item by its index, year and description. Added by `P9d-pass2-checks`; route A's
-  parser still coerces `"12"` to 12.0 and `2025.7` to 2025 (backlog item 1);
+  `true` and `null` all stop), its `year` is not a JSON integer, its `page` is not a
+  positive integer, its `units` is not `{"printed": <non-empty string>, "page": <positive integer>}`,
+  or its scale cannot be read (`pass2_amount_scale`). Each problem names the item by its
+  index, year and description (`P9d-pass2-checks`, `P14b`); route A's parser still
+  coerces `"12"` to 12.0 and `2025.7` to 2025 (backlog item 1);
+- a Pass 2 item is not found on its cited page: its figure is not held by any text line on
+  `page`, or its unit words are not confirmed on `units.page` (`pass2_page_failures`, `P14b`).
+  Unlike Pass 1 printed lines, Pass 2 item failures stop the run;
 - route A's Pass 2 parser rejects `pass2` (for example an item with no `confidence`);
 - `pages_read` for a written pass is absent or empty.
 
@@ -622,7 +639,7 @@ hit skips extraction, and so skips this check, as it skips the arithmetic one.
 21, 22, 23 and 27) on the macOS machine: about **0.55 s** per walk, nearly all of it
 `pdfplumber` reading the four cited pages. 89 of 89 lines are found.
 
-**Three limits. None is fixed; each is stated so nobody reads more into a pass.**
+**Limits. None is fixed; each is stated so nobody reads more into a pass.**
 
 - **It confirms a row is printed with that figure, not that the figure is in the right
   year's column.** Walmart's `Prepaid expenses and other` with value `4,011` (the prior
@@ -637,6 +654,10 @@ hit skips extraction, and so skips this check, as it skips the arithmetic one.
   never takes a neighbouring row's figure. A stricter join is backlog item 64.
 - **It does not detect a real row listed under two fields.** The prompt forbids it;
   nothing checks it.
+- **The Pass 2 figure check confirms that the number is printed on the page, not that it is the item's number.**
+  For example, page 27 of Walmart's 10-K prints `0.8` in a stock-award table, so a PhonePe
+  item citing `0.8` on page 27 would pass the figure check alone if the inline unit words
+  did not independently state `0.7` (`P14b`).
 
 The check rows (`gross_profit`, `operating_income`, `net_income`, the two balance sheet
 totals) are read **only for this comparison**. They are never stored as figures: the

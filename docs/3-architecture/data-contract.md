@@ -96,7 +96,10 @@ and no income statement is invisible to `years`.
 ```python
 year: int
 description: str
-amount: float          # absolute value, millions
+amount: float          # absolute value; printed in filing until convert_filing_to_millions, then millions
+page: int              # 1-based PDF page where amount is printed
+printed_units: str     # exact unit words printed in filing (inline or statement)
+units_page: int        # 1-based PDF page where printed_units is printed
 line_item: str         # the IncomeStatement field it sits in
 direction: str         # "add_back" | "remove"
 category: str          # restructuring | impairment | litigation | ...
@@ -104,8 +107,14 @@ confidence: str        # "high" | "medium" | "low"
 source: str            # e.g. "Note 12 — Restructuring charges"
 ```
 
-**`amount` is always positive.** `direction` carries the sign, and `adjusted_impact`
-applies it.
+**`page`, `printed_units`, `units_page` are required fields with no defaults** (`P14b`,
+backlog item 77, user decision "fix 77a" of 2026-10-04). They record the page where `amount`
+is printed, the exact unit words printed in the filing, and the page where those words
+appear. `pass2_amount_scale(item.printed_units, item.amount)` reads the scale and converts
+`amount` to millions in `convert_filing_to_millions`.
+
+**`amount` is always positive.** It holds the printed amount until `convert_filing_to_millions`,
+after which it is in millions. `direction` carries the sign, and `adjusted_impact` applies it.
 
 **`line_item` names an `IncomeStatement` field**, which is what lets `normalizer.py`
 apply the adjustment to the line the item actually sits in.

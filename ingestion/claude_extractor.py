@@ -373,12 +373,17 @@ _NRI_SCHEMA = {
         {
             "year": "int — fiscal year the item affects",
             "description": "string — precise description of the item",
-            "amount": "float — absolute dollar value (same units as financials)",
+            "amount": "number — the ONE figure printed in the filing, positive, exactly as printed, in the unit printed with it or stated for its table. Never converted: Python reads 'units' and converts.",
             "line_item": "string — Income Statement field where this item is embedded. Must be one of: cost_of_revenue | sga | rd_expense | depreciation_amortization | other_operating_expense | other_non_operating",
             "direction": "string — 'add_back' (one-time expense to remove) or 'remove' (one-time gain to strip)",
             "category": "string — restructuring | impairment | litigation | gain_loss_asset_sale | acquisition_costs | covid | other",
             "confidence": "string — high | medium | low",
             "source": "string — filing reference, e.g. 'Note 8 — Restructuring Charges'",
+            "page": "int — the 1-based PDF page the figure is printed on",
+            "units": {
+                "printed": "string — the words printed that state the unit of this figure, copied exactly: the figure with the scale word printed right after it (e.g. '$0.7 billion'), or the unit statement of the statement or table the figure is printed in (e.g. '(in millions, except per share data)')",
+                "page": "int — the 1-based PDF page those words are printed on",
+            },
         }
     ]
 }
@@ -410,6 +415,8 @@ _NRI_SYSTEM_PROMPT = textwrap.dedent(f"""\
     - Items explicitly called out in MD&A as non-recurring or unusual
 
     RULES:
+    - Copy each amount as printed; never convert, add, subtract or net figures;
+      one item is one printed figure.
     - For "line_item": use the EXACT field name from the Income Statement where
       the item is embedded: cost_of_revenue | sga | rd_expense |
       depreciation_amortization | other_operating_expense | other_non_operating
@@ -745,6 +752,56 @@ def printed_scale(printed: str, unit_of: UnitOf) -> PrintedScale:
             f"the unit of the {unit_of}",
         )
     return PrintedScale(word=word, in_millions=_SCALE_IN_MILLIONS[word])
+
+
+def _whitespace_normalised(text: str) -> str:
+    """Every run of whitespace (a line break included) made one space, stripped."""
+    return " ".join(text.split())
+
+
+# Inline unit scale for Pass 2: optional $, one number (commas/decimal allowed),
+# one or more spaces, then thousand, million or billion (with optional s).
+_INLINE_SCALE = re.compile(
+    r"^\$?\s*((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)\s+(thousands?|millions?|billions?)$"
+)
+
+
+def _is_inline_scale(printed: str) -> bool:
+    """True when `printed` matches the Pass 2 inline unit form."""
+    return _INLINE_SCALE.match(_whitespace_normalised(printed).casefold()) is not None
+
+
+def pass2_amount_scale(printed: str, amount: float) -> PrintedScale:
+    """The scale of one Pass 2 non-recurring item. The ONE place a Pass 2 scale
+    is read (rule 2).
+
+    Two forms, and nothing else:
+    - Inline form: optional $, one number (commas and decimal point allowed),
+      one or more spaces, then thousand, million or billion, with an optional s,
+      and nothing after it. The scale is that word, mapped through _SCALE_IN_MILLIONS
+      (using the plural key: billion reads as billions). The number in the text
+      must equal `amount`. If it does not, stop and name both.
+    - Statement form: anything else goes to printed_scale(printed, "money figures"),
+      the P14a reader, unchanged. Its stops apply as they are.
+
+    Raises:
+        ValueError: the text states no scale word, an invalid scale, or an inline
+            number that does not equal `amount`.
+    """
+    norm = _whitespace_normalised(printed).casefold()
+    match = _INLINE_SCALE.match(norm)
+    if match:
+        text_num = float(match.group(1).replace(",", ""))
+        if text_num != amount:
+            raise ValueError(
+                f"the number in the inline unit text ({text_num}) does not "
+                f"equal the item amount ({amount})"
+            )
+        word = match.group(2)
+        if not word.endswith("s"):
+            word += "s"
+        return PrintedScale(word=word, in_millions=_SCALE_IN_MILLIONS[word])
+    return printed_scale(printed, "money figures")
 
 
 @dataclass(frozen=True)
@@ -1399,9 +1456,7 @@ _INCOME_STATEMENT_LINE_FIELDS: tuple[str, ...] = (
 _PARENTHESISED_GROUP = re.compile(r"\([^()]*\)")
 
 
-def _whitespace_normalised(text: str) -> str:
-    """Every run of whitespace (a line break included) made one space, stripped."""
-    return " ".join(text.split())
+
 
 
 def unit_statement_on_page(printed: str, page_text: str) -> bool:
@@ -1512,6 +1567,145 @@ def _unit_statement_failures(data: dict[str, Any], pdf_bytes: bytes) -> list[_Ch
         ))
     print(f"  Unit statements looked up on their cited pages: {len(statements)} checked, "
           f"{len(statements) - len(failures)} found, {len(failures)} not confirmed.")
+    return failures
+
+
+def _pass2_item_failures(
+    items: list[NonRecurringItem], pdf_bytes: bytes,
+) -> list[_CheckFailure]:
+    """Look each Pass 2 non-recurring item's figure and unit words up on their cited pages.
+
+    For each item:
+    - The figure: one text line of page `page` holds `amount` (_text_line_holds).
+    - Unit words, inline form: `units_page` equals `page`, and whitespace-normalised
+      `printed_units` is a substring of whitespace-normalised page text.
+    - Unit words, statement form: `units_page` is `page` or `page - 1`, and
+      unit_statement_on_page(printed_units, page_text) is true on `units_page`.
+    - A page beyond the PDF, or with no text layer, is not confirmed.
+
+    Returns one _CheckFailure per unconfirmed figure or unit statement.
+    """
+    if not items:
+        return []
+    cited_pages: set[int] = {item.page for item in items} | {item.units_page for item in items}
+    page_count, page_texts = _read_cited_pages(pdf_bytes, cited_pages)
+    failures: list[_CheckFailure] = []
+
+    for item in items:
+        item_label = f"non-recurring item ({item.year}, {item.description!r})"
+
+        # 1. The figure check on item.page
+        if item.page > page_count:
+            failures.append(_CheckFailure(
+                message=(
+                    f"{item_label}: amount {item.amount} cites page {item.page}, but "
+                    f"the PDF has {page_count} pages."
+                ),
+                retry_message=(
+                    f"{item_label}: amount {item.amount} cites page {item.page}, "
+                    f"beyond the last page of the filing ({page_count} pages)."
+                ),
+            ))
+        else:
+            page_text = page_texts.get(item.page)
+            if page_text is None or not page_text.strip():
+                failures.append(_CheckFailure(
+                    message=(
+                        f"{item_label}: amount {item.amount} cannot be confirmed, "
+                        f"because page {item.page} has no text layer; it was not looked for."
+                    ),
+                    retry_message=(
+                        f"{item_label}: amount {item.amount} cannot be confirmed on "
+                        f"page {item.page}, because that page has no text layer."
+                    ),
+                ))
+            elif not any(_text_line_holds(line, item.amount) for line in page_text.splitlines()):
+                failures.append(_CheckFailure(
+                    message=(
+                        f"{item_label}: amount {item.amount} was not found on page {item.page}: "
+                        "no text line there holds that figure."
+                    ),
+                    retry_message=(
+                        f"{item_label}: amount {item.amount} was not found on page {item.page}."
+                    ),
+                ))
+
+        # 2. The unit words check on item.units_page
+        if item.units_page > page_count:
+            failures.append(_CheckFailure(
+                message=(
+                    f"{item_label}: units {item.printed_units!r} cites page {item.units_page}, but "
+                    f"the PDF has {page_count} pages."
+                ),
+                retry_message=(
+                    f"{item_label}: units {item.printed_units!r} cites page {item.units_page}, "
+                    f"beyond the last page of the filing ({page_count} pages)."
+                ),
+            ))
+        else:
+            units_text = page_texts.get(item.units_page)
+            if units_text is None or not units_text.strip():
+                failures.append(_CheckFailure(
+                    message=(
+                        f"{item_label}: units {item.printed_units!r} cannot be confirmed, "
+                        f"because page {item.units_page} has no text layer; it was not looked for."
+                    ),
+                    retry_message=(
+                        f"{item_label}: units {item.printed_units!r} cannot be confirmed on "
+                        f"page {item.units_page}, because that page has no text layer."
+                    ),
+                ))
+            elif _is_inline_scale(item.printed_units):
+                if item.units_page != item.page:
+                    failures.append(_CheckFailure(
+                        message=(
+                            f"{item_label}: inline units {item.printed_units!r} cites page "
+                            f"{item.units_page}, but must equal the figure's page {item.page}."
+                        ),
+                        retry_message=(
+                            f"{item_label}: inline units {item.printed_units!r} cites page "
+                            f"{item.units_page}, but must equal {item.page}."
+                        ),
+                    ))
+                elif _whitespace_normalised(item.printed_units) not in _whitespace_normalised(units_text):
+                    failures.append(_CheckFailure(
+                        message=(
+                            f"{item_label}: inline units {item.printed_units!r} was not found on "
+                            f"page {item.units_page}."
+                        ),
+                        retry_message=(
+                            f"{item_label}: inline units {item.printed_units!r} not found on page {item.units_page}."
+                        ),
+                    ))
+            else:
+                if item.units_page not in (item.page, item.page - 1):
+                    failures.append(_CheckFailure(
+                        message=(
+                            f"{item_label}: unit statement {item.printed_units!r} cites page "
+                            f"{item.units_page}, but must be page {item.page} or {item.page - 1}."
+                        ),
+                        retry_message=(
+                            f"{item_label}: unit statement {item.printed_units!r} cites page "
+                            f"{item.units_page}, but must be page {item.page} or {item.page - 1}."
+                        ),
+                    ))
+                elif not unit_statement_on_page(item.printed_units, units_text):
+                    failures.append(_CheckFailure(
+                        message=(
+                            f"{item_label}: unit statement {item.printed_units!r} was not found on "
+                            f"page {item.units_page} as a whole printed statement."
+                        ),
+                        retry_message=(
+                            f"{item_label}: unit statement {item.printed_units!r} not found on page {item.units_page}."
+                        ),
+                    ))
+
+    failed_item_ids = {
+        id(item) for item in items
+        if any(item.description in f.message for f in failures)
+    }
+    print(f"  Pass 2 items looked up on their cited pages: {len(items)} checked, "
+          f"{len(items) - len(failed_item_ids)} found, {len(failed_item_ids)} not confirmed.")
     return failures
 
 
@@ -1948,11 +2142,11 @@ def _parse_nri_response(json_str: str) -> list[NonRecurringItem]:
         )
     items: list[NonRecurringItem] = []
     for item in data["non_recurring_items"]:
+        item_desc = f"year {item.get('year')}, {item.get('description')!r}"
         if "confidence" not in item:
             raise ValueError(
                 f"Pass 2 returned a non-recurring item with no 'confidence' "
-                f"field: year {item.get('year')}, "
-                f"{item.get('description')!r}. The prompt requires one of "
+                f"field: {item_desc}. The prompt requires one of "
                 f"high | medium | low on every item, and it is not assumed to "
                 f"be 'high': analysis/normalizer.py decides from this tag "
                 f"whether the item is applied to the financial statements."
@@ -1960,21 +2154,92 @@ def _parse_nri_response(json_str: str) -> list[NonRecurringItem]:
         if "source" not in item:
             raise ValueError(
                 f"Pass 2 returned a non-recurring item with no 'source' field: "
-                f"year {item.get('year')}, {item.get('description')!r}. The "
-                f"prompt requires the filing reference on every item, and an "
-                f"absent one is not read as an empty citation: the source is "
-                f"what lets a reader find the note and apply a withheld item by "
-                f"hand."
+                f"{item_desc}. The prompt requires the filing reference on "
+                f"every item, and an absent one is not read as an empty citation: "
+                f"the source is what lets a reader find the note and apply a "
+                f"withheld item by hand."
             )
+        if "amount" not in item:
+            raise ValueError(
+                f"Pass 2 returned a non-recurring item with no 'amount' field: "
+                f"{item_desc}. 'amount' must be a finite number above 0."
+            )
+        amount_val = item["amount"]
+        if not _is_finite_number(amount_val) or float(amount_val) <= 0:
+            raise ValueError(
+                f"Pass 2 returned a non-recurring item whose 'amount' is not a "
+                f"finite number above 0: {item_desc}, got {amount_val!r}."
+            )
+        amount = float(amount_val)
+
+        if "page" not in item:
+            raise ValueError(
+                f"Pass 2 returned a non-recurring item with no 'page' field: "
+                f"{item_desc}. 'page' must be a positive integer (a 1-based PDF page)."
+            )
+        page_val = item["page"]
+        if not _is_json_int(page_val) or page_val < 1:
+            raise ValueError(
+                f"Pass 2 returned a non-recurring item whose 'page' is not a "
+                f"positive integer (a 1-based PDF page): {item_desc}, got {page_val!r}."
+            )
+        page = int(page_val)
+
+        if "units" not in item:
+            raise ValueError(
+                f"Pass 2 returned a non-recurring item with no 'units' field: "
+                f"{item_desc}. 'units' must be an object with 'printed' and 'page'."
+            )
+        units_val = item["units"]
+        if not isinstance(units_val, dict):
+            raise ValueError(  # noqa: TRY004
+                f"Pass 2 returned a non-recurring item whose 'units' is not a JSON "
+                f"object: {item_desc}, got {type(units_val).__name__} {units_val!r}."
+            )
+        if "printed" not in units_val:
+            raise ValueError(
+                f"Pass 2 returned a non-recurring item with no 'units.printed' field: "
+                f"{item_desc}."
+            )
+        printed_val = units_val["printed"]
+        if not isinstance(printed_val, str) or not printed_val.strip():
+            raise ValueError(
+                f"Pass 2 returned a non-recurring item whose 'units.printed' is not a "
+                f"non-empty string: {item_desc}, got {printed_val!r}."
+            )
+        if "page" not in units_val:
+            raise ValueError(
+                f"Pass 2 returned a non-recurring item with no 'units.page' field: "
+                f"{item_desc}."
+            )
+        units_page_val = units_val["page"]
+        if not _is_json_int(units_page_val) or units_page_val < 1:
+            raise ValueError(
+                f"Pass 2 returned a non-recurring item whose 'units.page' is not a "
+                f"positive integer (a 1-based PDF page): {item_desc}, got {units_page_val!r}."
+            )
+        units_page = int(units_page_val)
+
+        try:
+            pass2_amount_scale(printed_val, amount)
+        except ValueError as exc:
+            raise ValueError(
+                f"Pass 2 returned a non-recurring item whose unit scale cannot be read: "
+                f"{item_desc}, 'units' {printed_val!r}: {exc}"
+            ) from exc
+
         items.append(
             NonRecurringItem(
                 year=int(item["year"]),
                 description=item["description"],
-                amount=float(item["amount"]),
+                amount=amount,
                 line_item=item["line_item"],
                 direction=item["direction"],
                 category=item["category"],
                 confidence=item["confidence"],
+                page=page,
+                printed_units=printed_val,
+                units_page=units_page,
                 source=item["source"],
             )
         )
@@ -2340,13 +2605,24 @@ def _run_nri_pass(
                 f"same as the filing having none, so the run stops here."
             ) from retry_exc
 
+    failures = _pass2_item_failures(nri, pdf_bytes)
+    if failures:
+        error_list = "\n".join(f"  - {f.message}" for f in failures)
+        raise ValueError(
+            f"Pass 2 (non-recurring items) page check failed for the filing "
+            f"with ticker {financials.ticker!r}, company "
+            f"{financials.company_name!r}, fiscal years {financials.years} "
+            f"read in Pass 1. {len(failures)} item(s) could not be confirmed "
+            f"on the page they cite:\n{error_list}"
+        )
+
     if nri:
         print(f"  [Pass 2] Found {len(nri)} non-recurring item(s):")
         for item in nri:
             sign = "+" if item.direction == "add_back" else "-"
             # As printed, in the filing's own unit: converted to millions later,
             # with Pass 1 (convert_filing_to_millions).
-            print(f"    {item.year} {sign}{item.amount:,.0f} (as printed) on "
+            print(f"    {item.year} {sign}{item.amount:g} (as printed) on "
                   f"{item.line_item} — {item.description[:60]}")
     else:
         print("  [Pass 2] No non-recurring items identified")
@@ -2741,6 +3017,22 @@ def unit_statement_page_failures(json_str: str, pdf_bytes: bytes) -> list[str]:
     return [failure.message for failure in _unit_statement_failures(data, pdf_bytes)]
 
 
+def pass2_page_failures(json_str: str, pdf_bytes: bytes) -> list[str]:
+    """One message per Pass 2 item figure or unit words not found on its cited page.
+
+    Route B's item check, the same lookup route A runs in `_run_nri_pass`.
+    The loader stops on any: a wrong scale moves an item by 1,000, and an amount
+    not on its page cannot be traced (rules 3 and 4).
+
+    Raises:
+        json.JSONDecodeError: the text is not JSON.
+        ValueError: the answer cannot be parsed by _parse_nri_response, or the PDF
+            cannot be opened by pdfplumber.
+    """
+    items = parse_pass2(json_str)
+    return [failure.message for failure in _pass2_item_failures(items, pdf_bytes)]
+
+
 # ---------------------------------------------------------------------------
 # The conversion to millions: once per filing, after Pass 2, before any merge
 # ---------------------------------------------------------------------------
@@ -2778,6 +3070,7 @@ _CASH_FLOW_CONVERTED: frozenset[str] = frozenset({
 _NON_RECURRING_ITEM_CONVERTED: frozenset[str] = frozenset({"amount"})
 _NON_RECURRING_ITEM_NOT_FIGURES: frozenset[str] = frozenset({
     "year", "description", "line_item", "direction", "category", "confidence", "source",
+    "page", "printed_units", "units_page",
 })
 
 
@@ -2821,9 +3114,9 @@ def convert_filing_to_millions(
     Every money figure with the money scale read from `units` (the `units`
     statement), the diluted share count with the share scale (the `share_units`
     statement), and every balance sheet's `printed_unit_in_millions` set to the
-    money scale, so its check stays at 1 printed unit. Pass 2's amounts are in the
-    filing's own units (its schema says "same units as financials", and its prompt
-    shows the statements as printed), so they take the money scale too.
+    money scale, so its check stays at 1 printed unit. Each Pass 2 item is
+    converted with its own scale read from its printed unit words
+    (`pass2_amount_scale`), never with the filing's money scale.
 
     Both routes call this, per filing, after that filing's Pass 2 and before any
     merge: route A in `extract_financials`, route B in `load_session_extraction`.
@@ -2935,7 +3228,16 @@ def convert_filing_to_millions(
         )
         for cf in financials.cash_flow_statements
     ]
-    items = [replace(item, amount=_in_millions(item.amount, money)) for item in non_recurring]
+    items = [
+        replace(
+            item,
+            amount=_in_millions(
+                item.amount,
+                pass2_amount_scale(item.printed_units, item.amount).in_millions,
+            ),
+        )
+        for item in non_recurring
+    ]
     converted = replace(
         financials,
         income_statements=income_statements,

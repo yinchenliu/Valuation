@@ -55,12 +55,16 @@ also carries two printed unit statements, each `{"printed": ..., "page": ...}`:
 `units` for the money figures and `share_units` for the diluted share count. Each is
 looked up on its page (the loader stops on one not found), Python reads the scale
 word in it, and each filing is converted to millions once, after its Pass 2 and
-before the merge. A `session-extraction-v1` file, which held one figure per field,
-is refused by name: it must be extracted again. A `session-extraction-v2` file,
-whose `units` is a free string and which has no `share_units`, is refused by name
-too: run the `extract-filing` skill again, or add the two keys from the filing's
-printed unit statement. `pages_read` is a locator (1-based PDF pages); it is
-recorded and printed, never computed from.
+before the merge. Pass 2's items each carry `page` (the 1-based page the figure
+is printed on) and `units` (the words that state its unit, and their page); Python
+reads the scale and converts each item. A `session-extraction-v1` file, which held
+one figure per field, is refused by name: it must be extracted again. A
+`session-extraction-v2` file, whose `units` is a free string and which has no
+`share_units`, is refused by name too: run the `extract-filing` skill again, or add
+the two keys from the filing's printed unit statement. A `session-extraction-v3`
+file, whose Pass 2 items lack `page` and `units`, is refused by name: run the
+skill again, or add `page` and `units` to each item. `pages_read` is a locator (1-based
+PDF pages); it is recorded and printed, never computed from.
 `extracted_by.model` is the model ID the session declares; it cannot be verified and
 is printed as declared. `extracted_by.tool` and `extracted_by.date` are a record for a
 human reader and are not read by this module.
@@ -101,6 +105,7 @@ from ingestion.claude_extractor import (
     parse_pass2,
     pass1_problems,
     pass1_prompts,
+    pass2_page_failures,
     pass2_prompts,
     plan_filings,
     printed_line_page_failures,
@@ -109,7 +114,7 @@ from ingestion.claude_extractor import (
 from ingestion.filings import fingerprint_filings, parse_pdf_args
 from models.financial_statements import FinancialStatements, NonRecurringItem
 
-SESSION_FORMAT = "session-extraction-v3"
+SESSION_FORMAT = "session-extraction-v4"
 
 # The format before P11a. Its Pass 1 holds one figure per field, and some of those
 # figures were sums the session worked out; v2 holds the printed lines and Python
@@ -122,6 +127,12 @@ _SESSION_FORMAT_V1 = "session-extraction-v1"
 # item 44). Refused by name: its figures are fine, and the two unit statements can
 # be added by hand from the filing.
 _SESSION_FORMAT_V2 = "session-extraction-v2"
+
+# The format before P14b. Each Pass 2 item held an amount converted by the model,
+# with no page and no printed unit words (backlog item 77). Refused by name: run
+# the extract-filing skill again, or add to each Pass 2 item 'page' and 'units'
+# from the page where its figure is printed, and write 'amount' as printed.
+_SESSION_FORMAT_V3 = "session-extraction-v3"
 
 # Every key a Pass 2 item must carry, read from the schema route A's Pass 2 prompt is
 # built from, so the two cannot drift. `claude_extractor.py` exports no public name
@@ -272,6 +283,18 @@ def _read_session_json(path: Path) -> dict[str, Any]:
             "just under the income statement's title; if one statement covers both, "
             "'share_units' copies it with its page), then set 'format' to "
             f"{SESSION_FORMAT!r}.",
+        )
+    if data["format"] == _SESSION_FORMAT_V3:
+        raise ValueError(
+            f"{path}: format is {_SESSION_FORMAT_V3!r}, and this reader understands "
+            f"{SESSION_FORMAT!r} only. The Pass 2 shape changed: each non-recurring item "
+            "now carries 'page' (the 1-based PDF page the figure is printed on) and "
+            "'units' (the words printed that state its unit and their page, "
+            '{"printed": ..., "page": ...}), and \'amount\' is copied as printed rather '
+            "than converted by the model. Python reads the scale word and converts. "
+            "Remedy: run the extract-filing skill again, or add to each Pass 2 item 'page' "
+            "and 'units' from the page where its figure is printed, and write 'amount' "
+            f"as printed, then set 'format' to {SESSION_FORMAT!r}."
         )
     if data["format"] != SESSION_FORMAT:
         raise ValueError(
@@ -555,11 +578,36 @@ def _pass2_shape_problems(where: str, pass2: dict[str, Any]) -> list[str]:
             problems.append(
                 f"{where}, {label}: 'year' must be an integer, got {item['year']!r}.",
             )
-        if "amount" in item and not _is_number(item["amount"]):
+        if "amount" in item and (not _is_number(item["amount"]) or item["amount"] <= 0):
             problems.append(
-                f"{where}, {label}: 'amount' must be a finite JSON number, got "
+                f"{where}, {label}: 'amount' must be a finite JSON number above 0, got "
                 f"{item['amount']!r}.",
             )
+        if "page" in item and (not _is_int(item["page"]) or item["page"] < 1):
+            problems.append(
+                f"{where}, {label}: 'page' must be a positive integer (a 1-based PDF page), got {item['page']!r}.",
+            )
+        if "units" in item:
+            if not isinstance(item["units"], dict):
+                problems.append(
+                    f"{where}, {label}: 'units' must be a JSON object, got {type(item['units']).__name__} {item['units']!r}.",
+                )
+            else:
+                for ukey in ("printed", "page"):
+                    if ukey not in item["units"]:
+                        problems.append(f"{where}, {label}: key 'units.{ukey}' is absent.")
+                if "printed" in item["units"] and (
+                    not isinstance(item["units"]["printed"], str) or not item["units"]["printed"].strip()
+                ):
+                    problems.append(
+                        f"{where}, {label}: 'units.printed' must be a non-empty string, got {item['units']['printed']!r}.",
+                    )
+                if "page" in item["units"] and (
+                    not _is_int(item["units"]["page"]) or item["units"]["page"] < 1
+                ):
+                    problems.append(
+                        f"{where}, {label}: 'units.page' must be a positive integer (a 1-based PDF page), got {item['units']['page']!r}.",
+                    )
     return problems
 
 
@@ -578,6 +626,29 @@ def _pass2_problems(where: str, pass2: object) -> list[str]:
         return [(f"{where}: pass2 was rejected by the Pass 2 parser: "
                  f"{type(exc).__name__}: {exc}")]
     return []
+
+
+def _pass2_item_problems(where: str, plan: FilingPlan, pass2: object) -> list[str]:
+    """Each Pass 2 non-recurring item's figure and unit words looked up on their
+    cited pages; one problem per item not confirmed. A problem, not a failed check:
+    the loader STOPS on it (P14b, backlog item 77).
+
+    Run only when Pass 2's shape is usable and accepted by the parser, against the
+    PDF proved by sha256.
+    """
+    if not isinstance(pass2, dict) or _pass2_shape_problems(where, pass2):
+        return []
+    try:
+        parse_pass2(json.dumps(pass2))
+    except (ValueError, KeyError, TypeError):
+        return []
+    try:
+        failures = pass2_page_failures(
+            json.dumps(pass2), Path(plan.pdf_path).read_bytes(),
+        )
+    except ValueError as exc:
+        return [f"{where}: {exc}"]
+    return [f"{where}: {failure}" for failure in failures]
 
 
 def _unit_statement_problems(where: str, plan: FilingPlan, pass1: object) -> list[str]:
@@ -615,6 +686,7 @@ def _filing_problems(
     problems += _pass1_problems(where, plan, entry["pass1"])
     problems += _unit_statement_problems(where, plan, entry["pass1"])
     problems += _pass2_problems(where, entry["pass2"])
+    problems += _pass2_item_problems(where, plan, entry["pass2"])
     for which in ("pass1", "pass2"):
         page_problems, pages = _pages(where, entry, which)
         problems += page_problems

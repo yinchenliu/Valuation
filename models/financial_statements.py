@@ -66,7 +66,7 @@ class NonRecurringItem:
     """
     year: int
     description: str
-    amount: float           # absolute value, same units as F/S (e.g. $M)
+    amount: float           # as printed until convert_filing_to_millions; in millions after
     line_item: str          # IncomeStatement field name (see above)
     direction: str          # "add_back" | "remove"
     category: str
@@ -74,6 +74,9 @@ class NonRecurringItem:
     # confidence must not arrive as the strongest reading. Rule 3; backlog
     # item 39.
     confidence: str
+    page: int
+    printed_units: str
+    units_page: int
     source: str = ""           # e.g. "Note 12 — Restructuring charges"
 
     @property

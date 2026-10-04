@@ -99,11 +99,15 @@ Pass 2 receives the Pass 1 income statement summary as context. That is an **anc
 not a calculation input: it exists so the model cites items that reconcile to figures we
 already hold, rather than inventing a line the statement does not have. It shows the
 figures as printed, before the conversion to millions, so the model sees the filing's
-own units. **Pass 2 still crosses the line on units**: its schema asks for each
-`amount` in the "same units as financials", so when a note prints another scale, the
-model scales the figure. Walmart's session file holds `700` from a note printed as
-"$0.7 billion". Python then converts the amounts with the filing's money scale, as if
-each were printed in it. This is backlog item 77, and the user decides the fix.
+own units.
+Since `P14b` (backlog item 77, user decision "fix 77a" on 2026-10-04), Pass 2 no longer asks for
+`amount` in the "same units as financials". Each Pass 2 item copies its figure as printed,
+with its `page`, and copies the unit words as printed (`units.printed`) with `units.page`
+(either inline words such as `"$0.7 billion"` on the same page, or the unit statement of
+the statement or table such as `"(Amounts in millions, except per share data)"` on the same
+page or the page before). The page check confirms both figure and unit text on their
+pages. Python (`pass2_amount_scale`) reads the scale and converts each item individually.
+The model converts nothing.
 
 ## What the model may never return
 
@@ -113,9 +117,9 @@ each were printed in it. This is backlog item 77, and the user decides the fix.
 - a judgement phrased as a number ("a reasonable normalised margin is 32%")
 - a figure it did not read off a page, including one it is confident about
 - a figure converted to another unit, or a unit (a scale word) the filing does not
-  print. Pass 1 asks for neither. **Pass 2's schema still asks for the first**: an
-  `amount` in the "same units as financials" makes the model scale a note printed in
-  another unit (backlog item 77)
+  print. Pass 1 and Pass 2 ask for neither: each figure is copied as printed, and its
+  unit statement is copied as printed. Python reads the scale word and converts the
+  figure (P14a for Pass 1, P14b for Pass 2; user decision "fix 77a" on 2026-10-04)
 
 **A model that is asked for one of these will answer.** That is the failure mode. It
 does not refuse and it does not flag; it returns a plausible number in the right shape,

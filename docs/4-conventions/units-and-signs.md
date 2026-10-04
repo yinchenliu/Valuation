@@ -43,12 +43,11 @@ it is never used. Each figure is converted after its printed lines are summed.
 **Where.** Both routes call it after the filing's Pass 2 and before any merge: route A
 in `extract_financials`, route B in `load_session_extraction`. **Before that point the
 figures are as printed**: `parse_pass1`'s result, the arithmetic check table, and the
-Pass 2 prompt's summary are in the filing's own units. Pass 2's `amount` values are
-converted with the filing's money scale, as if each were printed in it, because Pass
-2's schema asks for them in the "same units as financials". **So when a note prints
-another scale, the model scales the figure** (Walmart's session file holds `700` from
-"$0.7 billion"): a conversion by the model, against rule 1. Backlog item 77; the user
-decides the fix. **After it, everything is in millions**:
+Pass 2 prompt's summary are in the filing's own units. Each Pass 2 item copies its `amount`, `page`, and `units` (`printed`, `page`) as printed;
+`convert_filing_to_millions` converts each Pass 2 item individually with its own scale via
+`pass2_amount_scale(item.printed_units, item.amount)` (`P14b`, backlog item 77, user
+decision "fix 77a" on 2026-10-04), never with the filing's general money scale. **After
+it, everything is in millions**:
 the merge, `models/`, `analysis/`, the CLI and the page. A unit statement whose scale
 cannot be read, that is not found on its page as a whole printed statement, or that
 cites a page other than the figures it governs, stops the run; nothing falls back to
