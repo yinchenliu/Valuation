@@ -73,6 +73,22 @@ and the rest of the codebase should copy it.
 > **Note.** `claude-sonnet-4-6` is not a current model ID. Verify against the Claude API
 > model list before relying on the Claude provider.
 
+### Claude call parameters (`_call_claude`)
+
+Since `P14b-reasoning`, `_call_claude` invokes Claude using a streamed request
+(`client.messages.stream(...)` as a context manager and `stream.get_final_message()`).
+Parameters sent:
+- `model`: `resolution.model`
+- `max_tokens`: `_CLAUDE_MAX_TOKENS = 64000`
+- `thinking`: `{"type": "adaptive"}`
+- `output_config`: `{"effort": config.EXTRACTION_EFFORT}` (defaulting to `"high"`)
+- `system` and `messages`: prompts and content as before
+
+A response that hits the token limit (`stop_reason == "max_tokens"`) raises a
+`ValueError` naming the 64,000-token output ceiling. Only text blocks
+(`block.type == "text"`) are read; if none arrive, a `ValueError` is raised. Thinking
+blocks are never read, printed, or logged (Rule 1 option 0).
+
 ## Multi-PDF year routing
 
 The routing is decided in one function, `plan_filings`, which returns one frozen
@@ -216,6 +232,15 @@ credential. [llm-boundary.md](../2-rules/llm-boundary.md) still names
 `InputFingerprint`, `fingerprint_filings`), shared by the CLI, route B and the web upload.
 
 ### The label
+
+`ProviderResolution` holds `provider`, `model`, `reasoning_label`, `transport`,
+`transport_label`, `credential`, and `credential_source`. `describe_resolution` prints
+`Reasoning: <label>` directly after `Model`, and both web templates show a `Reasoning`
+row in their extraction tables.
+
+- Route A, Claude: `reasoning_label` is `f"adaptive thinking, effort {config.EXTRACTION_EFFORT!r} (config.EXTRACTION_EFFORT)"`.
+- Route A, Gemini: `reasoning_label` is `"the provider's default; this code sets no thinking for Gemini"`.
+- Route B: `reasoning_label` is `"as the Claude Code session ran; not set by this code"`.
 
 Route B's `ProviderResolution` is `provider="claude"`, the model the session declared,
 `transport="claude-code-session"`, `credential="claude-code-session"`. A session is a

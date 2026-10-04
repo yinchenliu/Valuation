@@ -114,6 +114,16 @@ def credential_origin(name: str) -> str:
 # config.py having to import from ingestion.
 DEFAULT_EXTRACTION_PROVIDER: Final = "claude"
 
+# Extraction reasoning effort — AN ASSUMPTION. Rule 6.
+#
+# Controls how much the model reasons before it answers, and so the output tokens
+# paid for.
+#
+# "high" is the API default for `claude-opus-5`, so this unit moves no model
+# behaviour, and extraction is the step every figure depends on. It is shown in
+# the output beside the provider, model and transport.
+EXTRACTION_EFFORT: Final = "high"
+
 # Entra ID (Azure AD) token scope for the Microsoft Foundry gateway.
 #
 # This is the *audience* the gateway validates, not a secret and not a URL we call.

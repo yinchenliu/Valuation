@@ -148,6 +148,7 @@ class ProviderResolution:
 
     provider: Provider
     model: str
+    reasoning_label: str
     transport: Transport
     transport_label: str
     credential: CredentialKind
@@ -1456,9 +1457,6 @@ _INCOME_STATEMENT_LINE_FIELDS: tuple[str, ...] = (
 _PARENTHESISED_GROUP = re.compile(r"\([^()]*\)")
 
 
-
-
-
 def unit_statement_on_page(printed: str, page_text: str) -> bool:
     """True when `printed` is printed on the page as a whole printed unit.
 
@@ -1590,9 +1588,11 @@ def _pass2_item_failures(
     cited_pages: set[int] = {item.page for item in items} | {item.units_page for item in items}
     page_count, page_texts = _read_cited_pages(pdf_bytes, cited_pages)
     failures: list[_CheckFailure] = []
+    not_confirmed_count = 0
 
     for item in items:
         item_label = f"non-recurring item ({item.year}, {item.description!r})"
+        item_failed = False
 
         # 1. The figure check on item.page
         if item.page > page_count:
@@ -1606,6 +1606,7 @@ def _pass2_item_failures(
                     f"beyond the last page of the filing ({page_count} pages)."
                 ),
             ))
+            item_failed = True
         else:
             page_text = page_texts.get(item.page)
             if page_text is None or not page_text.strip():
@@ -1619,6 +1620,7 @@ def _pass2_item_failures(
                         f"page {item.page}, because that page has no text layer."
                     ),
                 ))
+                item_failed = True
             elif not any(_text_line_holds(line, item.amount) for line in page_text.splitlines()):
                 failures.append(_CheckFailure(
                     message=(
@@ -1629,6 +1631,7 @@ def _pass2_item_failures(
                         f"{item_label}: amount {item.amount} was not found on page {item.page}."
                     ),
                 ))
+                item_failed = True
 
         # 2. The unit words check on item.units_page
         if item.units_page > page_count:
@@ -1642,6 +1645,7 @@ def _pass2_item_failures(
                     f"beyond the last page of the filing ({page_count} pages)."
                 ),
             ))
+            item_failed = True
         else:
             units_text = page_texts.get(item.units_page)
             if units_text is None or not units_text.strip():
@@ -1655,6 +1659,7 @@ def _pass2_item_failures(
                         f"page {item.units_page}, because that page has no text layer."
                     ),
                 ))
+                item_failed = True
             elif _is_inline_scale(item.printed_units):
                 if item.units_page != item.page:
                     failures.append(_CheckFailure(
@@ -1667,6 +1672,7 @@ def _pass2_item_failures(
                             f"{item.units_page}, but must equal {item.page}."
                         ),
                     ))
+                    item_failed = True
                 elif _whitespace_normalised(item.printed_units) not in _whitespace_normalised(units_text):
                     failures.append(_CheckFailure(
                         message=(
@@ -1677,6 +1683,7 @@ def _pass2_item_failures(
                             f"{item_label}: inline units {item.printed_units!r} not found on page {item.units_page}."
                         ),
                     ))
+                    item_failed = True
             else:
                 if item.units_page not in (item.page, item.page - 1):
                     failures.append(_CheckFailure(
@@ -1689,6 +1696,7 @@ def _pass2_item_failures(
                             f"{item.units_page}, but must be page {item.page} or {item.page - 1}."
                         ),
                     ))
+                    item_failed = True
                 elif not unit_statement_on_page(item.printed_units, units_text):
                     failures.append(_CheckFailure(
                         message=(
@@ -1699,13 +1707,13 @@ def _pass2_item_failures(
                             f"{item_label}: unit statement {item.printed_units!r} not found on page {item.units_page}."
                         ),
                     ))
+                    item_failed = True
 
-    failed_item_ids = {
-        id(item) for item in items
-        if any(item.description in f.message for f in failures)
-    }
+        if item_failed:
+            not_confirmed_count += 1
+
     print(f"  Pass 2 items looked up on their cited pages: {len(items)} checked, "
-          f"{len(items) - len(failed_item_ids)} found, {len(failed_item_ids)} not confirmed.")
+          f"{len(items) - not_confirmed_count} found, {not_confirmed_count} not confirmed.")
     return failures
 
 
@@ -1806,6 +1814,9 @@ def _build_claude_client(resolution: ProviderResolution) -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=api_key)
 
 
+_CLAUDE_MAX_TOKENS = 64000
+
+
 def _call_claude(
     system_prompt: str,
     user_prompt: str,
@@ -1827,12 +1838,16 @@ def _call_claude(
         })
     content.append({"type": "text", "text": user_prompt})
 
-    response = client.messages.create(
+    with client.messages.stream(
         model=resolution.model,
-        max_tokens=8096,
+        max_tokens=_CLAUDE_MAX_TOKENS,
         system=system_prompt,
         messages=[{"role": "user", "content": content}],
-    )
+        thinking={"type": "adaptive"},
+        output_config={"effort": config.EXTRACTION_EFFORT},
+    ) as stream:
+        response = stream.get_final_message()
+
     # A response is a LIST of blocks, and the first one is not always the text.
     # claude-opus-5 emits a `thinking` block ahead of its answer on some requests,
     # and the old `response.content[0].text` raised AttributeError on those —
@@ -1852,7 +1867,7 @@ def _call_claude(
     # missing money field defaults to 0.0 downstream. Stop and name the cause.
     if response.stop_reason == "max_tokens":
         raise ValueError(
-            f"{resolution.model} hit the {8096:,}-token output ceiling before "
+            f"{resolution.model} hit the {_CLAUDE_MAX_TOKENS:,}-token output ceiling before "
             "finishing its response, so the extraction is incomplete. Re-run "
             "against fewer target years, or raise max_tokens in _call_claude.",
         )
@@ -2707,6 +2722,7 @@ def _resolve_claude(model: str) -> ProviderResolution:
             return ProviderResolution(
                 provider="claude",
                 model=model,
+                reasoning_label=f"adaptive thinking, effort {config.EXTRACTION_EFFORT!r} (config.EXTRACTION_EFFORT)",
                 transport="foundry",
                 transport_label=transport_label,
                 credential="foundry-api-key",
@@ -2731,6 +2747,7 @@ def _resolve_claude(model: str) -> ProviderResolution:
         return ProviderResolution(
             provider="claude",
             model=model,
+            reasoning_label=f"adaptive thinking, effort {config.EXTRACTION_EFFORT!r} (config.EXTRACTION_EFFORT)",
             transport="foundry",
             transport_label=transport_label,
             credential="entra-token",
@@ -2744,6 +2761,7 @@ def _resolve_claude(model: str) -> ProviderResolution:
         return ProviderResolution(
             provider="claude",
             model=model,
+            reasoning_label=f"adaptive thinking, effort {config.EXTRACTION_EFFORT!r} (config.EXTRACTION_EFFORT)",
             transport="anthropic-direct",
             transport_label="Anthropic public API (api.anthropic.com)",
             credential="anthropic-api-key",
@@ -2764,6 +2782,7 @@ def _resolve_gemini(model: str) -> ProviderResolution:
     return ProviderResolution(
         provider="gemini",
         model=model,
+        reasoning_label="the provider's default; this code sets no thinking for Gemini",
         transport="gemini-direct",
         transport_label="Google Gemini API (generativelanguage.googleapis.com)",
         credential="gemini-api-key",
@@ -2799,6 +2818,7 @@ def describe_resolution(resolution: ProviderResolution) -> str:
     return (
         f"Provider: {resolution.provider.upper()}  |  "
         f"Model: {resolution.model}  |  "
+        f"Reasoning: {resolution.reasoning_label}  |  "
         f"Transport: {resolution.transport_label}  |  "
         f"Credential: {resolution.credential_source}"
     )

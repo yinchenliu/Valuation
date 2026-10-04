@@ -54,6 +54,12 @@ Only values that are **printed on a page of the filing**, plus the locator that 
 where. In route B the locator is recorded: `pages_read` names the 1-based PDF pages read
 for each pass, and is printed beside the figures, never computed from.
 
+**Reasoning ahead of answers (Rule 1 option 0).** Option 0 is in force for route A from
+`P14b-reasoning`: the model may reason before it answers, via adaptive thinking
+(`thinking={"type": "adaptive"}`) with effort configured in `config.EXTRACTION_EFFORT`
+(defaulting to `"high"`). The reasoning is not part of the answer, and no code reads
+a thinking block, prints it, or logs it; only text blocks (`type == "text"`) are parsed.
+
 **Pass 1 returns printed lines, and Python adds them.** Every Pass 1 field is a list of
 the rows that make it up, each `{"label", "value", "page"}`: the label as printed, the
 one figure printed on that row, and its 1-based PDF page.

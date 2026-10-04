@@ -707,6 +707,7 @@ def session_resolution(model: str, session_file: Path) -> ProviderResolution:
     return ProviderResolution(
         provider="claude",
         model=model,
+        reasoning_label="as the Claude Code session ran; not set by this code",
         transport="claude-code-session",
         transport_label=(
             f"Claude Code session — figures read from the PDF in a Claude Code "
