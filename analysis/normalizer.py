@@ -229,9 +229,37 @@ def normalize_financials(
     """Apply non-recurring adjustments across all years.
 
     Groups NRIs by year and applies each to the correct IS field.
+
+    Raises:
+        ValueError: when any item's year is not the year of an income statement
+            in `financials`, before any adjustment is applied. Rule 3, backlog
+            item 25. The item's year and the statements' years come from two
+            separate extraction passes and nothing reconciles them. Until this
+            check, the loop below walked the statements and never looked at an
+            item whose year matched none of them, so that adjustment was dropped
+            while the result was still labelled normalised. The message names
+            each such item and the statement years that exist; it does not say
+            which of the two years is wrong, because this function cannot know.
     """
     if not non_recurring:
         return financials
+
+    statement_years = [stmt.year for stmt in financials.income_statements]
+    unmatched = [item for item in non_recurring if item.year not in statement_years]
+    if unmatched:
+        listed = "; ".join(
+            f"year {item.year}, line_item '{item.line_item}', "
+            f"description '{item.description}'"
+            for item in unmatched
+        )
+        raise ValueError(
+            f"{len(unmatched)} non-recurring item(s) carry a year with no income "
+            f"statement in the financials: {listed}. The income statement years "
+            f"are {sorted(statement_years)}. An item for a year with no statement "
+            f"cannot be applied, and it is not dropped: the result would be "
+            f"labelled normalised without it. Supply the income statement for "
+            f"that year, or correct the item's year."
+        )
 
     by_year: dict[int, list[NonRecurringItem]] = {}
     for item in non_recurring:

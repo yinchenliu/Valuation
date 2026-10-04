@@ -213,13 +213,34 @@ def calculate_wacc(
     total_value = equity_value + debt_value
 
     if total_value == 0:
-        return WACCResult(
-            cost_of_equity=cost_of_equity,
-            cost_of_debt=cost_of_debt,
-            tax_rate=tax_rate,
-            equity_weight=1.0,
-            debt_weight=0.0,
-            cost_of_debt_source=cost_of_debt_source,
+        # Backlog item 38. This branch used to return equity_weight=1.0 and
+        # debt_weight=0.0: a company with no market value and no debt was
+        # valued as all-equity. E / V and D / V are 0 / 0 here, so there is no
+        # weight to report, and a 1.0 / 0.0 split is a guess (rule 3). The
+        # message gives both inputs and both values and does not say why they
+        # are zero: this function cannot tell (backlog item 37).
+        raise ValueError(
+            f"market_cap is {market_cap:,.2f} and balance_sheet.total_debt is "
+            f"{balance_sheet.total_debt:,.2f} (year {balance_sheet.year}), so "
+            f"their sum is 0 and the capital weights E / (E + D) and "
+            f"D / (E + D) cannot be formed from them. They are not set to an "
+            f"all-equity 1.0 / 0.0. Supply a non-zero market_cap or debt "
+            f"balance."
+        )
+
+    if equity_value <= 0:
+        # Review F1, round 2 amendment to step 2. The sum check above does not
+        # catch a market_cap of 0 beside a positive debt balance: E / V is then
+        # 0.0 and D / V is 1.0, and the WACC becomes the after-tax cost of debt.
+        # Every weight here is formed from E, so a market_cap of zero or below
+        # is an absent input to all of them (rule 3). The message names the
+        # value and does not say why it is not positive: this function cannot
+        # tell (backlog item 37).
+        raise ValueError(
+            f"market_cap is {market_cap:,.2f}, which is not greater than 0, so "
+            f"the capital weights E / (E + D) and D / (E + D) cannot be formed "
+            f"from it. The equity weight is not set to 0.0 and the debt weight "
+            f"is not set to 1.0. Supply a market_cap greater than 0."
         )
 
     return WACCResult(

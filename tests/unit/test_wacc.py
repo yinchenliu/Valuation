@@ -18,20 +18,27 @@ where E is market capitalisation, D is **book** total debt, V = E + D. Money is
 in millions (`docs/4-conventions/units-and-signs.md` section 1); rates are
 decimals.
 
-## Two results this file deliberately does NOT assert
+## Results this file deliberately does NOT assert
 
-`analysis/wacc.py` holds two places where a missing input produces a number
-instead of a stop. Both are executed here, so the branch is covered, but
-**nothing about the substituted value is asserted** — an assertion would make
+Where a missing or malformed input produces a number instead of a stop,
+**nothing about the substituted value is asserted**: an assertion would make
 the defect permanent and turn its fix red
 (`docs/5-testing/strategy.md` section 2).
 
-1. `analysis/wacc.py:41-43` — when the company carries debt but reports no
-   interest expense, `config.DEFAULT_COST_OF_DEBT` is substituted and nothing
-   in the output says so. Backlog item 9, rule 6.
-2. `analysis/wacc.py:77-84` — when `market_cap + total_debt == 0` the weights
-   are set to 100% equity rather than stopping. A company with no market cap
-   and no debt is not an all-equity company; it is missing data. Rule 3.
+1. When the company carries debt but reports no interest expense,
+   `config.DEFAULT_COST_OF_DEBT` is substituted. The branch is executed here;
+   the substituted rate is not asserted. Backlog item 9, rule 6.
+2. A **negative** debt balance beside a positive market cap forms weights
+   outside [0, 1] (300 and -50 give 1.2 and -0.2). Backlog item 69. No test
+   here asserts those weights.
+3. Item 38's second face (backlog item 38b): a cost-of-debt override beside a
+   balance sheet with no debt lines, and `balance_sheet=None`. No test here
+   asserts either behaviour.
+
+Until `P13a-analysis-silent`, a fourth entry stood here: when
+`market_cap + total_debt == 0` the weights were set to 100% equity rather than
+stopping (backlog item 38). That branch now raises, and so does a market cap of
+zero or below; both stops are locked in the "weights cannot be formed" section.
 """
 
 from __future__ import annotations
@@ -247,8 +254,9 @@ def test_wacc_with_no_debt_equals_the_cost_of_equity_whatever_the_cost_of_debt()
     debt term reached the answer at all, 0.10 could not survive it.
 
     Market cap is 1000, not 0, so the weights here are the computed
-    1000/1000 and 0/1000 — **not** the `wacc.py:77-84` all-equity fallback,
-    which this file never asserts.
+    1000/1000 and 0/1000. They are not the old all-equity fallback for
+    E + D = 0 (backlog item 38), which this file never asserted and which now
+    raises instead; see the "weights cannot be formed" section.
 
     The income statement reports no interest expense because the subject is a
     debt-free company. Neither the interest nor the tax rate reaches this
@@ -385,33 +393,176 @@ def test_weights_are_still_the_reported_ones_when_interest_is_not_reported() -> 
     assert result.debt_weight == pytest.approx(0.25)
 
 
-def test_cost_of_equity_survives_a_company_with_no_market_cap_and_no_debt() -> None:
-    """`analysis/wacc.py:77-84`: when E + D = 0 the function returns weights of
-    100% equity and 0% debt rather than stopping.
+def test_cost_of_equity_passes_through_unchanged_where_the_weights_can_be_formed() -> None:
+    """The cost of equity the CAPM result carries in is the cost of equity the
+    WACC result carries out, and it is the one the WACC is built from.
 
-    **This test asserts nothing about those weights.** A company with no market
-    capitalisation and no debt is not an all-equity company; it is a company
-    whose inputs are missing, and rule 3 says that must stop and name the
-    field. Asserting `equity_weight == 1.0` here would make the defect
-    permanent and turn its fix red (`docs/5-testing/strategy.md` section 2).
+    **Rewritten at `P13a-tests`.** This test was
+    `test_cost_of_equity_survives_a_company_with_no_market_cap_and_no_debt`. It
+    called `calculate_wacc` with a market cap of 0 and no debt, and asserted
+    only the pass-through, because that input reached the all-equity early
+    return (backlog item 38) whose weights it refused to bless. `P13a`
+    replaced that return with a stop (`analysis/wacc.py:215-229`), so the
+    input no longer returns. The subject is kept here on an input where the
+    weights can be formed. The old input is now a case of
+    `test_weights_that_cannot_be_formed_stop_and_name_market_cap` below.
 
-    What is asserted is the one figure that is a pass-through of an argument
-    and so is independent of the defect: the cost of equity the CAPM result
-    carried in, 0.04 + 1.2 * 0.05 = 0.10.
+    A CAPM result unlike the fixture's is used, so the pass-through cannot be
+    satisfied by the fixture's 0.10 arriving from anywhere else:
 
-    The income statement reports no interest expense: the test's own title
-    says "no debt", and the interest figure reaches no assertion here — the
-    early return at `analysis/wacc.py:215` passes `cost_of_equity` straight
-    through.
+        Re    0.03 + 0.8 * 0.05            = 0.03 + 0.04 = 0.07
+        E     300
+        D     long-term debt 100            = 100
+        V     300 + 100                     = 400
+        E/V   300 / 400                     = 0.75
+        D/V   100 / 400                     = 0.25
+        Rd    20 / 100                      = 0.20
+        t     75 / 300                      = 0.25
+        WACC  0.75 * 0.07 + 0.25 * 0.20 * (1 - 0.25)
+            = 0.0525      + 0.25 * 0.15
+            = 0.0525      + 0.0375
+            = 0.09
+    """
+    result = calculate_wacc(
+        capm_result=CAPMResult(beta=0.8, risk_free_rate=0.03, equity_risk_premium=0.05),
+        income_statement=_income_statement(),
+        balance_sheet=BalanceSheet(year=2025, long_term_debt=100.0),
+        market_cap=300.0,
+    )
+
+    assert result.cost_of_equity == pytest.approx(0.07)
+    assert result.wacc == pytest.approx(0.09)
+
+
+# ---------------------------------------------------------------------------
+# The weights cannot be formed. Backlog item 38 and the P13a round 2
+# amendment — `analysis/wacc.py:215-244`.
+#
+# E / (E + D) and D / (E + D) need a positive E. Two stops guard them:
+#
+#   * E + D == 0      0 / 0. The message names market_cap AND
+#                     balance_sheet.total_debt, with both values.
+#   * E <= 0          (sum non-zero) every weight is formed from E, so a market
+#                     cap of zero or below is an absent input to all of them.
+#                     The message names market_cap and its value.
+#
+# Neither message may state why the input is zero: the function cannot tell.
+# Backlog item 37 records that mistake ("did not extract") in this same file.
+#
+# Not asserted here, on purpose: the weights for a NEGATIVE debt balance
+# (backlog item 69), and item 38's second face (backlog item 38b).
+#
+# The expected side of every assertion is an input the test supplied: the
+# field names are the arguments, the values are the numbers passed in.
+# ---------------------------------------------------------------------------
+
+
+def _balance_sheet_with_debt_of(total_debt: float) -> BalanceSheet:
+    """A balance sheet whose only debt line is long-term debt, so that
+    total_debt is exactly the figure passed in.
+    """
+    return BalanceSheet(year=2025, accounts_payable=500.0, long_term_debt=total_debt)
+
+
+def _wacc_on(market_cap: float, total_debt: float) -> None:
+    """Call `calculate_wacc` on a market cap and a debt balance.
+
+    A debt-free case uses the debt-free income statement (no interest), and a
+    case with debt uses the fixture's 20 of interest, so that neither reaches
+    item 22's interest-against-zero-debt stop and the weights stop is the one
+    under test. No cost-of-debt override is passed: an override beside zero
+    debt lines is backlog item 38b.
+    """
+    interest = 0.0 if total_debt == 0 else 20.0
+    calculate_wacc(
+        capm_result=_capm_result(),
+        income_statement=_income_statement(interest_expense=interest),
+        balance_sheet=_balance_sheet_with_debt_of(total_debt),
+        market_cap=market_cap,
+    )
+
+
+# (market_cap, total_debt). The first pair is the input of the test this
+# section replaced.
+_CANNOT_FORM = [
+    pytest.param(0.0, 0.0, id="zero-market-cap-and-zero-debt"),
+    pytest.param(-100.0, 100.0, id="sum-is-zero"),
+    pytest.param(0.0, 100.0, id="zero-market-cap-beside-debt"),
+    pytest.param(-5.0, 100.0, id="negative-market-cap-beside-debt"),
+]
+_SUM_IS_ZERO = [
+    pytest.param(0.0, 0.0, id="zero-market-cap-and-zero-debt"),
+    pytest.param(-100.0, 100.0, id="sum-is-zero"),
+]
+
+
+def _stop_message(market_cap: float, total_debt: float) -> str:
+    with pytest.raises(ValueError) as raised:
+        _wacc_on(market_cap, total_debt)
+    return str(raised.value)
+
+
+def _as_floats(message: str) -> list[float]:
+    return [float(n.replace(",", "")) for n in _numbers_in(message)]
+
+
+@pytest.mark.parametrize(("market_cap", "total_debt"), _CANNOT_FORM)
+def test_weights_that_cannot_be_formed_stop_and_name_market_cap(
+    market_cap: float, total_debt: float
+) -> None:
+    """Rule 3. Each pair stops with `ValueError`, and the message names the
+    field `market_cap` and the value that was passed for it.
+    """
+    message = _stop_message(market_cap, total_debt)
+
+    assert "market_cap" in message
+    assert market_cap in _as_floats(message)
+
+
+@pytest.mark.parametrize(("market_cap", "total_debt"), _SUM_IS_ZERO)
+def test_a_zero_sum_also_names_the_debt_balance_and_its_value(
+    market_cap: float, total_debt: float
+) -> None:
+    """When E + D == 0 neither input alone is the absent one, so the message
+    names both: `market_cap` and `balance_sheet.total_debt`, each with the
+    value passed in.
+    """
+    message = _stop_message(market_cap, total_debt)
+
+    assert "market_cap" in message
+    assert "balance_sheet.total_debt" in message
+    assert market_cap in _as_floats(message)
+    assert total_debt in _as_floats(message)
+
+
+@pytest.mark.parametrize(("market_cap", "total_debt"), _CANNOT_FORM)
+def test_the_weights_stop_does_not_state_a_cause(market_cap: float, total_debt: float) -> None:
+    """Backlog item 37. `calculate_wacc` sees two numbers. It cannot tell an
+    extraction that failed from a share count that was absent upstream or a
+    filing that was misread, so the message must not claim any of them.
+    """
+    lowered = _stop_message(market_cap, total_debt).lower()
+
+    assert "extract" not in lowered
+    assert "fail" not in lowered
+
+
+def test_a_positive_market_cap_and_debt_form_the_weights_by_hand() -> None:
+    """The stops above must not catch a company whose weights can be formed.
+
+        E 300, D 100, V 300 + 100 = 400
+        E/V = 300 / 400 = 0.75
+        D/V = 100 / 400 = 0.25
     """
     result = calculate_wacc(
         capm_result=_capm_result(),
-        income_statement=_income_statement(interest_expense=0.0),
-        balance_sheet=_balance_sheet_without_debt(),
-        market_cap=0.0,
+        income_statement=_income_statement(),
+        balance_sheet=_balance_sheet_with_debt_of(100.0),
+        market_cap=300.0,
     )
 
-    assert result.cost_of_equity == pytest.approx(0.10)
+    assert result.equity_weight == pytest.approx(0.75)
+    assert result.debt_weight == pytest.approx(0.25)
 
 
 # ---------------------------------------------------------------------------
