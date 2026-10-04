@@ -25,6 +25,27 @@ it came from; `analysis/normalizer.py` decides what that does to a figure.
 a share price a reader can walk backwards to a 10-K line. One model-produced figure
 anywhere in the chain breaks that walk, and nothing downstream can detect it.
 
+**Allowed, on the user's decision of 2026-10-03** ("I agree with 0, A, B, C"). Each item
+lets the model reason about where a printed figure belongs. None lets it produce a
+number.
+
+- **0.** The model may reason before it answers. The reasoning is not part of the answer,
+  and no code reads it.
+- **A.** The model may say in words why it put each printed row in a field. No code
+  computes from that text. It is shown to the reader.
+- **B.** The model may take a printed figure from a note or from MD&A when the statement
+  does not show that line by itself. The figure is still one printed line with its page,
+  and the page check applies to it.
+- **C.** The model may report a fact about the filing's layout, for example that a
+  printed expense line includes depreciation, **only when the filing states it in
+  words** on a page the model cites. The page check confirms those words on that page.
+  Python decides what the fact does to a figure. The model may not infer a layout fact
+  that the filing does not state.
+
+**Refused on the same date** ("for D and E, we can't allow it, they are against rule
+1"): asking the model to calculate a figure the filing does not print (D), or to
+estimate one (E).
+
 ## Rule 2 — Every number comes from one named function with a fixed, typed signature.
 
 One function, one number, one meaning. Arguments are named and typed. No `**kwargs`, no

@@ -271,9 +271,39 @@ measurement and needs paid runs or sessions.
 
 | # | Criterion | Expected | Measured by |
 |---|---|---|---|
+**Wave 1 is done at `19298f3`.** Wave 2, on the user's "go" of 2026-10-03, holds the
+silent items that the wave 1 runs found, plus item 50, which no longer waits: the user
+decided the Pass 1 role the same day.
+
+| Unit | Items | Files |
+|---|---|---|
+| `P13d-upside-price` | 65 | `models/valuation.py`, `analysis/dcf.py` |
+| `P13e-growth-input` | 66, 67 | `analysis/projector.py` |
+| `P13f-wacc-debt` | 69, 38b | `analysis/wacc.py` |
+| `P13g-pass2-unread` | 50, and item 8's site in `_run_nri_pass` | `ingestion/claude_extractor.py` |
+
+| # | Criterion | Expected | Measured by |
+|---|---|---|---|
 | 1 | each wave 1 item stops and names its input, or labels what it did | a `ValueError` naming the field, or a clause in the label | the command in each assignment |
 | 2 | no wave 1 unit moves a figure on a complete input | Walmart's normalised statements and assumptions unchanged | `cli.py --session-file extractions/WMT.json`, stages 1 to 5 |
 | 3 | the gates do not get worse | ruff 5 or fewer, mypy 10 or fewer, census 67 or fewer | the gates in [environment.md](environment.md) |
+
+## Phase 14 — the Pass 1 role · **planned**
+
+**The user's decision of 2026-10-03:** options 0, A, B and C, recorded under rule 1 in
+[rules.md](../2-rules/rules.md); options D and E refused. This is the approval
+`AGENTS.md` requires for a change to what the model returns. Items 10 and 44 go with it,
+because both sit in the Pass 1 parse.
+
+| Unit | What | Items |
+|---|---|---|
+| `P14a-units` | read `units`, and a separate unit for the share count; convert to millions once in Python | 44 |
+| `P14b-reasoning` | 0: route A asks the model to reason first. A: a reason per field, shown on both pages. B: the prompt allows a printed figure from a note or MD&A | — |
+| `P14c-layout-facts` | C: a cited layout fact, checked on its page; the D&A decision moves out of the parser into `analysis/` and reads that fact | 10 |
+
+All three touch `ingestion/claude_extractor.py` and the session file format, so they run
+in sequence, after wave 2's `P13g`. Each unit states what happens to a `v2` session file
+such as `extractions/WMT.json`.
 
 ---
 
