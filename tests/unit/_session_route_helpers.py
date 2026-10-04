@@ -116,7 +116,9 @@ def _balance_sheet(year: int) -> dict[str, Any]:
 
 def pass1_answer() -> dict[str, Any]:
     return {
-        "ticker": TICKER, "company_name": COMPANY, "currency": "USD", "units": "Millions",
+        "ticker": TICKER, "company_name": COMPANY, "currency": "USD",
+        "units": {"printed": "(in millions)", "page": 50},
+        "share_units": {"printed": "(in millions)", "page": 50},
         "historical_years": [_year(2023, 1), _year(2024, 2)],
         "latest_balance_sheet": _balance_sheet(2024),
     }

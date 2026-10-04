@@ -106,6 +106,15 @@ def pass1_pages(*answers: object) -> dict[int, list[str]]:
                 lines = pages.setdefault(row["page"], [])
                 if text not in lines:
                     lines.append(text)
+        for key in ("units", "share_units"):
+            unit_obj = answer.get(key)
+            if isinstance(unit_obj, Mapping):
+                printed = unit_obj.get("printed")
+                page = unit_obj.get("page")
+                if isinstance(printed, str) and isinstance(page, int) and page >= 1:
+                    lines = pages.setdefault(page, [])
+                    if printed not in lines:
+                        lines.append(printed)
     for page, lines in pages.items():
         assert len(lines) <= _MAX_LINES_PER_PAGE, (
             f"page {page} would print {len(lines)} lines; write_text_pdf fits "

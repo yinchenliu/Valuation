@@ -182,6 +182,7 @@ def _hand_built_two_year_stub() -> tuple[FinancialStatements, list[NonRecurringI
             # NCI memo lines: explicit 0.0, this company prints none (P10a).
             noncontrolling_interest_nonredeemable=0.0,
             noncontrolling_interest_redeemable=0.0,
+            printed_unit_in_millions=1.0,
         ),
     ]
     fs = FinancialStatements(
@@ -312,6 +313,7 @@ def test_balance_check_difference_property_hand_computed() -> None:
         accounts_payable=300.0,
         long_term_debt=300.0,
         total_equity=400.0,
+        printed_unit_in_millions=1.0,
     )
     # Hand calculation: 1000.0 - (600.0 + 400.0) = 0.0
     assert bs_balanced.total_assets == 1000.0
@@ -328,6 +330,7 @@ def test_balance_check_difference_property_hand_computed() -> None:
         accounts_payable=300.0,
         long_term_debt=300.0,
         total_equity=400.0,
+        printed_unit_in_millions=1.0,
     )
     # Hand calculation: 1050.0 - (600.0 + 400.0) = +50.0
     assert bs_asset_heavy.total_assets == 1050.0
@@ -342,6 +345,7 @@ def test_balance_check_difference_property_hand_computed() -> None:
         accounts_payable=300.0,
         long_term_debt=300.0,
         total_equity=400.0,
+        printed_unit_in_millions=1.0,
     )
     # Hand calculation: 970.0 - (600.0 + 400.0) = -30.0
     assert bs_liab_heavy.total_assets == 970.0
@@ -842,6 +846,7 @@ def test_balance_sheet_table_renders_difference_and_metrics_hand_computed(
         total_equity=520.0,
         noncontrolling_interest_nonredeemable=0.0,
         noncontrolling_interest_redeemable=0.0,
+        printed_unit_in_millions=1.0,
     )
     fs_imbalanced = FinancialStatements(
         ticker="TESTCO",
@@ -882,7 +887,8 @@ def test_implied_share_price_unchanged_on_baseline_stub(
             # (P10a). A value, not a default: None would stop run_dcf.
             BalanceSheet(year=2024, cash_and_equivalents=100.0, long_term_debt=500.0,
                          noncontrolling_interest_nonredeemable=0.0,
-                         noncontrolling_interest_redeemable=0.0),
+                         noncontrolling_interest_redeemable=0.0,
+                         printed_unit_in_millions=1.0),
         ],
     )
     baseline_form = {

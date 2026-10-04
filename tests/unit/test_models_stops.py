@@ -57,7 +57,7 @@ def test_latest_year_ignores_balance_sheets_when_there_is_no_income_statement() 
     """
     financials = FinancialStatements(
         ticker="BSONLY",
-        balance_sheets=[BalanceSheet(year=2025, cash_and_equivalents=10.0)],
+        balance_sheets=[BalanceSheet(year=2025, cash_and_equivalents=10.0, printed_unit_in_millions=1.0)],
     )
 
     with pytest.raises(ValueError, match="no latest year"):

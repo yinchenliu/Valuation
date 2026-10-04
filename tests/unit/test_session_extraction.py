@@ -129,8 +129,15 @@ def balance_sheet(year: int) -> dict[str, Any]:
 
 
 def pass1(years: list[dict[str, Any]], bs: dict[str, Any]) -> dict[str, Any]:
-    return {"ticker": TICKER, "company_name": COMPANY, "currency": "USD",
-            "units": "Millions", "historical_years": years, "latest_balance_sheet": bs}
+    return {
+        "ticker": TICKER,
+        "company_name": COMPANY,
+        "currency": "USD",
+        "units": {"printed": "(in millions)", "page": 50},
+        "share_units": {"printed": "(in millions)", "page": 50},
+        "historical_years": years,
+        "latest_balance_sheet": bs,
+    }
 
 
 def nri(year: int, amount: float, description: str, **overrides: Any) -> dict[str, Any]:

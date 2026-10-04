@@ -264,6 +264,7 @@ def _financials_with_a_balance_sheet() -> FinancialStatements:
                 long_term_debt=9999.0,
                 noncontrolling_interest_nonredeemable=9999.0,
                 noncontrolling_interest_redeemable=9999.0,
+                printed_unit_in_millions=1.0,
             ),
             BalanceSheet(
                 year=2025,
@@ -272,6 +273,7 @@ def _financials_with_a_balance_sheet() -> FinancialStatements:
                 long_term_debt=100.0,
                 noncontrolling_interest_nonredeemable=0.0,
                 noncontrolling_interest_redeemable=0.0,
+                printed_unit_in_millions=1.0,
             ),
         ],
     )
@@ -564,6 +566,7 @@ def _financials_for_the_bridge(
                 long_term_debt=200.0,
                 noncontrolling_interest_nonredeemable=nonredeemable,
                 noncontrolling_interest_redeemable=redeemable,
+                printed_unit_in_millions=1.0,
             ),
         ],
     )
@@ -643,6 +646,7 @@ def test_total_noncontrolling_interest_is_the_sum_of_the_two_printed_parts(
         year=2025,
         noncontrolling_interest_nonredeemable=nonredeemable,
         noncontrolling_interest_redeemable=redeemable,
+        printed_unit_in_millions=1.0,
     )
     assert total_noncontrolling_interest(sheet) == pytest.approx(expected)
 
@@ -660,7 +664,7 @@ def test_total_noncontrolling_interest_stops_naming_the_key_and_the_year(
 
     values: dict[str, float | None] = {key: 10.0 for key in NCI_KEYS}
     values[missing_key] = bad_value
-    sheet = BalanceSheet(year=2031, **values)  # type: ignore[arg-type]
+    sheet = BalanceSheet(year=2031, printed_unit_in_millions=1.0, **values)  # type: ignore[arg-type]
 
     with pytest.raises(ValueError) as excinfo:
         total_noncontrolling_interest(sheet)
@@ -679,7 +683,7 @@ def test_total_noncontrolling_interest_stops_when_neither_part_was_set() -> None
     from analysis.dcf import total_noncontrolling_interest
 
     with pytest.raises(ValueError, match="noncontrolling_interest_"):
-        total_noncontrolling_interest(BalanceSheet(year=2025))
+        total_noncontrolling_interest(BalanceSheet(year=2025, printed_unit_in_millions=1.0))
 
 
 @pytest.mark.parametrize("missing_key", NCI_KEYS)
@@ -731,6 +735,7 @@ def test_neither_nci_part_enters_any_balance_sheet_total(
         total_equity=200.0,
         noncontrolling_interest_nonredeemable=nonredeemable,
         noncontrolling_interest_redeemable=redeemable,
+        printed_unit_in_millions=1.0,
     )
     assert sheet.total_assets == pytest.approx(400.0)
     assert sheet.total_liabilities == pytest.approx(200.0)
@@ -886,6 +891,7 @@ def test_run_dcf_positive_share_count_gives_the_bridge_price_by_hand() -> None:
                 long_term_debt=150.0,
                 noncontrolling_interest_nonredeemable=20.0,
                 noncontrolling_interest_redeemable=30.0,
+                printed_unit_in_millions=1.0,
             ),
         ],
     )
@@ -1076,6 +1082,7 @@ def test_run_dcf_positive_current_price_gives_the_upside_by_hand() -> None:
                 long_term_debt=300.0,
                 noncontrolling_interest_nonredeemable=60.0,
                 noncontrolling_interest_redeemable=40.0,
+                printed_unit_in_millions=1.0,
             ),
         ],
     )

@@ -425,7 +425,7 @@ def test_normalize_financials_leaves_the_other_statements_alone() -> None:
     financials = FinancialStatements(
         ticker="TEST",
         income_statements=[_base_statement(2024)],
-        balance_sheets=[BalanceSheet(year=2024, cash_and_equivalents=250.0)],
+        balance_sheets=[BalanceSheet(year=2024, cash_and_equivalents=250.0, printed_unit_in_millions=1.0)],
         cash_flow_statements=[
             CashFlowStatement(year=2024, capital_expenditures=-40.0)
         ],

@@ -125,6 +125,7 @@ def _balance_sheet_with_debt() -> BalanceSheet:
         current_portion_lt_debt=50.0,
         long_term_debt=250.0,
         other_non_current_liabilities=9999.0,
+        printed_unit_in_millions=1.0,
     )
 
 
@@ -139,7 +140,7 @@ def _balance_sheet_without_debt() -> BalanceSheet:
     at once — a contradiction with its own stated subject, and the input on
     which three of the tests below were previously passing.
     """
-    return BalanceSheet(year=2025, accounts_payable=500.0)
+    return BalanceSheet(year=2025, accounts_payable=500.0, printed_unit_in_millions=1.0)
 
 
 # ---------------------------------------------------------------------------
@@ -338,7 +339,7 @@ def test_wacc_at_a_zero_tax_rate_is_the_plain_weighted_average() -> None:
     result = calculate_wacc(
         capm_result=_capm_result(),
         income_statement=_income_statement(),
-        balance_sheet=BalanceSheet(year=2025, long_term_debt=250.0),
+        balance_sheet=BalanceSheet(year=2025, long_term_debt=250.0, printed_unit_in_millions=1.0),
         market_cap=750.0,
         cost_of_debt_override=0.08,
         tax_rate_override=0.0,
@@ -362,7 +363,7 @@ def test_the_tax_shield_only_reduces_the_debt_term() -> None:
     taxed = calculate_wacc(
         capm_result=_capm_result(),
         income_statement=_income_statement(),
-        balance_sheet=BalanceSheet(year=2025, long_term_debt=250.0),
+        balance_sheet=BalanceSheet(year=2025, long_term_debt=250.0, printed_unit_in_millions=1.0),
         market_cap=750.0,
         cost_of_debt_override=0.08,
         tax_rate_override=0.25,
@@ -397,7 +398,7 @@ def test_weights_are_still_the_reported_ones_when_interest_is_not_reported() -> 
     result = calculate_wacc(
         capm_result=_capm_result(),
         income_statement=_income_statement(interest_expense=0.0),
-        balance_sheet=BalanceSheet(year=2025, long_term_debt=250.0),
+        balance_sheet=BalanceSheet(year=2025, long_term_debt=250.0, printed_unit_in_millions=1.0),
         market_cap=750.0,
         tax_rate_override=0.25,
     )
@@ -441,7 +442,7 @@ def test_cost_of_equity_passes_through_unchanged_where_the_weights_can_be_formed
     result = calculate_wacc(
         capm_result=CAPMResult(beta=0.8, risk_free_rate=0.03, equity_risk_premium=0.05),
         income_statement=_income_statement(),
-        balance_sheet=BalanceSheet(year=2025, long_term_debt=100.0),
+        balance_sheet=BalanceSheet(year=2025, long_term_debt=100.0, printed_unit_in_millions=1.0),
         market_cap=300.0,
     )
 
@@ -478,7 +479,7 @@ def _balance_sheet_with_debt_of(total_debt: float) -> BalanceSheet:
     """A balance sheet whose only debt line is long-term debt, so that
     total_debt is exactly the figure passed in.
     """
-    return BalanceSheet(year=2025, accounts_payable=500.0, long_term_debt=total_debt)
+    return BalanceSheet(year=2025, accounts_payable=500.0, long_term_debt=total_debt, printed_unit_in_millions=1.0)
 
 
 def _wacc_on(market_cap: float, total_debt: float) -> None:
@@ -851,7 +852,7 @@ def test_a_nan_total_debt_stops_and_names_the_balance_sheet_field() -> None:
         calculate_wacc(
             capm_result=_capm_result(),
             income_statement=_income_statement(),
-            balance_sheet=BalanceSheet(year=2025, long_term_debt=NAN),
+            balance_sheet=BalanceSheet(year=2025, long_term_debt=NAN, printed_unit_in_millions=1.0),
             market_cap=600.0,
             cost_of_debt_override=0.05,
             tax_rate_override=0.25,
@@ -976,6 +977,7 @@ def test_a_negative_debt_line_under_a_positive_total_stops_and_names_the_line(
                 short_term_debt=short_term,
                 current_portion_lt_debt=current_portion,
                 long_term_debt=long_term,
+                printed_unit_in_millions=1.0,
             ),
             market_cap=300.0,
             cost_of_debt_override=override,
@@ -1066,7 +1068,7 @@ def test_an_infinite_debt_line_stops_and_names_the_line(
         calculate_wacc(
             capm_result=_capm_result(),
             income_statement=_income_statement(),
-            balance_sheet=BalanceSheet(year=2025, **{line: INF}),
+            balance_sheet=BalanceSheet(year=2025, printed_unit_in_millions=1.0, **{line: INF}),
             market_cap=300.0,
             cost_of_debt_override=override,
         )
@@ -1090,7 +1092,7 @@ def test_finite_debt_lines_that_sum_to_infinity_stop_and_name_the_total() -> Non
         calculate_wacc(
             capm_result=_capm_result(),
             income_statement=_income_statement(),
-            balance_sheet=BalanceSheet(year=2025, short_term_debt=1e308, long_term_debt=1e308),
+            balance_sheet=BalanceSheet(year=2025, short_term_debt=1e308, long_term_debt=1e308, printed_unit_in_millions=1.0),
             market_cap=300.0,
             cost_of_debt_override=0.05,
         )

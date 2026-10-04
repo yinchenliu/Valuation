@@ -170,7 +170,8 @@ def _pass1(years: list[dict[str, Any]], balance: dict[str, Any] | None = None) -
         "ticker": "TST",
         "company_name": "Test Co",
         "currency": "USD",
-        "units": "Millions",
+        "units": {"printed": "(in millions)", "page": 50},
+        "share_units": {"printed": "(in millions)", "page": 50},
         "historical_years": years,
         "latest_balance_sheet": balance if balance is not None else {},
     })
@@ -534,7 +535,7 @@ def _fin(rows: list[tuple[int, float]]) -> FinancialStatements:
         company_name="Ignored",
         income_statements=[IncomeStatement(year=y, revenue=m) for y, m in rows],
         cash_flow_statements=[CashFlowStatement(year=y, net_income=m) for y, m in rows],
-        balance_sheets=[BalanceSheet(year=y, cash_and_equivalents=m) for y, m in rows],
+        balance_sheets=[BalanceSheet(year=y, cash_and_equivalents=m, printed_unit_in_millions=1.0) for y, m in rows],
     )
 
 

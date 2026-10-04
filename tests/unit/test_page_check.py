@@ -310,9 +310,15 @@ def full_answer(year: int = 2024) -> dict[str, Any]:
     balance: dict[str, Any] = {"year": year}
     for i, field in enumerate(BALANCE_SHEET_LINE_FIELDS):
         balance[field] = lines(field, [201 + i], page=BALANCE_PAGE)
-    return {"ticker": TICKER, "company_name": COMPANY, "currency": "USD",
-            "units": "Millions", "historical_years": [entry],
-            "latest_balance_sheet": balance}
+    return {
+        "ticker": TICKER,
+        "company_name": COMPANY,
+        "currency": "USD",
+        "units": {"printed": "(in millions)", "page": INCOME_PAGE},
+        "share_units": {"printed": "(in millions)", "page": INCOME_PAGE},
+        "historical_years": [entry],
+        "latest_balance_sheet": balance,
+    }
 
 
 def failures(answer: dict[str, Any], pdf: Path) -> list[str]:
@@ -620,9 +626,15 @@ def attack_answer(*, honest: bool) -> dict[str, Any]:
     balance |= {memo: [] for memo in NCI_MEMOS}  # this filing prints no NCI
     if not honest:
         balance["other_current_assets"] = _row(INVENTED_LABEL, 4124, 2)
-    return {"ticker": TICKER, "company_name": COMPANY, "currency": "USD",
-            "units": "Millions", "historical_years": [entry],
-            "latest_balance_sheet": balance}
+    return {
+        "ticker": TICKER,
+        "company_name": COMPANY,
+        "currency": "USD",
+        "units": {"printed": "(in millions)", "page": 1},
+        "share_units": {"printed": "(in millions)", "page": 1},
+        "historical_years": [entry],
+        "latest_balance_sheet": balance,
+    }
 
 
 def filing_pdf(directory: Path) -> Path:
@@ -642,9 +654,15 @@ def minimal_answer(
     entry |= year_rows or {}
     balance: dict[str, Any] = {"year": 2024} | {f: [] for f in BALANCE_SHEET_LINE_FIELDS}
     balance |= balance_rows or {}
-    return {"ticker": TICKER, "company_name": COMPANY, "currency": "USD",
-            "units": "Millions", "historical_years": [entry],
-            "latest_balance_sheet": balance}
+    return {
+        "ticker": TICKER,
+        "company_name": COMPANY,
+        "currency": "USD",
+        "units": {"printed": "(in millions)", "page": 1},
+        "share_units": {"printed": "(in millions)", "page": 1},
+        "historical_years": [entry],
+        "latest_balance_sheet": balance,
+    }
 
 
 def attack_session(directory: Path, *, honest: bool) -> Path:
@@ -694,7 +712,7 @@ def test_check_exits_1_on_a_page_with_no_text_layer(
     # The cash flow rows cite page 3, which prints nothing: five lines that cannot
     # be confirmed, a failed check each, so exit 1 and never "Clean".
     pdf = write_text_pdf(tmp_path / "TST_10-K_2024.pdf", [
-        [f"{label} {v}" for label, v in _INCOME.values()],
+        ["(in millions)", *(f"{label} {v}" for label, v in _INCOME.values())],
         [f"{label} {v}" for label, v in _BALANCE.values()],
         [],
     ])
@@ -737,9 +755,12 @@ def install_script(
 
 
 def run_pass1(pdf_bytes: bytes) -> Any:
-    return ce._run_financials_pass(
+    outcome = ce._run_financials_pass(
         pdf_bytes, TICKER, COMPANY, _RESOLUTION, target_years=None, include_bs=True,
     )
+    if isinstance(outcome, tuple):
+        outcome = outcome[0]
+    return outcome
 
 
 def test_route_a_a_line_not_found_goes_to_the_check_retry(

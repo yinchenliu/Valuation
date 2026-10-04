@@ -157,7 +157,7 @@ def test_a_balance_sheet_year_does_not_count_as_a_statement_year() -> None:
     financials = FinancialStatements(
         ticker="TEST",
         income_statements=[_income_statement(y) for y in STATEMENT_YEARS],
-        balance_sheets=[BalanceSheet(year=2019)],
+        balance_sheets=[BalanceSheet(year=2019, printed_unit_in_millions=1.0)],
     )
 
     with pytest.raises(ValueError) as raised:

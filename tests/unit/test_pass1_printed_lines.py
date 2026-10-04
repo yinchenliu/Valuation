@@ -62,7 +62,9 @@ from api import routes_valuation
 from ingestion.claude_extractor import (
     Pass1ShapeError,
     ProviderResolution,
+    convert_filing_to_millions,
     figure_from_printed_lines,
+    filing_units,
     parse_pass1,
 )
 from ingestion.session_extraction import cmd_check, load_session_extraction
@@ -128,7 +130,9 @@ def balance(y: int = 2024, **changes: Sequence[float]) -> dict[str, Any]:
 def answer(years: list[dict[str, Any]], bs: dict[str, Any] | None = None) -> str:
     return json.dumps({
         "ticker": TICKER, "company_name": COMPANY, "currency": "USD",
-        "units": "Millions", "historical_years": years,
+        "units": {"printed": "(in millions)", "page": 50},
+        "share_units": {"printed": "(in millions)", "page": 50},
+        "historical_years": years,
         "latest_balance_sheet": bs if bs is not None else {},
     })
 
@@ -136,7 +140,11 @@ def answer(years: list[dict[str, Any]], bs: dict[str, Any] | None = None) -> str
 def parse(years: list[dict[str, Any]], bs: dict[str, Any] | None = None) -> tuple[
     FinancialStatements, list[str],
 ]:
-    return parse_pass1(answer(years, bs), TICKER, COMPANY)
+    ans = answer(years, bs)
+    fin, errors = parse_pass1(ans, TICKER, COMPANY)
+    units = filing_units(ans)
+    fin, _ = convert_filing_to_millions(fin, [], units)
+    return fin, errors
 
 
 # A balance sheet carrying a row of 4,124 (the size of Walmart's "Prepaid expenses
@@ -372,11 +380,12 @@ def test_a_dropped_row_of_4124_fails_names_the_difference_and_keeps_the_figures(
 
 def test_the_tolerance_is_the_one_the_code_applies() -> None:
     # Read from the code, not retyped (P11a-tests, "What to do" 4).
-    tol = BalanceSheet.printed_total_tolerance()
-    assert BalanceSheet.printed_total_check(tol) == "OK"
-    assert BalanceSheet.printed_total_check(-tol) == "OK"
-    assert BalanceSheet.printed_total_check(tol + 1) == "FAIL"
-    assert BalanceSheet.printed_total_check(-(tol + 1)) == "FAIL"
+    bs = BalanceSheet(year=2024, printed_unit_in_millions=1.0)
+    tol = bs.printed_total_tolerance()
+    assert bs.printed_total_check(tol) == "OK"
+    assert bs.printed_total_check(-tol) == "OK"
+    assert bs.printed_total_check(tol + 1) == "FAIL"
+    assert bs.printed_total_check(-(tol + 1)) == "FAIL"
 
 
 @pytest.mark.parametrize(
@@ -390,7 +399,7 @@ def test_a_difference_of_the_tolerance_passes_and_one_more_fails(
 ) -> None:
     # printed total_assets = 860 +/- (tolerance + over); mapped stays 860, so the
     # difference is exactly +/-(tolerance + over).
-    tol = BalanceSheet.printed_total_tolerance()
+    tol = BalanceSheet(year=2024, printed_unit_in_millions=1.0).printed_total_tolerance()
     printed = 860 + sign * (tol + over)
     _, errors = parse([year()], balance(total_assets=[printed]))
     assert bool(errors) is fails, errors
@@ -440,6 +449,8 @@ def run_route_a(
         outcome: Any = ce._run_financials_pass(
             pdf_bytes, TICKER, COMPANY, _RESOLUTION, target_years=None, include_bs=True,
         )
+        if isinstance(outcome, tuple):
+            outcome = outcome[0]
     except ValueError as exc:
         outcome = exc
     return calls, outcome, pdf_bytes
@@ -718,7 +729,7 @@ def test_a_v1_session_file_stops_naming_both_formats(
     message = str(excinfo.value)
     assert str(path) in message
     assert "'session-extraction-v1'" in message
-    assert "'session-extraction-v2'" in message
+    assert "'session-extraction-v3'" in message
     # Step 4 also says the message tells the reader to extract the filing again:
     # the generic "unknown format" stop would name both formats but not this.
     assert re.search(r"extract the filing again", message, re.IGNORECASE), message
@@ -800,7 +811,7 @@ def test_the_cli_balance_check_says_ok_when_the_totals_agree(
 ) -> None:
     fin, _ = parse([year(2023), year(2024)], balance())
     header, assets, le = _cli_balance_rows(fin, capsys)
-    tol = BalanceSheet.printed_total_tolerance()
+    tol = fin.balance_sheets[0].printed_total_tolerance()
     assert f"FAIL above {tol:,.0f}" in header
     assert re.search(r"printed\s+860\s+mapped\s+860\s+diff\s+\+0\s+OK$", assets), assets
     assert re.search(r"printed\s+860\s+mapped\s+860\s+diff\s+\+0\s+OK$", le), le
@@ -822,7 +833,7 @@ def test_the_cli_balance_check_has_no_two_percent_tolerance(
     # Printed 860 + tolerance + 1 against 860. With the default tolerance of the
     # code that is 862: 2 / 860 = 0.23%, well inside the 2% the CLI used to allow
     # (P11a assignment, cli.py:498), so the old check would have said OK.
-    tol = BalanceSheet.printed_total_tolerance()
+    tol = BalanceSheet(year=2024, printed_unit_in_millions=1.0).printed_total_tolerance()
     printed = 860 + tol + 1
     assert (printed - 860) / 860 < 0.02
     fin, _ = parse([year(2023), year(2024)], balance(total_assets=[printed]))
@@ -876,7 +887,7 @@ def test_the_page_shows_ok_when_the_totals_agree(
 ) -> None:
     fin, _ = parse([year(2023), year(2024)], balance())
     header, rows = _page_rows(page_client, monkeypatch, fin)
-    tol = BalanceSheet.printed_total_tolerance()
+    tol = fin.balance_sheets[0].printed_total_tolerance()
     assert f"FAIL above {tol:,.0f}" in header
     assert rows["Total Assets"] == (False, ["860", "860", "+0", "OK"])
     assert rows["Total Liabilities + Equity"] == (False, ["860", "860", "+0", "OK"])

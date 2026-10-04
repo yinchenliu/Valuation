@@ -106,7 +106,7 @@ def _wacc_from_command_line(monkeypatch: pytest.MonkeyPatch, argv: list[str]):
         income_statement=IncomeStatement(
             year=2025, revenue=1000.0, cost_of_revenue=600.0, interest_expense=30.0, tax_expense=80.0
         ),
-        balance_sheet=BalanceSheet(year=2025),
+        balance_sheet=BalanceSheet(year=2025, printed_unit_in_millions=1.0),
         market_cap=300.0,
         cost_of_debt_override=overrides.cost_of_debt_override,
         tax_rate_override=0.25,
@@ -172,7 +172,8 @@ def _run_main_to_stage_8(monkeypatch: pytest.MonkeyPatch, extra: list[str]) -> l
         balance_sheets=[
             BalanceSheet(year=2024, cash_and_equivalents=100.0,
                          noncontrolling_interest_nonredeemable=0.0,
-                         noncontrolling_interest_redeemable=0.0),
+                         noncontrolling_interest_redeemable=0.0,
+                         printed_unit_in_millions=1.0),
         ],
         cash_flow_statements=[
             CashFlowStatement(year=2023, depreciation_amortization=100.0,

@@ -146,7 +146,8 @@ def _two_year_financials() -> FinancialStatements:
             # (P10a). A value, not a default: None would stop run_dcf.
             BalanceSheet(year=2024, cash_and_equivalents=100.0, long_term_debt=500.0,
                          noncontrolling_interest_nonredeemable=0.0,
-                         noncontrolling_interest_redeemable=0.0),
+                         noncontrolling_interest_redeemable=0.0,
+                         printed_unit_in_millions=1.0),
         ],
         cash_flow_statements=[
             # D&A 100/1000 = 10%; CapEx 50/1000 = 5%; WC change -20/1000 -> +2%.
@@ -206,7 +207,8 @@ def _one_year_financials() -> FinancialStatements:
             # (P10a). A value, not a default: None would stop run_dcf.
             BalanceSheet(year=2024, cash_and_equivalents=100.0, long_term_debt=500.0,
                          noncontrolling_interest_nonredeemable=0.0,
-                         noncontrolling_interest_redeemable=0.0),
+                         noncontrolling_interest_redeemable=0.0,
+                         printed_unit_in_millions=1.0),
         ],
     )
 
@@ -991,7 +993,8 @@ def _repaid_debt_financials() -> FinancialStatements:
             # total debt = 0 + 0 + 0 = 0; net debt = 0 - 100 = -100 (net cash).
             BalanceSheet(year=2024, cash_and_equivalents=100.0, long_term_debt=0.0,
                          noncontrolling_interest_nonredeemable=0.0,
-                         noncontrolling_interest_redeemable=0.0),
+                         noncontrolling_interest_redeemable=0.0,
+                         printed_unit_in_millions=1.0),
         ],
     )
 
