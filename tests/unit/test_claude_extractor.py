@@ -36,16 +36,19 @@ the value it held before, so every expected value below is the one it was.
 from __future__ import annotations
 
 import json
+import socket
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+import anthropic
 import pytest
 
 import ingestion.claude_extractor as ce
 from ingestion.claude_extractor import (
     FilingPlan,
     Pass1ShapeError,
+    ProviderResolution,
     merge_filing_extractions,
     parse_pass1,
     parse_pass2,
@@ -579,4 +582,189 @@ def test_merge_keeps_one_item_per_year_amount_direction() -> None:
     #   (2023, 10, add_back) twice -> once, the first; (2023, 10, remove) is a
     #   different key and stays; (2024, 4, add_back) stays. 4 in, 3 out.
     assert items == [first, opposite, other]
+
+
+# ===========================================================================
+# 5. Route A's Pass 2 retry: an unreadable reply stops, it is never "no items"
+# ===========================================================================
+#
+# P13g-tests. `_run_nri_pass` retries once when the Pass 2 reply does not parse.
+# Backlog item 50: when the retry did not parse either, it used to print a warning
+# and return [], so "the reply could not be read" reached the page as "the filing
+# has no non-recurring items". Rule 3 requires a stop that names the filing. The
+# requirement, not the code, is the source of every expectation below:
+#
+#   - two unreadable replies -> ValueError naming the ticker, the company and both
+#     parse errors, after exactly two calls (one attempt, one retry);
+#   - an unreadable reply, then a readable one -> the items the readable one lists,
+#     each field the JSON input unchanged;
+#   - {"non_recurring_items": []} -> [], on the first call, with no retry. The
+#     prompt's own words: an empty list means "read, found none".
+#
+# The parse errors' expected text is computed by the standard library's json.loads
+# on the very same reply text, never by the code under test.
+#
+# NOT locked here, by the assignment: the review's F1 (an OverflowError or a
+# RecursionError from the retry escapes without the filing's name) and F2 (some bad
+# first replies stop with no retry). Both are backlog items; a test here would make
+# today's behaviour permanent.
+#
+# No call can leave the process: `_call_llm` is a scripted stub, and every road to
+# a client or a socket raises `_NetworkReached` (a BaseException, so no
+# `except Exception` anywhere can swallow it). The control test proves it fires.
+
+# Captured at import, before the autouse fixture swaps it, for the control test.
+_REAL_CALL_LLM = ce._call_llm
+
+_NRI_RESOLUTION = ProviderResolution(
+    provider="claude", model="stub-model", transport="anthropic-direct",
+    transport_label="stub", credential="anthropic-api-key",
+    credential_source="stub: no call is made",
+)
+
+
+class _NetworkReached(BaseException):
+    """Raised by every road to the network while the guard is up."""
+
+
+@pytest.fixture
+def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make every road to a model client or a socket raise; remove every key."""
+
+    def _block(*args: object, **kwargs: object) -> Any:
+        raise _NetworkReached("a network road was taken")
+
+    for var in ("ANTHROPIC_API_KEY", "ANTHROPIC_FOUNDRY_API_KEY",
+                "GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(ce, "_call_claude", _block)
+    monkeypatch.setattr(ce, "_call_gemini", _block)
+    monkeypatch.setattr(ce, "_build_claude_client", _block)
+    monkeypatch.setattr(anthropic.Anthropic, "__init__", _block)
+    monkeypatch.setattr(anthropic.AnthropicFoundry, "__init__", _block)
+    monkeypatch.setattr(socket.socket, "connect", _block)
+    monkeypatch.setattr(socket, "create_connection", _block)
+
+
+def _nri_financials() -> FinancialStatements:
+    # Two Pass 1 years, so the filing's identity is ticker, company and years.
+    return FinancialStatements(
+        ticker="ZQX",
+        company_name="Zeta Quarry Holdings",
+        income_statements=[IncomeStatement(year=2023, revenue=900.0),
+                           IncomeStatement(year=2024, revenue=1000.0)],
+    )
+
+
+def _run_pass2(monkeypatch: pytest.MonkeyPatch, answers: list[str],
+               ) -> tuple[list[bytes | None], Any]:
+    """Run `_run_nri_pass` on scripted replies, one per call, in order.
+
+    Returns the PDF bytes sent with each call, and the outcome: the item list, or
+    the exception raised. A call beyond the script raises AssertionError, which is
+    not caught here.
+    """
+    calls: list[bytes | None] = []
+
+    def stub(system_prompt: str, user_prompt: str, resolution: ProviderResolution,
+             pdf_bytes: bytes | None = None) -> tuple[str, int, int]:
+        if len(calls) >= len(answers):
+            raise AssertionError(f"call {len(calls) + 1} was not scripted")
+        calls.append(pdf_bytes)
+        return answers[len(calls) - 1], 0, 0
+
+    monkeypatch.setattr(ce, "_call_llm", stub)
+    try:
+        outcome: Any = ce._run_nri_pass(b"%PDF-stub", _nri_financials(), _NRI_RESOLUTION)
+    except ValueError as exc:  # the outcome under test
+        outcome = exc
+    return calls, outcome
+
+
+def _stdlib_parse_error(text: str) -> json.JSONDecodeError:
+    """The error the standard library raises on `text`: the independent expectation."""
+    try:
+        json.loads(text)
+    except json.JSONDecodeError as exc:
+        return exc
+    raise AssertionError(f"{text!r} parsed; the test needs a reply that does not")
+
+
+# Two replies, each with braces (so a JSON object is found) and each malformed in
+# a different way, so the two parse errors carry different text.
+_BAD_FIRST = '{this is not json}'
+_BAD_RETRY = '{"non_recurring_items": [}'
+
+
+def test_pass2_unreadable_twice_stops_naming_the_filing_and_both_errors(
+    monkeypatch: pytest.MonkeyPatch, no_network: None,
+) -> None:
+    first_error = _stdlib_parse_error(_BAD_FIRST)
+    retry_error = _stdlib_parse_error(_BAD_RETRY)
+    assert str(first_error) != str(retry_error)  # precondition: two distinct errors
+
+    calls, outcome = _run_pass2(monkeypatch, [_BAD_FIRST, _BAD_RETRY])
+
+    # The stop, never the old `return []`.
+    assert isinstance(outcome, ValueError), f"expected a ValueError, got {outcome!r}"
+    message = str(outcome)
+    # One attempt and one retry: exactly two calls.
+    assert len(calls) == 2
+    # The filing, by what Pass 1 read from it: the inputs of _nri_financials().
+    assert "ZQX" in message
+    assert "Zeta Quarry Holdings" in message
+    # Both parse errors, each the standard library's own text on that reply.
+    assert str(first_error) in message
+    assert str(retry_error) in message
+
+
+def test_pass2_unreadable_then_readable_returns_the_items(
+    monkeypatch: pytest.MonkeyPatch, no_network: None,
+) -> None:
+    item = {
+        "year": 2023,
+        "description": "Quarry litigation settlement",
+        "amount": 40.0,
+        "line_item": "other_operating_expense",
+        "direction": "add_back",
+        "category": "litigation",
+        "confidence": "medium",
+        "source": "Note 11 - Contingencies",
+    }
+    calls, outcome = _run_pass2(
+        monkeypatch, [_BAD_FIRST, json.dumps({"non_recurring_items": [item]})],
+    )
+    assert len(calls) == 2  # the retry was needed, and was made
+    # Each expected value is the JSON input, unchanged.
+    assert outcome == [NonRecurringItem(
+        year=2023,
+        description="Quarry litigation settlement",
+        amount=40.0,
+        line_item="other_operating_expense",
+        direction="add_back",
+        category="litigation",
+        confidence="medium",
+        source="Note 11 - Contingencies",
+    )]
+
+
+def test_pass2_readable_empty_list_is_no_items_on_the_first_call(
+    monkeypatch: pytest.MonkeyPatch, no_network: None,
+) -> None:
+    calls, outcome = _run_pass2(monkeypatch, ['{"non_recurring_items": []}'])
+    # "Read, found none" is a real answer: [] and no retry.
+    assert outcome == []
+    assert len(calls) == 1
+
+
+def test_the_network_guard_fires(no_network: None) -> None:
+    # Control: the guard the three tests above use does stop each road.
+    with pytest.raises(_NetworkReached):
+        _REAL_CALL_LLM("system", "user", _NRI_RESOLUTION)
+    with pytest.raises(_NetworkReached):
+        anthropic.Anthropic(api_key="not-a-key")
+    with pytest.raises(_NetworkReached):
+        socket.create_connection(("example.invalid", 443))
+    with socket.socket() as sock, pytest.raises(_NetworkReached):
+        sock.connect(("192.0.2.1", 443))
 

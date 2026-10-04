@@ -1793,11 +1793,32 @@ def _run_nri_pass(
         raw2, _, _ = _call_llm(
             system_prompt, fix_prompt, resolution,
         )
+        # Backlog item 50, and item 8's site here. This branch used to print a
+        # warning and return [], so "the reply could not be read" reached the CLI
+        # and the result page as "the filing has no non-recurring items" — the
+        # one difference `_parse_nri_response` exists to keep (rule 3). It stops.
+        # The four types are the ones the parse raises, each measured on a stub
+        # reply: ValueError (no JSON object, malformed JSON, an absent
+        # `non_recurring_items`, `confidence` or `source`, a year that is not an
+        # integer), KeyError (an absent `year`, `amount` or other item field),
+        # TypeError (`non_recurring_items` not a list, a null item or amount) and
+        # AttributeError (an item that is a JSON list). Nothing else is caught.
         try:
             nri = _parse_nri_response(_extract_json(raw2))
-        except Exception:
-            print("  [Pass 2 WARN] NRI parsing failed after retry — returning empty list")
-            return []
+        except (ValueError, KeyError, TypeError, AttributeError) as retry_exc:
+            # The filing as this function knows it: no path reaches here, so it
+            # is named by what Pass 1 read from it. Each value is printed as it
+            # is (repr), so an empty ticker shows as '' and is not replaced.
+            raise ValueError(
+                f"Pass 2 (non-recurring items) could not be read for the filing "
+                f"with ticker {financials.ticker!r}, company "
+                f"{financials.company_name!r}, fiscal years {financials.years} "
+                f"read in Pass 1. The model's reply did not parse "
+                f"({type(exc).__name__}: {exc}), and the reply to one retry did "
+                f"not parse either ({type(retry_exc).__name__}: {retry_exc}). "
+                f"Nothing was read about non-recurring items, which is not the "
+                f"same as the filing having none, so the run stops here."
+            ) from retry_exc
 
     if nri:
         print(f"  [Pass 2] Found {len(nri)} non-recurring item(s):")
