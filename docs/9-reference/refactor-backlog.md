@@ -49,7 +49,7 @@ rather than lying.
 | 12 | Dead code and stale repository hygiene | — | several | **mostly closed** |
 | 13 | Provider changed with the number of PDFs uploaded | stopping, here | `ingestion/`, `api/` | **closed at `0e4649f`** |
 | 14 | Empty `projected_fcffs` raises a bare `IndexError` | stopping | `analysis/dcf.py` | **closed at `ff632df`** |
-| 15 | `latest_year` returns `0` for an empty extraction | **silent** | `models/financial_statements.py` | new |
+| 15 | `latest_year` returns `0` for an empty extraction | **silent** | `models/financial_statements.py` | **closed by `P13b-models-silent` (`aa6f80d`)**: `latest_year` raises when there are no statements |
 | 16 | Nine scripts point at a path that does not exist | stopping | `tests/` | new |
 | 17 | `analysis/` imports from `ingestion/` | — | `analysis/capm.py` | new |
 | 18 | The lint gate's rule set is unpinned | — | `ruff.toml` | open |
@@ -59,26 +59,26 @@ rather than lying.
 | 22 | Zero debt balance gives a 0% cost of debt | **silent** | `analysis/wacc.py` | **closed at `6cf34d3`**; its weights half is item 38 |
 | 23 | `analysis/fcff.py` holds no `raise` for empty statements, **and `calculate_fcff_projected` has seven unguarded float parameters** | **silent** | `analysis/fcff.py` | open; **the clamp twin (23b) is closed at `2ca620a`** |
 | 24 | A red test that goes green stays outside the gate | — | `tests/` | **closed at `81816be`** |
-| 25 | An adjustment whose year matches no statement is discarded | **silent** | `analysis/normalizer.py` | **new** |
+| 25 | An adjustment whose year matches no statement is discarded | **silent** | `analysis/normalizer.py` | **closed by `P13a-analysis-silent` (`47b8b09`)**: `normalize_financials` raises, naming each unmatched item and the statement years |
 | 26 | The `files` branch tests for a character every path contains | stopping, **latent** | `api/routes_valuation.py` | **new.** Live only on the legacy no-year branch |
 | 27 | `GET /` and `GET /assumptions` return **500** | stopping | `api/` | **closed at `622262b`** |
 | 28 | `api/routes_upload.py:27` — `str \| None` used as a path segment | stopping | `api/routes_upload.py` | **new.** The last type error in that file |
 | 29 | `POST /valuation` with no `files` runs an extraction on an empty path | **silent** | `api/routes_valuation.py` | **new.** A rule 3 break with no field named |
 | 30 | A NaN in one `ProjectedFCFF` reaches the share price | **silent** | `analysis/dcf.py` | **closed at `2ca620a`** |
 | 31 | `discount_cash_flows`' `wacc` is unguarded on a direct call | **silent** | `analysis/dcf.py` | **new, latent.** The `run_dcf` chain stops two lines later |
-| 32 | `models/valuation.py:138` renders a share price of `0.0` on zero diluted shares | **silent** | `models/valuation.py` | **new.** Same shape as item 2 |
+| 32 | `models/valuation.py:138` renders a share price of `0.0` on zero diluted shares | **silent** | `models/valuation.py` | **closed by `P13b-models-silent` (`aa6f80d`)**: `run_dcf` and `implied_share_price` stop on a share count that is not a finite number above 0 |
 | 33 | The CLI cache is keyed on the **ticker alone**, so the PDFs you pass are silently ignored | **silent** | `cli.py` | **closed at `6cf34d3`** |
 | 34 | The risk-free rate is a hardcoded `0.04` presented as measured | **silent** | `config.py`, `analysis/capm.py`, `api/` | **closed at `6cf34d3`** |
 | 35 | A beta from a regression explaining 10% of variance is reported without qualification | **silent** | `analysis/capm.py` | **closed at `6cf34d3`** |
 | 36 | **The same PDF extracted twice gave share prices 16% apart** | **silent** | `ingestion/`, `analysis/` | **half closed at `7354698`.** `low` items are now withheld; the variance itself is unmeasured |
-| 39 | `models/financial_statements.py:28` defaults `confidence` to `"high"` | **silent** | `models/` | **new.** The last place absence becomes the strongest reading |
+| 39 | `models/financial_statements.py:28` defaults `confidence` to `"high"` | **silent** | `models/` | **closed by `P13b-models-silent` (`aa6f80d`)**: `confidence` has no default |
 | 40 | Five dev scripts now produce a price neither entry point would | — | `tests/` | **new, and created by `7354698`** |
 | 37 | `analysis/wacc.py`'s new stop states an inference as a fact | — | `analysis/wacc.py` | **new.** Message only; 23 of 23 wacc tests stay green with the rewrite |
-| 38 | `analysis/wacc.py` fabricates a 100% equity weighting when market cap and debt are both zero | **silent** | `analysis/wacc.py` | **new.** Item 22's weights half. Verified unblocked |
+| 38 | `analysis/wacc.py` fabricates a 100% equity weighting when market cap and debt are both zero | **silent** | `analysis/wacc.py` | **closed by `P13a-analysis-silent` (`47b8b09`)**: a sum of 0, and a market cap of 0 or below, stop. Its second face is item 38b, open |
 | 43 | The fiscal year comes from the filename's date, not from the filing | **silent** | `ingestion/filings.py`, `api/routes_upload.py` | **closed by `P10c-fiscal-year`**: the filename year is verified against the cover date and the column label, and a mismatch stops |
 | 44 | The `units` field is extracted and then ignored | **silent**, latent | `ingestion/claude_extractor.py`, `api/routes_valuation.py` | **new at `cde33cb`.** A filing in thousands is labelled `M`; one fallback mixes scales |
 | 45 | `calculate_beta` checks for a constant market series only after SciPy has already raised | stopping | `analysis/capm.py` | **new at `cde33cb`.** SciPy 1.17.1 raises first, so the stop does not name `market_returns`. **Held by the user, 2026-10-02** |
-| 46 | `.env` overrides the environment, so unsetting a key does not stop a paid call | **silent** | `config.py` | **new at `cde33cb`.** Found by `P9a-session-route`, after it caused one possibly billed API call |
+| 46 | `.env` overrides the environment, so unsetting a key does not stop a paid call | **silent** | `config.py` | **closed by `P13c-env-override`, round 3**: `.env` fills only absent names, so a shell value wins and an empty one turns the key off; `config.credential_origin` labels a key `(.env file)` or `(shell or parent process, not .env)` by comparing values. Open note, the round 3 review's F5: a value set inside the process by a test or notebook also reads the second label; no shipped code does that |
 | 47 | The income statement shown on both pages has no interest income row, so EBT does not add up from the rows shown | — | `cli.py`, `templates/_statements.html` | **new at `cde33cb`.** Display only: the figure is in EBT, but a reader cannot see it |
 | 48 | The equity bridge does not subtract noncontrolling interest | **silent** | `analysis/dcf.py`, `models/`, the Pass 1 schema | **closed by `P10a-nci-bridge`**: two printed keys, summed in `total_noncontrolling_interest`. Walmart $28.84 → $28.02 |
 | 49 | Given several PDFs, the API route drops any PDF with no fiscal year and says nothing | **silent** | `cli.py`, `api/routes_valuation.py` | **new at `P9a`.** Route B stops on the same input, so the two routes now differ on it |
@@ -513,7 +513,7 @@ nothing, which is the other half. Item 8's blanket catch then renders
 `projected_fcffs`. Measured before and after by the reviewer:
 `IndexError: list index out of range` → `ValueError: projected_fcffs is empty…`.
 
-## 15. `latest_year` returns `0` for an empty extraction · **silent**
+## 15. `latest_year` returns `0` for an empty extraction · **CLOSED at `aa6f80d`**
 
 **Fact.** `models/financial_statements.py:295` — `max(self.years) if self.years else 0`.
 
@@ -618,7 +618,7 @@ evidence that would disambiguate the two readings.** That is a future signature
 widening, not a guess available today — but it means this stop could one day become a
 decision.
 
-## 38. A 100% equity weighting is fabricated when market cap and debt are both zero · **silent**
+## 38. A 100% equity weighting is fabricated when market cap and debt are both zero · **CLOSED at `47b8b09`**
 
 **Fact.** `analysis/wacc.py:215-223`. When `market_cap + total_debt == 0` the function
 returns `equity_weight = 1.0, debt_weight = 0.0` instead of stopping. A company with no
@@ -637,7 +637,7 @@ which requires the call to return. **No test pins the fabricated weights themsel
 zero debt balance is gone, so a guard added here no longer collides with it. Verified:
 `1 failed, 145 passed` with the guard inserted. **Safe to dispatch.**
 
-## 39. `confidence` still defaults to the strongest reading in `models/` · **silent**
+## 39. `confidence` still defaults to the strongest reading in `models/` · **CLOSED at `aa6f80d`**
 
 **Fact.** `models/financial_statements.py:28` — `confidence: str = "high"`.
 
@@ -682,7 +682,7 @@ anyone auditing the file, as a default this platform is willing to assume.
 **Fix.** Delete the `else 0.05`. If `rev_growth` is empty at that point the loop cannot
 be running, so no branch is lost. Do it as part of item 1, not on its own.
 
-## 42. A supplied growth list longer than the projection is silently truncated · **silent**
+## 42. A supplied growth list longer than the projection is silently truncated · **CLOSED at `aa6f80d`**
 
 **Fact.** `analysis/projector.py:170` truncates `rev_growth` to `projection_years`.
 Measured at `6e58f13`: five supplied rates with `projection_years=2` produce `[0.1, 0.2]`
@@ -753,7 +753,7 @@ fails on macOS for that reason. It is the one failure in the test gate there.
 **Fix, when assigned.** Check `np.var(market_returns) == 0` before calling
 `linregress`. **Held by the user on 2026-10-02.**
 
-## 46. `.env` overrides the environment, so unsetting a key does not stop a paid call · **silent**
+## 46. `.env` overrides the environment, so unsetting a key does not stop a paid call · **CLOSED by `P13c-env-override`**
 
 **Fact.** `config.py:15` is `load_dotenv(BASE_DIR / ".env", override=True)`. Its comment
 says "System env vars still work; .env just provides a convenient local override". The
@@ -1031,7 +1031,7 @@ calls it that way today" is the argument
 [.claude/agents/code-reviewer.md](../../.claude/agents/code-reviewer.md) names as one of
 the three that never justify a downgrade. Reachability is not the test.
 
-## 32. Zero diluted shares render a share price of `0.0` · **silent**
+## 32. Zero diluted shares render a share price of `0.0` · **CLOSED at `aa6f80d`**
 
 **Fact.** `models/valuation.py:138`. Reported by the tester of `P1-suite`, reported
 again by `P4d-cashflow-nan`, and never assigned.
@@ -1242,7 +1242,7 @@ drops the prefix turns it live with no other edit.
 structured data rather than as one delimited string. **Do not "fix" it by testing for a
 drive letter** — that repairs one platform and leaves the design wrong.
 
-## 25. An adjustment whose year matches no statement is silently discarded · **silent**
+## 25. An adjustment whose year matches no statement is silently discarded · **CLOSED at `47b8b09`**
 
 **Fact.** `analysis/normalizer.py:167-170`. `normalize_financials` groups the
 non-recurring items by year, then walks the **income statements** and applies whatever

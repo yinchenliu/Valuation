@@ -1891,7 +1891,7 @@ def _resolve_claude(model: str) -> ProviderResolution:
                 transport="foundry",
                 transport_label=transport_label,
                 credential="foundry-api-key",
-                credential_source="ANTHROPIC_FOUNDRY_API_KEY (environment)",
+                credential_source=config.credential_origin("ANTHROPIC_FOUNDRY_API_KEY"),
             )
 
         # No Foundry key, so an Entra ID token. Prove the library is importable
@@ -1928,7 +1928,7 @@ def _resolve_claude(model: str) -> ProviderResolution:
             transport="anthropic-direct",
             transport_label="Anthropic public API (api.anthropic.com)",
             credential="anthropic-api-key",
-            credential_source="ANTHROPIC_API_KEY (environment)",
+            credential_source=config.credential_origin("ANTHROPIC_API_KEY"),
         )
 
     raise ValueError(_NO_CLAUDE_CREDENTIAL)
@@ -1948,7 +1948,7 @@ def _resolve_gemini(model: str) -> ProviderResolution:
         transport="gemini-direct",
         transport_label="Google Gemini API (generativelanguage.googleapis.com)",
         credential="gemini-api-key",
-        credential_source="GEMINI_API_KEY (environment)",
+        credential_source=config.credential_origin("GEMINI_API_KEY"),
     )
 
 

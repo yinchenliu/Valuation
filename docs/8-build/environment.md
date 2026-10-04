@@ -170,14 +170,62 @@ ANTHROPIC_API_KEY=...
 GEMINI_API_KEY=...
 ```
 
-### Warning: `.env` wins over the environment
+### The order: the shell wins over `.env`
 
-`config.py` loads `.env` with `override=True`. So a key in `.env` replaces the same
-variable in the environment, and `env -u ANTHROPIC_API_KEY …` does **not** remove it.
-**Never rely on unsetting a variable to prevent a paid API call while `.env` holds the
-key.** Neither `env -u` nor an empty value works while `override=True`. To run with no
-credential, replace `ingestion.claude_extractor._call_llm` with a stub, or move `.env`
-aside. Backlog item 46 holds the measurement.
+`config.py` reads `.env` once, with `dotenv_values`, and fills only the names that are
+absent from the environment. A name that is set, even to an empty value, is not filled.
+That is the behaviour of `load_dotenv(override=False)`. It has held since
+`P13c-env-override` (2026-10-03). Before that, `config.py` used `override=True`. So
+**a value set in the shell wins over `.env`.**
+
+| You run | Result |
+|---|---|
+| `ANTHROPIC_API_KEY=<key> …` | the shell's key is used, not the one in `.env` |
+| `ANTHROPIC_API_KEY= …` (empty) | **the key is off for that one run.** `resolve_provider` stops before any network call |
+| `env -u ANTHROPIC_API_KEY …` | **the key is NOT off.** The name is absent, so `config.py` fills it from `.env` |
+| nothing | `.env` supplies the key |
+
+**To run with the key off, set it empty for that run:**
+
+```bash
+ANTHROPIC_API_KEY= .venv/bin/python cli.py …
+```
+
+**Never use `env -u` to prevent a paid API call while `.env` holds the key.** It does
+not work under either load order. Backlog item 46
+([refactor-backlog.md](../9-reference/refactor-backlog.md), item 46) holds the probe
+table that measured this: with `override=False`, an empty shell value removes the key
+and `env -u` does not. On 2026-10-02 an `env -u` run started Pass 1 on a real 10-K.
+
+The same order holds for `GEMINI_API_KEY` and `ANTHROPIC_FOUNDRY_API_KEY`.
+
+### Whether the key in use is the one in `.env` is in the output
+
+`config.credential_origin` builds the `credential_source` label that
+`describe_resolution` prints and the result page shows (rule 6). **The label is a
+comparison of values, made at the moment the label is built.** The value in use in
+`os.environ` is compared with the value that `.env` holds for the same name:
+
+| Label | Meaning |
+|---|---|
+| `ANTHROPIC_API_KEY (.env file)` | the value in use equals the value in `.env` |
+| `ANTHROPIC_API_KEY (shell or parent process, not .env)` | the value in use differs from the value in `.env`, or `.env` does not hold the name |
+
+**A shell value that equals the file's value reads `(.env file)`.** That is harmless:
+the key in use is the key in the file, whoever set it.
+
+**The label says nothing about a value's history.** It does not say which process set
+the value, or when. A child process inherits its parent's environment, and that
+includes any value the parent filled from `.env`. Two attempts to record a value's
+history were both broken at a process boundary (P13c rounds 1 and 2). So the label
+states only a fact that each process can check for itself. A child spawned by
+`python app.py` (uvicorn's reloader) labels the inherited key `(.env file)` when it is
+the file's key. A value that a parent chose, or that code in the process replaced,
+reads `(shell or parent process, not .env)`.
+
+`config.py` writes nothing to the environment apart from the names it fills from
+`.env`. It keeps the file's values for the three credential names in memory, to compare
+them. It never prints them.
 
 ### What happens when nothing resolves
 

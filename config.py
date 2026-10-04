@@ -1,7 +1,8 @@
+import os
 from pathlib import Path
 from typing import Final
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 
 # Project paths
 # These name locations; they do not create them. Importing a configuration
@@ -10,9 +11,94 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 
-# Load .env from project root — values are merged into os.environ.
-# System env vars still work; .env just provides a convenient local override.
-load_dotenv(BASE_DIR / ".env", override=True)
+# Load .env from the project root into os.environ.
+#
+# The order: a name already in the environment WINS over .env. This module reads
+# .env ONCE, with dotenv_values, and fills only the names that are absent from
+# os.environ. A name that is set, even to the empty string, is not filled. So:
+#
+#   * `ANTHROPIC_API_KEY=shell-value ...` runs on the shell's key;
+#   * `ANTHROPIC_API_KEY= ...` (empty) runs with the key OFF for that one run;
+#   * `env -u ANTHROPIC_API_KEY ...` does NOT turn the key off — the name is absent,
+#     so it is filled from .env.
+#
+# This is the behaviour of `load_dotenv(override=False)`, done here by hand so the
+# file's values are kept for credential_origin below without a second read.
+# Backlog item 46 (docs/9-reference/refactor-backlog.md) holds the probe table.
+# Until P13c this was `load_dotenv(..., override=True)`, and nothing in the shell
+# could turn a key off.
+#
+# The credential names whose origin a run labels (rule 6).
+CREDENTIAL_NAMES: Final = (
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_FOUNDRY_API_KEY",
+    "GEMINI_API_KEY",
+)
+
+
+def _load_dotenv_without_override() -> dict[str, str]:
+    """Read .env once, fill the absent names, and return the file's credential values.
+
+    A missing .env file reads as no names: dotenv_values returns an empty mapping,
+    as load_dotenv does. A line with a name and no `=` reads as None, and is neither
+    filled nor kept, as load_dotenv does.
+
+    One difference from load_dotenv(override=False): a `${OTHER}` reference inside
+    .env is resolved file-first by dotenv_values, environment-first by load_dotenv.
+    It matters only when .env uses `${...}` for a name the shell also sets.
+
+    Returns only the CREDENTIAL_NAMES the file holds, so the rest of the file's
+    values are not kept in this module.
+    """
+    file_values = dotenv_values(BASE_DIR / ".env")
+    for name, value in file_values.items():
+        if value is not None and name not in os.environ:
+            os.environ[name] = value
+    return {
+        name: value
+        for name, value in file_values.items()
+        if name in CREDENTIAL_NAMES and value is not None
+    }
+
+
+# The value .env holds for each credential name it holds. Compared, never shown.
+_DOTENV_CREDENTIAL_VALUES: Final[dict[str, str]] = _load_dotenv_without_override()
+
+
+def credential_origin(name: str) -> str:
+    """Say whether the credential in use is the one in .env. Never returns its value.
+
+    The rule is a comparison each process can check for itself, at call time:
+
+    * the value in os.environ equals the value .env holds: `(.env file)`;
+    * it differs, or .env does not hold the name: `(shell or parent process, not .env)`.
+
+    A shell value that equals the file's value reads `(.env file)`. That is harmless:
+    the key in use is the key in the file.
+
+    The label says nothing about a value's history (who set it, in which process).
+    Two rounds of P13c showed that history does not survive a process boundary.
+
+    Stops, naming the field, when the name is not one this module knows, or is not
+    set to a non-blank value: a label for an absent credential would be a false
+    label (rule 6).
+    """
+    if name not in CREDENTIAL_NAMES:
+        raise ValueError(
+            f"credential_origin: {name!r} is not one of {CREDENTIAL_NAMES}.",
+        )
+    if name not in os.environ or not os.environ[name].strip():
+        raise ValueError(
+            f"credential_origin: {name} is not set to a non-blank value, so it has "
+            "no origin to label.",
+        )
+    if (
+        name in _DOTENV_CREDENTIAL_VALUES
+        and _DOTENV_CREDENTIAL_VALUES[name] == os.environ[name]
+    ):
+        return f"{name} (.env file)"
+    return f"{name} (shell or parent process, not .env)"
+
 
 # Extraction provider — named ONCE, here.
 #

@@ -4,9 +4,9 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `1888ccb` (`P12a-tests`), 2026-10-03**, on branch `main`, **on the macOS machine**
+**Measured at `17381f3` (`P13a`, `P13b`), 2026-10-03**, on an export of that commit; `P13c` re-measured on that base by its round 3 review (2 failed, 773 passed; ruff 5; mypy 10), on branch `main`, **on the macOS machine**
 (`.venv/bin/python`, Python 3.11.6). Every figure before `cde33cb` was measured on the
-Windows machine. **Thirty-one work units accepted, and not one on its own report.** Every programmer run went to a reviewer that
+Windows machine. **Thirty-three work units accepted, and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; **five** times a reviewer or a
 programmer overturned a claim — twice against a programmer, **three times against the
 orchestrator**. The journal is [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
@@ -23,14 +23,14 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `1888ccb` (macOS) |
+| Gate | Command | Result at `17381f3` (macOS) |
 |---|---|---|
-| Tests | `.venv/bin/python -m pytest -q` | **726 tests. 724 pass, 2 fail**: the 2 red on purpose |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **724 passed, 0 failed** |
+| Tests | `.venv/bin/python -m pytest -q` | **775 tests. 773 pass, 2 fail**: the 2 red on purpose |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **773 passed, 0 failed** |
 | Lint | `.venv/bin/python -m ruff check .` | **5 errors**, every one `BLE001` |
 | Types | `.venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **10 errors in 4 files**, 20 files checked |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
-| **Rule 3 census** | the grep at [rules.md:65](docs/2-rules/rules.md) | **67**, unchanged by `P12a` and `P12a-tests`. `P11a` replaced the Pass 1 parser's `.get(field, 0)` reads (114 at `24a9a90`). Under zsh, quote `'--include=*.py'` or the count reads 0 |
+| **Rule 3 census** | the grep at [rules.md:65](docs/2-rules/rules.md) | **65**. `P13b` removed two conditional zeros (`latest_year`, `implied_share_price`). `P11a` replaced the Pass 1 parser's `.get(field, 0)` reads (114 at `24a9a90`). Under zsh, quote `'--include=*.py'` or the count reads 0 |
 | **Write guard** | `.venv/bin/python .claude/check_guard.py` | **48/48** |
 
 **There is a fourth gate now, and it is stricter than `import app` ever was.**
@@ -374,10 +374,15 @@ the headline. Re-ranked at `622262b`.
 
 | # | Item | Cost |
 |---|---|---|
+| 69 | A negative debt balance gives WACC weights of 1.2 and −0.2 | **new, found by `P13a` round 2.** Not yet known whether an extraction can produce a negative debt line |
+| 38b | Item 38's second face: a supplied cost of debt with zero debt lines still gives 100% equity; no balance sheet gives a bare `AttributeError` | **restated at `P13a`** from what both reviews ran |
+| 68 | The CLI prints no assumption label | **new, the `P13b` review.** `SUBSTITUTED`, `REPEATED` and `DROPPED` show on the web page only (rule 6) |
+| 66 | `derive_assumptions` pads the caller's growth list in place | **new, found by `P13b`.** A second call loses the `REPEATED` clause (rule 6) |
+| 65 | `upside_downside` returns 0.0 on a zero current price | **new, found by `P13b`.** Reads as "fairly valued" |
+| 67 | `projection_years` is never checked | **new, the `P13b` review, minor.** No path shows the wrong label today |
 | 62 | No failed reading check reaches the web page, for either route | **new at `P12a`.** Route A prints to the server console; route B's failures print in `check` and the CLI. Only the balance `FAIL` shows on the page |
 | 64 | The page check lets a label written across two printed rows take either row's figure | **new, `P12a` round 2 review's F6.** Needs a label the filing does not print; stated in the docs |
 | 63 | A filing with no text layer uses up route A's two retries | **new, `P12a` review's F5.** Not live: all 16 filings have a text layer |
-| 46 | `.env` overrides the environment | **new.** `env -u` does not remove the key; it caused one possibly billed call during `P9a` |
 | 49 | Given several PDFs, the API route drops one with no year, silently | **new.** Route B stops on the same input |
 | 44 | The `units` field is extracted and ignored | **new, latent.** Chipotle reports in thousands |
 | 47 | The income statement shown has no interest income row | **new, display.** EBT does not add up from the rows shown |
@@ -389,15 +394,11 @@ the headline. Re-ranked at `622262b`.
 | 36 | **The same filing extracted twice gave share prices 16% apart** — $343.15 against $296.01 | **half closed at `7354698`.** On the user's decision, `low`-confidence items are now withheld and listed. **The variance itself is still unmeasured** — one pair is an observation, not a range, and the single occurrence that prompted it cannot be sized: three cached extractions hold **zero** `low` items between them |
 | 39 | `models/financial_statements.py:28` defaults `confidence` to `"high"` | the last place absence becomes the strongest reading. **No live path reaches it**, so the decision is in force today; it is a type-level gap |
 | 40 | Five dev scripts produce a price neither entry point would | **created by `7354698`.** They apply `low` items both entry points withhold, and print no excluded block |
-| 38 | `analysis/wacc.py` fabricates a 100% equity weighting when market cap and debt are both zero | a supplied `--cost-of-debt` with a missing balance sheet also gets a zero debt weight, so the rate the user typed vanishes. **Verified unblocked**; fixing it costs exactly one test |
-| 32 | `models/valuation.py:138` renders a share price of `0.0` on zero diluted shares | same shape as item 2, on the **denominator** of the headline figure |
 | 37 | `analysis/wacc.py`'s new stop states an inference as a fact | the stop is right; the message asserts the extraction failed when a real deleveraging produces the same pattern. **Message only** |
 | 31 | `discount_cash_flows`' `wacc` is unguarded on a **direct** call | **latent.** The `run_dcf` chain stops two lines later, so no current path reaches it |
 | 1 | **114** silent zero-default sites — `models/` 60, `ingestion/` 49, `analysis/` 3, `api/` 2 | **worse than its original description.** It does not produce zeros; it produces a signed, correctly-scaled figure that tracks the filing and reads as a measurement |
-| 25 | `analysis/normalizer.py:167-170` — an adjustment whose **year** matches no statement is discarded | a valuation labelled "normalised" whose figures are as-reported, with no signal |
 | 8 | Blanket `except Exception` at five sites | **it swallowed the web outage for the life of the repository**, because the error page rendered through the same broken call |
 | 6 | Five `x / 100 if x else None` conversions | a deliberate `0` from the user is read as "not supplied" |
-| 15 | `models/financial_statements.py:295` — `latest_year` returns `0` for an empty extraction | turns "no data" into "year zero" with no error. The silent upstream of item 2 |
 | 22 | `analysis/wacc.py:37` — zero debt balance gives a 0% cost of debt | missing data read as a measurement |
 | 23 | `analysis/fcff.py` holds **no `raise` at all** | wholly empty statements return a well-formed result with `fcff = 0.0` |
 | 10 | D&A subtraction buried in the parser, `ingestion/claude_extractor.py:479` | an accounting decision taken inside a parser, on two zero-defaulted values |
@@ -410,7 +411,6 @@ the headline. Re-ranked at `622262b`.
 | 17 | `analysis/capm.py:14` imports from `ingestion/` | a layering break |
 | 18 | The lint gate's rule set is unpinned | a ruff upgrade changes what the gate enforces, with no commit to point at |
 | 28 | `api/routes_upload.py:27` — `str \| None` used as a path segment | the last type error in that file |
-| 42 | A supplied growth list longer than the projection is silently truncated | **new at `6e58f13`.** Five rates supplied, two used, and the label says `supplied` without naming the three discarded |
 | 41 | `analysis/projector.py:169`'s `0.05` growth rate is unreachable | **new at `6e58f13`.** Proved dead two ways. The **cheapest hit in item 1's census** — deleting it cannot move a number |
 
 ### Closed
@@ -441,11 +441,20 @@ the headline. Re-ranked at `622262b`.
 | 43 | The fiscal year came from the filename, unverified | `bf6eb20` |
 | 56 | Pass 1 asked the model to compute | `ae27f47` |
 | 59 | Nothing checked that a printed line is on the page it cites | `a64818b` |
+| 25 | An adjustment whose year matches no statement was discarded | `47b8b09` |
+| 38 | A 100% equity weighting was invented when market cap and debt were both zero | `47b8b09`, with a stop on a market cap of 0 or below |
+| 15 | `latest_year` returned `0` for an empty extraction | `aa6f80d` |
+| 32 | Zero diluted shares rendered a share price of `0.0` | `aa6f80d` |
+| 39 | `confidence` defaulted to `"high"` | `aa6f80d` |
+| 42 | A supplied growth list longer than the projection was cut with no label | `aa6f80d` |
+| 46 | `.env` overrode the environment, so unsetting a key did not stop a paid call | `P13c-env-override`, this commit |
 
 **At `a64818b` these tables hold 24 closed items and 37 open ones** (item 23 appears twice above). They are the headline, not the whole list: items 55, 57, 58, 60 and 61 are open in the backlog and not shown here. Items 19 to 28 did not exist when this build
 started — **every one of them was found by running the code**, not by reading it. So were
 41 and 42, both found at `6e58f13` by a reviewer exhausting inputs rather than reading
 the branch.
+
+**Phase 13 (silent defects first, the user's decision of 2026-10-03) is in progress.** Wave 1: `P13a` (`47b8b09`) closes items 25 and 38, `P13b` (`aa6f80d`) closes items 15, 32, 39 and 42, each reviewed and tested. `P13c` closes item 46 after three review rounds; its tester is next. Items 10, 44 and 50 wait for the user's decision on the Pass 1 role. The runs found items 65 to 69 and restated 38b.
 
 **Phase 12 (every printed line is found on its page) is done at `1888ccb`.** `P12a`
 (`a64818b`): both routes look up each Pass 1 line's label and figure on its cited page
@@ -494,8 +503,8 @@ Things that have already misled a reader of this repository.
    nothing at all. "It ran" is not evidence. Name an input that came from a filing.
 3. **`cli.py` and the web app can disagree.** They build assumptions by separate code
    paths. A figure verified in one is not verified in the other.
-4. **Two test cases are red on purpose.** On macOS `pytest -q` reports `2 failed, 495
-   passed`. That is the expected
+4. **Two test cases are red on purpose.** On macOS `pytest -q` reports `2 failed, 773
+   passed` at `17381f3`. That is the expected
    state. Do not fix it by weakening it; fix backlog item 2. The gate
    form that excludes it is `pytest -q --ignore-glob="*_rule3_red.py"`.
 5. **A green test inside `*_rule3_red.py` is invisible to the gate.** That happened
