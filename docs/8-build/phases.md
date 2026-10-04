@@ -269,8 +269,6 @@ measurement and needs paid runs or sessions.
 | `P13b-models-silent` | 15, 32, 39, 42 | `models/financial_statements.py`, `models/valuation.py`, `analysis/dcf.py`, `analysis/projector.py` |
 | `P13c-env-override` | 46 | `config.py`, `ingestion/claude_extractor.py`, `docs/8-build/environment.md` |
 
-| # | Criterion | Expected | Measured by |
-|---|---|---|---|
 **Wave 1 is done at `19298f3`.** Wave 2, on the user's "go" of 2026-10-03, holds the
 silent items that the wave 1 runs found, plus item 50, which no longer waits: the user
 decided the Pass 1 role the same day.
@@ -288,6 +286,16 @@ decided the Pass 1 role the same day.
 | 2 | no wave 1 unit moves a figure on a complete input | Walmart's normalised statements and assumptions unchanged | `cli.py --session-file extractions/WMT.json`, stages 1 to 5 |
 | 3 | the gates do not get worse | ruff 5 or fewer, mypy 10 or fewer, census 67 or fewer | the gates in [environment.md](environment.md) |
 
+**Wave 2 is done at `0a5a715`.** Wave 3 holds item 38b (a). **The user's decision of
+2026-10-04:** option 1, an explicit "confirm zero debt" choice on the form and on the
+CLI. A supplied cost of debt no longer counts as that confirmation.
+
+| Unit | Items | Files |
+|---|---|---|
+| `P13h-zero-debt-confirm` | 38b (a) | `analysis/wacc.py`, `models/valuation.py`, `cli.py`, `api/routes_valuation.py`, `templates/assumptions.html` |
+
+`P13h` and `P14a` both edit `cli.py`, so `P14a` starts after `P13h`'s code review approves.
+
 ## Phase 14 — the Pass 1 role · **planned**
 
 **The user's decision of 2026-10-03:** options 0, A, B and C, recorded under rule 1 in
@@ -297,13 +305,17 @@ because both sit in the Pass 1 parse.
 
 | Unit | What | Items |
 |---|---|---|
-| `P14a-units` | read `units`, and a separate unit for the share count; convert to millions once in Python | 44 |
+| `P14a-units` | read the printed unit statement for money (`units`) and for the share count (`share_units`), each with its page and page-checked; Python reads the scale word and converts to millions once, per filing. The user approved `share_units` on 2026-10-04 | 44 |
 | `P14b-reasoning` | 0: route A asks the model to reason first. A: a reason per field, shown on both pages. B: the prompt allows a printed figure from a note or MD&A | — |
 | `P14c-layout-facts` | C: a cited layout fact, checked on its page; the D&A decision moves out of the parser into `analysis/` and reads that fact | 10 |
 
 All three touch `ingestion/claude_extractor.py` and the session file format, so they run
 in sequence, after wave 2's `P13g`. Each unit states what happens to a `v2` session file
 such as `extractions/WMT.json`.
+
+**After Phase 14: Phase 3**, on the user's "ok" of 2026-10-04. Items 7, 49 and 72 sit in
+the code that `cli.py` and `api/` duplicate, so one pipeline lets each later fix reach
+both entry points.
 
 ---
 

@@ -76,7 +76,7 @@ rather than lying.
 | 37 | `analysis/wacc.py`'s new stop states an inference as a fact | — | `analysis/wacc.py` | **new.** Message only; 23 of 23 wacc tests stay green with the rewrite |
 | 38 | `analysis/wacc.py` fabricates a 100% equity weighting when market cap and debt are both zero | **silent** | `analysis/wacc.py` | **closed by `P13a-analysis-silent` (`47b8b09`)**: a sum of 0, and a market cap of 0 or below, stop. Its second face is item 38b, open |
 | 43 | The fiscal year comes from the filename's date, not from the filing | **silent** | `ingestion/filings.py`, `api/routes_upload.py` | **closed by `P10c-fiscal-year`**: the filename year is verified against the cover date and the column label, and a mismatch stops |
-| 44 | The `units` field is extracted and then ignored | **silent**, latent | `ingestion/claude_extractor.py`, `api/routes_valuation.py` | **new at `cde33cb`.** A filing in thousands is labelled `M`; one fallback mixes scales |
+| 44 | The `units` field is extracted and then ignored | **silent**, latent | `ingestion/claude_extractor.py`, `api/routes_valuation.py` | **new at `cde33cb`; assigned to `P14a-units`.** A filing in thousands is labelled `M`; one fallback mixes scales. Okta prints money in millions and shares in thousands, so the share count and the money figures are on different scales. The user approved `share_units` on 2026-10-04 |
 | 45 | `calculate_beta` checks for a constant market series only after SciPy has already raised | stopping | `analysis/capm.py` | **new at `cde33cb`.** SciPy 1.17.1 raises first, so the stop does not name `market_returns`. **Held by the user, 2026-10-02** |
 | 46 | `.env` overrides the environment, so unsetting a key does not stop a paid call | **silent** | `config.py` | **closed by `P13c-env-override`, round 3**: `.env` fills only absent names, so a shell value wins and an empty one turns the key off; `config.credential_origin` labels a key `(.env file)` or `(shell or parent process, not .env)` by comparing values. Open note, the round 3 review's F5: a value set inside the process by a test or notebook also reads the second label; no shipped code does that |
 | 47 | The income statement shown on both pages has no interest income row, so EBT does not add up from the rows shown | — | `cli.py`, `templates/_statements.html` | **new at `cde33cb`.** Display only: the figure is in EBT, but a reader cannot see it |
@@ -743,6 +743,13 @@ substitutes yfinance's `sharesOutstanding / 1e6`, which is millions.
 
 **Fix, when assigned.** Read `units` in the parser and either convert to millions once,
 or stop on anything other than millions.
+
+**Measured at `0a5a715` with `pdfplumber`** on the latest filing of each company here:
+Walmart page 21 "(Amounts in millions, except per share data)", AbbVie page 21 "(in
+millions, except per share data)", Chipotle page 29 "(in thousands, except per share
+data)", Okta page 58 "(dollars in millions, shares in thousands, except per share
+data)". So Okta's share count is on a different scale from its money figures. No Okta
+extraction exists here, so the price error that follows is not measured.
 
 ## 45. The constant-market stop in `calculate_beta` is reached only on older SciPy · stopping
 
@@ -1480,7 +1487,13 @@ wearing a different face, and it is named separately because `fcff.py` is the on
 
 ---
 
-## 38b. Item 38's second face, restated at `P13a` · **part (b) CLOSED at `5c4fb67`; part (a) waits for the user**
+## 38b. Item 38's second face, restated at `P13a` · **part (b) CLOSED at `5c4fb67`; part (a) assigned to `P13h-zero-debt-confirm`**
+
+**The user's decision of 2026-10-04 for part (a): option 1.** An explicit "confirm zero
+debt" choice, a checkbox on the form and `--confirm-zero-debt` on the CLI. When it is
+set, the run values the company with no debt and the label says that the user confirmed
+the zero. A supplied cost of debt no longer gets past item 22's stop. Options 2 (keep the
+cost of debt as the confirmation) and 3 (always stop) were refused.
 
 Item 38's own case (market cap plus debt equal to 0, and since `P13a` round 2 a market cap
 of 0 or below) stops. The **second face** described under item 38 does not match what the

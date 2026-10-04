@@ -46,6 +46,14 @@ number.
 1"): asking the model to calculate a figure the filing does not print (D), or to
 estimate one (E).
 
+**Allowed, on the user's decision of 2026-10-04** ("approve"), for backlog item 44. A
+filing can state the unit of its share count apart from the unit of its money figures:
+Okta prints "(dollars in millions, shares in thousands, except per share data)". So the
+model may return two printed unit statements, each with the page it is printed on:
+`units` for money and `share_units` for the share count. This is option C applied to
+units. The page check confirms each text on its page. Python reads the scale word from
+the text and converts every figure to millions. The model converts nothing.
+
 ## Rule 2 — Every number comes from one named function with a fixed, typed signature.
 
 One function, one number, one meaning. Arguments are named and typed. No `**kwargs`, no
