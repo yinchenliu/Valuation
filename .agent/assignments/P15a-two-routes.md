@@ -154,3 +154,45 @@ decision.
 
 Items 1, 10, 51, 53, 61, 63, 64, 73, 74, 78, 79, 80 in `claude_extractor.py`; item 72
 in `cli.py`.
+
+## Overall lead review
+
+**Verdict: `rework`**, 2026-10-04, by the overall lead, on the working tree at `3d32878`
+plus the build team's uncommitted changes.
+
+**The code meets every criterion.** Re-run with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`:
+criterion 1, 0 hits; 2, the imports succeed with `anthropic` and `azure` blocked; 3, the
+`claude` stop names `extract-filing`, `--session-file` and `GEMINI_API_KEY`; 4, gemini /
+gemini-direct / gemini-3.1-pro-preview / gemini-api-key; 5, the no-key stop names both
+routes and not "use provider='gemini'"; 6, `-p claude` is an invalid choice and `--help`
+shows `default: gemini`; 7, the stubbed Gemini run on the real Walmart PDF gives
+statements and items equal to route B's, 0 network attempts; 8, $28.02 and the route B
+label; 9, `/assumptions` with the session file shows CLAUDE, the route B reasoning label
+and transport. Ruff 4, mypy 8 in 3 files (down from 9), census 65, guard 48/48.
+
+**Findings. Answer each by number.**
+
+- **F1, major (tester).** The test gate fails in the form `AGENTS.md` requires.
+  `ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q
+  --ignore-glob="*_rule3_red.py"` → **21 failed, 1011 passed**. Without the empty keys,
+  `.env` fills `GEMINI_API_KEY` with the user's real key, and the same command gives 1032
+  passed. So 21 tests pass only on a machine whose `.env` holds a real Gemini key. The
+  causes: `tests/unit/test_statements_ui.py:280`, `tests/unit/test_route_context_keys.py:222`
+  and `tests/unit/test_pass1_printed_lines.py:854` set a placeholder `ANTHROPIC_API_KEY`,
+  which no code reads now, and no `GEMINI_API_KEY`; the route A pages then resolve the
+  default provider with no key. The tester's entry and the reviewer's line both report
+  1032 passed: measured without the empty keys.
+  **Fix:** set a placeholder `GEMINI_API_KEY` in those three tests, and remove the
+  `ANTHROPIC_API_KEY` placeholders. Then add one autouse fixture in
+  `tests/conftest.py` that sets `ANTHROPIC_API_KEY` and `GEMINI_API_KEY` to `""` for
+  every test, so no test can read a key from `.env`. A test that needs a key sets a
+  placeholder itself. **Done when** the gate gives the same result with and without the
+  empty-key prefix, and no test fails.
+- **F2, minor (programmer).** `README.md` lost the line `- Python 3.10+` under
+  Prerequisites. It names neither the Anthropic API nor a key, so it is outside the scope.
+  Restore it.
+- **F3, process (build lead).** Step 8 did not run: no gates, no commit, no `## Handoff`,
+  and the queue still said `building`. After F1 and F2, run step 8 in full. Run every
+  gate with the empty-key prefix.
+
+The reviewer re-checks F1 and F2 only. The other criteria stand as measured above.
