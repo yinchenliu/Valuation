@@ -217,3 +217,75 @@ Run every command with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`. **Make no paid API 
 Items 1 (zero defaults), 10 (D&A in the parser), 51 (dead `WARN`), 53 (private
 `_NRI_SCHEMA` import: you may leave the import as it is), 61, 63, 64, 72 (`cli.py`
 conditional zeros), 73, 74, 78, 79, 80. A reviewer must not raise them against this unit.
+
+## Handoff
+
+### Commits
+- `dde9b25`: `P14b: copy printed amounts and units, scale in Python (item 77)`
+- `21125ed`: `P14b tester: repair fixtures for session v4 and NonRecurringItem fields, lock unit behaviors`
+
+### Verdicts
+- Programmer: `complete` (round 1), entry: `.agent/journal/2026-10-04T1437-programmer-p14b-pass2-units.md`
+- Code reviewer: `approved` (round 1), entry: `.agent/journal/2026-10-04T1506-code_reviewer-p14b-pass2-units.md`
+- Tester: `pass` (round 1), entry: `.agent/journal/2026-10-04T1508-tester-p14b-pass2-units.md`
+
+### Gates
+- Test gate: 1001 passed (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q --ignore-glob="*_rule3_red.py"`)
+- Full suite: 2 failed (the known two), 1001 passed (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q`)
+- Lint: 4 errors, all `BLE001` (`.venv/bin/python -m ruff check .`)
+- Types: 9 errors in 4 files (`.venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports`)
+- Rule 3 census: 65 (`grep -rnE "if [^)]+ else 0(\.0)?\b|\bor +0(\.0)?\b|\.get\([^,]+, *0(\.0)?\)|: *float *= *0\.0" '--include=*.py' models analysis api ingestion | wc -l`)
+- Web root route: HTTP 200 (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -c "from starlette.testclient import TestClient; from app import app; print(TestClient(app).get('/').status_code)"`)
+- Walmart Route B v4 check: exit 0; 89 of 89 printed lines found; 4 of 4 Pass 2 items confirmed (`.venv/bin/python -m ingestion.session_extraction check /tmp/wmt_v4.json`)
+- Walmart end-to-end: revenue 713,163 (FY2026); PV of terminal value 214,819M; implied price $28.02; downside -73.1% (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python cli.py --session-file /tmp/wmt_v4.json`)
+
+### Findings and notes
+- `IncomeStatement.non_recurring_items`: verified that no parser populates this dict directly; only `normalizer.py` populates it where values are already in millions.
+- Pass 2 figure check limitation: confirms number presence on a text line of the page, not table column semantics (documented in `docs/3-architecture/extraction.md`).
+
+### Questions for the overall lead
+None.
+
+
+## Overall lead review
+
+**Verdict: `accepted`**, 2026-10-04, at `21125ed`. Reviewed by the overall lead (Claude
+Code), on the user's decision that it reviews each unit itself.
+
+**Scope.** `dde9b25` touches only the files in scope and two journal entries.
+`21125ed` touches `tests/`, its assignment, its entry and the journal index.
+
+**Re-measured, not read** (every command with the keys empty):
+
+| # | Result |
+|---|---|
+| 1 | `grep -rn "same units as financials" ingestion/` → 0 |
+| 2 | `pass2_amount_scale`: the five valid rows give the stated scales; the four stop rows stop. Also stop: `$0.7 billion in charges`, `-$0.7 billion` |
+| 3, 4 | my own v4 copy (the values in this assignment): `check` exit 0, 4 of 4 items, 89 of 89 lines; amounts 700.0, 2075.0, 794.0, 3027.0 |
+| 5 | `cli.py` on the v4 copy against the v3 run of `6f1166a`: identical except the new "Pass 2 items looked up" line and the file path; $28.02, PV TV 214,819M |
+| 6 | thousands filing: `$5.2 million` → 5.2, 5,200 under `(in thousands)` → 5.2, `$1.1 billion` → 1,100.0, each as derived by hand |
+| 7 | (a) to (e) each exit 2 and name the right item |
+| 8 | route A, stubbed `_call_llm`, real Walmart PDF, sockets blocked: `amount` 2076 → `ValueError` naming the item; the correct reply → four items with `page`, `printed_units`, `units_page`; 0 network attempts |
+| 9, 10 | v3 refused naming both formats, `page`, `units`, the remedy; the old cache refused naming `p14b-pass2-units-v1` |
+| 11 | gate 1001 passed; full 2 failed (the known two); ruff 4; mypy 9 in 4 files; census 65; `GET /` 200; guard 48/48 |
+
+**Findings.**
+
+- **F1, minor, not sent back.** `_pass2_item_failures` counts an item as failed when its
+  description is a substring of a failure message. Walmart's 2024 description is a
+  prefix of the 2025 one, so case 7(a) prints `4 checked, 2 found, 2 not confirmed` for
+  one failed item. The stop and its problem list are right. Backlog item 81; assigned to
+  `P14b-reasoning`, the next unit in this file.
+- **F2, note.** Five blank lines remain where `_whitespace_normalised` was removed.
+  Assigned to `P14b-reasoning`.
+- **F3, the overall lead's own error.** Step 3 of this assignment required an `amount`
+  above 0. That reversed `test_pass2_item_amount_zero_loads`, locked at `P9d-tests`, and
+  the assignment did not say so. The tester followed the assignment. The change stands:
+  an item of 0 moves no figure, and a 0 cannot be told from "not found". It is recorded
+  under item 77.
+- **F4, docs.** `extraction.md` still said route A coerces an `amount` of `"12"`. It now
+  stops. The overall lead corrected the line.
+
+**Done by the overall lead after acceptance:** `extractions/WMT.json` upgraded to v4 (the
+v3 copy is in its scratchpad); the `extract-filing` skill teaches the v4 Pass 2 item;
+backlog item 77 closed and item 81 added; `STATUS.md` re-measured.

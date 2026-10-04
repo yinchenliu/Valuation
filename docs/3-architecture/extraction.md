@@ -483,8 +483,9 @@ key where one applies, when:
   `true` and `null` all stop), its `year` is not a JSON integer, its `page` is not a
   positive integer, its `units` is not `{"printed": <non-empty string>, "page": <positive integer>}`,
   or its scale cannot be read (`pass2_amount_scale`). Each problem names the item by its
-  index, year and description (`P9d-pass2-checks`, `P14b`); route A's parser still
-  coerces `"12"` to 12.0 and `2025.7` to 2025 (backlog item 1);
+  index, year and description (`P9d-pass2-checks`, `P14b`); route A's parser now
+  stops on an `amount` of `"12"` (`P14b`), and still coerces a `year` of `2025.7` to 2025
+  (backlog item 1);
 - a Pass 2 item is not found on its cited page: its figure is not held by any text line on
   `page`, or its unit words are not confirmed on `units.page` (`pass2_page_failures`, `P14b`).
   Unlike Pass 1 printed lines, Pass 2 item failures stop the run;

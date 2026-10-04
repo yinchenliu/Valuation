@@ -296,7 +296,7 @@ CLI. A supplied cost of debt no longer counts as that confirmation.
 
 `P13h` and `P14a` both edit `cli.py`, so `P14a` starts after `P13h`'s code review approves.
 
-## Phase 14 — the Pass 1 role · **`P14a` done at `69436d9`; `P14b`, `P14c` not started**
+## Phase 14 — the Pass 1 role · **`P14a` done at `69436d9`; `P14b-pass2-units` done at `21125ed`**
 
 **The user's decision of 2026-10-03:** options 0, A, B and C, recorded under rule 1 in
 [rules.md](../2-rules/rules.md); options D and E refused. This is the approval
@@ -307,7 +307,8 @@ because both sit in the Pass 1 parse.
 |---|---|---|
 | `P14a-units` | read the printed unit statement for money (`units`) and for the share count (`share_units`), each with its page and page-checked; Python reads the scale word and converts to millions once, per filing. The user approved `share_units` on 2026-10-04 | 44 |
 | `P14b-pass2-units` | each Pass 2 item copies its figure as printed, its page, and the printed words that state its unit; Python reads the scale and converts each item. Session format v4. **The user's decision of 2026-10-04: "fix 77a"** | 77 |
-| `P14b-reasoning` | 0: route A asks the model to reason first. B: the prompt allows a printed figure from a note or MD&A. Prompt only | — |
+| `P14b-reasoning` | 0: route A sends adaptive thinking at an effort named in `config.py`, streamed, with room to finish; the setting is shown. Also item 81 | 81 |
+| `P14b-note-figures` | B: a Pass 1 figure from a note or MD&A. Waits for the user's decision on how its unit is checked | — |
 | `P14b-row-reasons` | A: a reason for each printed row, shown on both pages. A format change; Walmart is extracted again | — |
 | `P14c-layout-facts` | C: a cited layout fact, checked on its page; the D&A decision moves out of the parser into `analysis/` and reads that fact | 10 |
 

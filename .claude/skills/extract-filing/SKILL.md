@@ -173,8 +173,27 @@ still asks for "fiscal year 2024". Read the column whose date ends that fiscal y
    valuation and listed. Flag only an item whose amount the filing prints.
    `{"non_recurring_items": []}` is a valid answer.
 
-   Write `amount` as a JSON number, never a string, and `year` as an integer. Give every
-   item all eight schema keys. `check` stops on anything else and names the item.
+   Write `amount` as a JSON number above 0, never a string, and `year` as an integer.
+   Give every item all ten schema keys. `check` stops on anything else and names the
+   item.
+
+   **Each item is one printed figure, copied as printed** (format
+   `session-extraction-v4`, `P14b`, backlog item 77). Never convert it, and never add
+   two figures:
+
+   ```json
+   {"amount": 0.7, "page": 27, "units": {"printed": "$0.7 billion", "page": 27}, ...}
+   {"amount": 2075, "page": 22,
+    "units": {"printed": "(Amounts in millions, except per share data)", "page": 21}, ...}
+   ```
+
+   - `amount` and `page`: the figure as printed, and the PDF page it is printed on.
+   - `units`: the printed words that state the figure's unit, with their page. Either
+     the figure with the scale word printed after it (`$0.7 billion`, on the figure's
+     page), or the whole unit statement of the statement or table the figure is in (on
+     the figure's page or the page before).
+   - `check` looks for the figure on its page and for the words on theirs, and stops if
+     either is not found. Python reads the scale and converts the item.
 
 ### 4. Label and check
 
