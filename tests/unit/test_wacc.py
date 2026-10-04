@@ -28,17 +28,22 @@ the defect permanent and turn its fix red
 1. When the company carries debt but reports no interest expense,
    `config.DEFAULT_COST_OF_DEBT` is substituted. The branch is executed here;
    the substituted rate is not asserted. Backlog item 9, rule 6.
-2. A **negative** debt balance beside a positive market cap forms weights
-   outside [0, 1] (300 and -50 give 1.2 and -0.2). Backlog item 69. No test
-   here asserts those weights.
-3. Item 38's second face (backlog item 38b): a cost-of-debt override beside a
-   balance sheet with no debt lines, and `balance_sheet=None`. No test here
-   asserts either behaviour.
+2. Backlog item 38b (a): a cost-of-debt override beside a balance sheet with
+   no debt lines and a reported interest expense returns weights 1.0 / 0.0,
+   because the override returns before item 22's stop. The user is deciding
+   its replacement (an explicit confirmation of a zero debt balance). No test
+   here asserts that behaviour, either way.
 
-Until `P13a-analysis-silent`, a fourth entry stood here: when
+Until `P13a-analysis-silent`, an entry stood here: when
 `market_cap + total_debt == 0` the weights were set to 100% equity rather than
 stopping (backlog item 38). That branch now raises, and so does a market cap of
 zero or below; both stops are locked in the "weights cannot be formed" section.
+
+Until `P13f-wacc-debt`, two more stood here: a negative debt balance formed
+weights outside [0, 1] (backlog item 69), and `balance_sheet=None` raised a
+bare `AttributeError` (item 38b (b)). Both now stop by name, and so does a
+value that is not finite; they are locked in the "debt balance" and "not
+finite" sections at the end of this file.
 """
 
 from __future__ import annotations
@@ -160,7 +165,7 @@ def test_cost_of_debt_is_interest_over_total_debt() -> None:
 
 
 def test_cost_of_debt_is_the_same_for_either_interest_sign() -> None:
-    """Interest expense is used as a magnitude (`analysis/wacc.py:40`), so a
+    """Interest expense is used as a magnitude (`analysis/wacc.py:193`), so a
     filing that reports it as -20 must give the same 20 / 400 = 0.05.
 
     Carrying the sign through would give -0.05, i.e. a company paid to borrow.
@@ -363,7 +368,7 @@ def test_the_tax_shield_only_reduces_the_debt_term() -> None:
 
 
 def test_weights_are_still_the_reported_ones_when_interest_is_not_reported() -> None:
-    """`analysis/wacc.py:41-43`: a company with 250 of debt and no separately
+    """`analysis/wacc.py:239-248`: a company with 250 of debt and no separately
     reported interest expense is given `config.DEFAULT_COST_OF_DEBT` instead.
 
     **This test asserts nothing about that rate.** Backlog item 9 records it as
@@ -402,7 +407,7 @@ def test_cost_of_equity_passes_through_unchanged_where_the_weights_can_be_formed
     called `calculate_wacc` with a market cap of 0 and no debt, and asserted
     only the pass-through, because that input reached the all-equity early
     return (backlog item 38) whose weights it refused to bless. `P13a`
-    replaced that return with a stop (`analysis/wacc.py:215-229`), so the
+    replaced that return with a stop (`analysis/wacc.py:320-334`), so the
     input no longer returns. The subject is kept here on an input where the
     weights can be formed. The old input is now a case of
     `test_weights_that_cannot_be_formed_stop_and_name_market_cap` below.
@@ -436,7 +441,7 @@ def test_cost_of_equity_passes_through_unchanged_where_the_weights_can_be_formed
 
 # ---------------------------------------------------------------------------
 # The weights cannot be formed. Backlog item 38 and the P13a round 2
-# amendment — `analysis/wacc.py:215-244`.
+# amendment — `analysis/wacc.py:320-349`.
 #
 # E / (E + D) and D / (E + D) need a positive E. Two stops guard them:
 #
@@ -449,8 +454,9 @@ def test_cost_of_equity_passes_through_unchanged_where_the_weights_can_be_formed
 # Neither message may state why the input is zero: the function cannot tell.
 # Backlog item 37 records that mistake ("did not extract") in this same file.
 #
-# Not asserted here, on purpose: the weights for a NEGATIVE debt balance
-# (backlog item 69), and item 38's second face (backlog item 38b).
+# Not asserted here, on purpose: item 38b (a), an override beside zero debt
+# lines and a reported interest expense. A NEGATIVE debt balance (item 69) now
+# stops; it is locked in the "debt balance" section at the end of this file.
 #
 # The expected side of every assertion is an input the test supplied: the
 # field names are the arguments, the values are the numbers passed in.
@@ -548,11 +554,19 @@ def test_the_weights_stop_does_not_state_a_cause(market_cap: float, total_debt: 
 
 
 def test_a_positive_market_cap_and_debt_form_the_weights_by_hand() -> None:
-    """The stops above must not catch a company whose weights can be formed.
+    """The stops above, and the debt-balance stops added by `P13f`, must not
+    catch a company whose weights can be formed (`P13f` criterion 4).
 
-        E 300, D 100, V 300 + 100 = 400
-        E/V = 300 / 400 = 0.75
-        D/V = 100 / 400 = 0.25
+        E    300, D 100 (long-term debt only), V 300 + 100 = 400
+        E/V  300 / 400                                     = 0.75
+        D/V  100 / 400                                     = 0.25
+        Re   0.04 + 1.2 * 0.05                             = 0.10
+        Rd   20 / 100                                      = 0.20
+        t    75 / (1000 - 680 - 20) = 75 / 300             = 0.25
+        WACC 0.75 * 0.10 + 0.25 * 0.20 * (1 - 0.25)
+           = 0.075       + 0.25 * 0.15
+           = 0.075       + 0.0375
+           = 0.1125
     """
     result = calculate_wacc(
         capm_result=_capm_result(),
@@ -563,10 +577,37 @@ def test_a_positive_market_cap_and_debt_form_the_weights_by_hand() -> None:
 
     assert result.equity_weight == pytest.approx(0.75)
     assert result.debt_weight == pytest.approx(0.25)
+    assert result.cost_of_debt == pytest.approx(0.20)
+    assert result.tax_rate == pytest.approx(0.25)
+    assert result.wacc == pytest.approx(0.1125)
+
+
+def test_the_same_company_with_a_supplied_cost_of_debt_keeps_its_weights() -> None:
+    """The debt-balance guards run before the override returns, so they must
+    not disturb a valid balance sheet on the override path either.
+
+        E/V, D/V, Re, t  as above            = 0.75, 0.25, 0.10, 0.25
+        Rd               supplied            = 0.05
+        WACC 0.75 * 0.10 + 0.25 * 0.05 * 0.75
+           = 0.075       + 0.009375
+           = 0.084375
+    """
+    result = calculate_wacc(
+        capm_result=_capm_result(),
+        income_statement=_income_statement(),
+        balance_sheet=_balance_sheet_with_debt_of(100.0),
+        market_cap=300.0,
+        cost_of_debt_override=0.05,
+    )
+
+    assert result.equity_weight == pytest.approx(0.75)
+    assert result.debt_weight == pytest.approx(0.25)
+    assert result.cost_of_debt == pytest.approx(0.05)
+    assert result.wacc == pytest.approx(0.084375)
 
 
 # ---------------------------------------------------------------------------
-# The stops. Backlog item 22 — `analysis/wacc.py:93-135`.
+# The stops. Backlog item 22 — `analysis/wacc.py:195-237`.
 #
 # A zero debt balance carries two incompatible meanings, and until item 22 was
 # closed it returned the same 0.0 for both:
@@ -628,7 +669,7 @@ def test_a_zero_debt_balance_beside_a_reported_interest_expense_stops() -> None:
 
 def test_the_contradiction_stop_is_not_bypassed_by_a_negative_interest_sign() -> None:
     """A filing that reports interest expense as -37 is reporting the same 37 of
-    interest; `analysis/wacc.py:91` takes its magnitude. The contradiction is
+    interest; `analysis/wacc.py:193` takes its magnitude. The contradiction is
     therefore identical, and a guard written as `interest > 0` rather than
     `interest != 0` would let it through.
     """
@@ -720,7 +761,7 @@ def test_the_debt_free_label_is_not_the_substituted_one() -> None:
 
 
 # ---------------------------------------------------------------------------
-# The NaN guards — `analysis/wacc.py:23-45`, one call site per input.
+# The NaN guards — `analysis/wacc.py:23-53`, one call site per input.
 #
 # NaN is the shape a missing input takes once it has been through a float
 # calculation, and no comparison detects it: `nan <= x`, `nan > x` and
@@ -817,3 +858,321 @@ def test_the_nan_guards_are_needed_because_comparisons_do_not_detect_nan() -> No
     assert (NAN == another_nan) is False  # so `x == x` cannot be a guard either
     assert max(0.0, min(NAN, 0.50)) == 0.0  # the clamp that would hide it
     assert math.isnan(NAN) is True
+
+
+# ---------------------------------------------------------------------------
+# The debt balance. Backlog item 69 and review F3 of `P13f-wacc-debt` —
+# `analysis/wacc.py:83-133` (`_require_valid_debt`).
+#
+# The Pass 1 prompt makes every extracted value positive, with the sign in the
+# field name, and a filing prints each debt line as a positive figure. A
+# negative debt line is therefore a bad value, and no formula here can use it.
+# Left through, market cap 300 beside debt -50 forms V = 250 and weights
+# 300 / 250 = 1.2 and -50 / 250 = -0.2, outside [0, 1].
+#
+# The expected side of every assertion is an input the test supplied: the field
+# names are the fields the test made negative, the values are the numbers
+# passed in. Item 37 forbids the message from saying why the value is wrong.
+# ---------------------------------------------------------------------------
+
+_OVERRIDE_OR_NOT = [
+    pytest.param(None, id="no-override"),
+    pytest.param(0.05, id="override-0.05"),
+]
+
+
+def _assert_claims_no_cause(message: str) -> None:
+    """Backlog item 37: the function sees numbers, not why they are wrong."""
+    lowered = message.lower()
+    assert "extract" not in lowered, message
+    assert "fail" not in lowered, message
+
+
+@pytest.mark.parametrize("override", _OVERRIDE_OR_NOT)
+def test_a_negative_total_debt_stops_and_names_the_total_and_its_value(
+    override: float | None,
+) -> None:
+    """(market cap 300, total debt -50): the only debt line is long-term debt
+    of -50, so total_debt = 0 + 0 + (-50) = -50. The run stops with
+    `ValueError`, names `balance_sheet.total_debt` and the -50 passed in, and
+    claims no cause. A supplied cost of debt does not make the balance usable:
+    the weights read it whatever the rate.
+    """
+    with pytest.raises(ValueError) as raised:
+        calculate_wacc(
+            capm_result=_capm_result(),
+            income_statement=_income_statement(),
+            balance_sheet=_balance_sheet_with_debt_of(-50.0),
+            market_cap=300.0,
+            cost_of_debt_override=override,
+        )
+    message = str(raised.value)
+
+    assert "balance_sheet.total_debt" in message
+    assert -50.0 in _as_floats(message)
+    _assert_claims_no_cause(message)
+
+
+def test_a_negative_total_debt_stops_the_cost_of_debt_on_a_direct_call() -> None:
+    """Without the stop the rate is interest / total debt = 20 / -50 = -0.4, a
+    company paid to borrow. `cost_of_debt_with_source` is a public entry point,
+    so the stop must hold there too, not only inside `calculate_wacc`.
+    """
+    with pytest.raises(ValueError) as raised:
+        cost_of_debt_with_source(_income_statement(), _balance_sheet_with_debt_of(-50.0))
+    message = str(raised.value)
+
+    assert "balance_sheet.total_debt" in message
+    assert -50.0 in _as_floats(message)
+    _assert_claims_no_cause(message)
+
+
+# (short_term_debt, current_portion_lt_debt, long_term_debt, the negative line).
+# Each total is positive, so a check on the total alone passes all three:
+#     -50 +   0 + 100 = 50
+#       0 + -10 + 100 = 90
+#     100 +   0 + -50 = 50
+_NEGATIVE_LINE_UNDER_A_POSITIVE_TOTAL = [
+    pytest.param(-50.0, 0.0, 100.0, "short_term_debt", id="short-term-minus-50"),
+    pytest.param(0.0, -10.0, 100.0, "current_portion_lt_debt", id="current-portion-minus-10"),
+    pytest.param(100.0, 0.0, -50.0, "long_term_debt", id="long-term-minus-50"),
+]
+
+
+@pytest.mark.parametrize("override", _OVERRIDE_OR_NOT)
+@pytest.mark.parametrize(
+    ("short_term", "current_portion", "long_term", "negative_line"),
+    _NEGATIVE_LINE_UNDER_A_POSITIVE_TOTAL,
+)
+def test_a_negative_debt_line_under_a_positive_total_stops_and_names_the_line(
+    short_term: float,
+    current_portion: float,
+    long_term: float,
+    negative_line: str,
+    override: float | None,
+) -> None:
+    """Review F3. The negative line is a bad value even when the total is not
+    negative, so the run stops with `ValueError` and names that line as
+    `balance_sheet.<line>`. Before the per-line check, short-term -50 beside
+    long-term 100 passed as a total of 50.
+    """
+    with pytest.raises(ValueError) as raised:
+        calculate_wacc(
+            capm_result=_capm_result(),
+            income_statement=_income_statement(),
+            balance_sheet=BalanceSheet(
+                year=2025,
+                short_term_debt=short_term,
+                current_portion_lt_debt=current_portion,
+                long_term_debt=long_term,
+            ),
+            market_cap=300.0,
+            cost_of_debt_override=override,
+        )
+    message = str(raised.value)
+
+    assert f"balance_sheet.{negative_line}" in message
+    _assert_claims_no_cause(message)
+
+
+# ---------------------------------------------------------------------------
+# No balance sheet. Backlog item 38b (b) — `analysis/wacc.py:56-80`.
+#
+# `api/routes_valuation.py` passes `financials.get_balance_sheet(latest_year)`,
+# which is None when no balance sheet carries that year. The first read of
+# `balance_sheet.total_debt` used to raise a bare `AttributeError` naming no
+# input. The stop must be a `ValueError` naming the argument `balance_sheet`
+# itself, so the pattern below refuses a `balance_sheet` followed by a dot or a
+# letter: `balance_sheet.total_debt` is a field of it, not the argument.
+# ---------------------------------------------------------------------------
+
+_NAMES_THE_BALANCE_SHEET_ARGUMENT = r"balance_sheet(?![.\w])"
+
+
+@pytest.mark.parametrize("override", _OVERRIDE_OR_NOT)
+def test_no_balance_sheet_stops_calculate_wacc_and_names_it(override: float | None) -> None:
+    """A `ValueError`, not an `AttributeError`, with and without a supplied
+    cost of debt. A missing balance sheet is not a debt-free company.
+    """
+    with pytest.raises(ValueError, match=_NAMES_THE_BALANCE_SHEET_ARGUMENT):
+        calculate_wacc(
+            capm_result=_capm_result(),
+            income_statement=_income_statement(),
+            balance_sheet=None,
+            market_cap=300.0,
+            cost_of_debt_override=override,
+        )
+
+
+@pytest.mark.parametrize("override", _OVERRIDE_OR_NOT)
+def test_no_balance_sheet_stops_cost_of_debt_with_source_and_names_it(
+    override: float | None,
+) -> None:
+    """The same stop on the public cost-of-debt entry point."""
+    with pytest.raises(ValueError, match=_NAMES_THE_BALANCE_SHEET_ARGUMENT):
+        cost_of_debt_with_source(_income_statement(), None, override)
+
+
+# ---------------------------------------------------------------------------
+# Values that are not finite. Review F2 of `P13f-wacc-debt` —
+# `analysis/wacc.py:47` (`math.isfinite`).
+#
+# An infinity passes every sign test written as a comparison (`inf > 0`,
+# `inf >= 0` are True, `inf < 0` is False) and then turns a weight into
+# inf / inf, which is NaN. Each case makes exactly one input infinite and
+# leaves the rest finite, so the field the message names is the field broken.
+# ---------------------------------------------------------------------------
+
+INF = math.inf
+
+
+def test_the_finite_guards_are_needed_because_comparisons_pass_an_infinity() -> None:
+    """The premises, as arithmetic. If any were False a sign test would be
+    enough. The last two are why a total is checked as well as its lines: two
+    finite doubles of 1e308 sum past the largest double (about 1.8e308), which
+    IEEE 754 rounds to +inf.
+    """
+    assert (INF > 0) is True
+    assert (INF < 0) is False
+    assert math.isnan(INF / INF)
+    assert max(0.0, min(INF, 0.50)) == 0.50  # the tax clamp that would hide it
+    assert math.isfinite(1e308)
+    assert 1e308 + 1e308 == INF
+
+
+_DEBT_LINES = ["short_term_debt", "current_portion_lt_debt", "long_term_debt"]
+
+
+@pytest.mark.parametrize("override", _OVERRIDE_OR_NOT)
+@pytest.mark.parametrize("line", _DEBT_LINES)
+def test_an_infinite_debt_line_stops_and_names_the_line(
+    line: str, override: float | None
+) -> None:
+    """Market cap 300 beside a debt line of +inf: E/V = 300 / inf = 0 and
+    D/V = inf / inf = NaN. The run stops instead and names the line.
+    """
+    with pytest.raises(ValueError, match=line):
+        calculate_wacc(
+            capm_result=_capm_result(),
+            income_statement=_income_statement(),
+            balance_sheet=BalanceSheet(year=2025, **{line: INF}),
+            market_cap=300.0,
+            cost_of_debt_override=override,
+        )
+
+
+def test_a_negative_infinite_debt_line_stops_and_names_the_line() -> None:
+    with pytest.raises(ValueError, match="long_term_debt"):
+        calculate_wacc(
+            capm_result=_capm_result(),
+            income_statement=_income_statement(),
+            balance_sheet=_balance_sheet_with_debt_of(-INF),
+            market_cap=300.0,
+        )
+
+
+def test_finite_debt_lines_that_sum_to_infinity_stop_and_name_the_total() -> None:
+    """Each line is 1e308 and finite; their sum is +inf (premise above). The
+    total is the field that is not finite, so the total is named.
+    """
+    with pytest.raises(ValueError, match="balance_sheet.total_debt"):
+        calculate_wacc(
+            capm_result=_capm_result(),
+            income_statement=_income_statement(),
+            balance_sheet=BalanceSheet(year=2025, short_term_debt=1e308, long_term_debt=1e308),
+            market_cap=300.0,
+            cost_of_debt_override=0.05,
+        )
+
+
+def test_an_infinite_market_cap_stops_and_names_it() -> None:
+    """E = inf beside D = 400: E/V = inf / inf = NaN."""
+    with pytest.raises(ValueError, match="market_cap"):
+        calculate_wacc(
+            capm_result=_capm_result(),
+            income_statement=_income_statement(),
+            balance_sheet=_balance_sheet_with_debt(),
+            market_cap=INF,
+        )
+
+
+def test_an_infinite_cost_of_equity_stops_and_names_it() -> None:
+    """Re = 0.04 + inf * 0.05 = inf, which would make the WACC inf."""
+    with pytest.raises(ValueError, match="cost_of_equity"):
+        calculate_wacc(
+            capm_result=CAPMResult(beta=INF, risk_free_rate=0.04, equity_risk_premium=0.05),
+            income_statement=_income_statement(),
+            balance_sheet=_balance_sheet_with_debt(),
+            market_cap=600.0,
+        )
+
+
+def test_an_infinite_cost_of_debt_override_stops_and_names_it() -> None:
+    """D/V = 0.40 times an infinite Rd would make the WACC inf."""
+    with pytest.raises(ValueError, match="cost_of_debt"):
+        calculate_wacc(
+            capm_result=_capm_result(),
+            income_statement=_income_statement(),
+            balance_sheet=_balance_sheet_with_debt(),
+            market_cap=600.0,
+            cost_of_debt_override=INF,
+        )
+
+
+@pytest.mark.parametrize("tax", [INF, -INF], ids=["plus-inf", "minus-inf"])
+def test_an_infinite_tax_override_stops_before_the_clamp(tax: float) -> None:
+    """`max(0.0, min(inf, 0.50))` is 0.50 and `max(0.0, min(-inf, 0.50))` is
+    0.0: the clamp would turn either into a plausible rate. The guard sits
+    before it and names the tax rate.
+    """
+    with pytest.raises(ValueError, match="tax_rate"):
+        calculate_wacc(
+            capm_result=_capm_result(),
+            income_statement=_income_statement(),
+            balance_sheet=_balance_sheet_with_debt(),
+            market_cap=600.0,
+            tax_rate_override=tax,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Interest expense that is not finite. Review F4 of `P13f-wacc-debt` —
+# `analysis/wacc.py:192`.
+#
+# Item 22's stop compares `interest != 0`, and `nan != 0` is True, so a NaN
+# interest expense beside zero debt used to reach that stop and be printed as
+# "interest expense of nan", as if the income statement had reported it. The
+# stop must name `income_statement.interest_expense` instead.
+#
+# No cost-of-debt override is passed anywhere here: with an override the
+# interest expense is not read (item 38b (a), open), and this file asserts
+# nothing about that path.
+# ---------------------------------------------------------------------------
+
+_NOT_FINITE = [
+    pytest.param(NAN, id="nan"),
+    pytest.param(INF, id="plus-inf"),
+]
+
+
+@pytest.mark.parametrize("interest", _NOT_FINITE)
+def test_a_non_finite_interest_beside_zero_debt_stops_and_names_it(interest: float) -> None:
+    with pytest.raises(ValueError, match="income_statement.interest_expense"):
+        calculate_wacc(
+            capm_result=_capm_result(),
+            income_statement=_income_statement(interest_expense=interest),
+            balance_sheet=_balance_sheet_without_debt(),
+            market_cap=1000.0,
+        )
+
+
+@pytest.mark.parametrize("interest", _NOT_FINITE)
+def test_a_non_finite_interest_stops_cost_of_debt_with_source_and_names_it(
+    interest: float,
+) -> None:
+    """Both debt balances: zero (item 22's branch) and 400 (where the rate
+    would be nan / 400 = nan, or inf / 400 = inf, and returned unchecked).
+    """
+    for balance_sheet in (_balance_sheet_without_debt(), _balance_sheet_with_debt()):
+        with pytest.raises(ValueError, match="income_statement.interest_expense"):
+            cost_of_debt_with_source(_income_statement(interest_expense=interest), balance_sheet)

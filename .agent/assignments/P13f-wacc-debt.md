@@ -49,6 +49,25 @@ If any of these disagrees with what you measure, stop and report the disagreemen
    is `None`. If this removes the mypy error at `api/routes_valuation.py:634`, report the
    new count. Do not edit `api/`.
 
+## Round 2 amendment (orchestrator, 2026-10-04, from the round 1 review)
+
+- **Step 2 is withdrawn.** The review's F1 proved that it was a defect in this
+  assignment: no entry point accepts a debt balance, so a company that really repaid its
+  debt (item 37's case) stops with no way past, and the new message names a remedy that
+  does not exist. Restore `analysis/wacc.py`'s override path and item 22's message
+  exactly as they are at `f6da3e9`. The user decides the replacement (an explicit
+  confirmation of a zero debt balance). Item 38b (a) stays open.
+- **F2.** `_require_finite` (`:40`) tests only for NaN. Make it refuse every value that is
+  not finite (`math.isfinite`), so an infinite `market_cap` or `total_debt` stops by name.
+  It is used for other values too; an infinite one of those must also stop.
+- **F3.** Check each debt line on the balance sheet, not only `total_debt`. A negative
+  line stops by name, even when the total is not negative.
+- **F4.** Check that interest expense is finite before item 22's comparison, so a NaN is
+  not printed as a reported figure.
+
+Add a criterion for each of F2, F3 and F4, and keep criteria 1, 3 and 4. Criterion 2 now
+expects the `f6da3e9` behaviour: an override with zero debt lines and interest returns.
+
 ## How to work
 
 - **Do not edit `tests/`.** List every test that turns red, by name, with its reason. The
