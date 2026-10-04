@@ -281,7 +281,13 @@ Built 2026-09-20 on Windows. **Development moved to a macOS machine by 2026-09-2
   key.** `.env` holds `ANTHROPIC_API_KEY` with a 27-character value that does not start with
   `sk-ant-` (checked by length and prefix only), so it is not a usable key, but
   `_resolve_claude` reads it as set. The user holds a Gemini key (in `.env`) and a DeepSeek
-  key (not in `.env`). No Foundry variable is set. Since `P13c`, a shell value wins over
+  key (not in `.env`). No Foundry variable is set.
+  **First real Gemini call from this Mac, 2026-10-04 (at `470a075`, overall lead):** the key
+  lists 32 Gemini models with `generateContent`, `gemini-3.1-pro-preview` (the code's
+  default) among them. Page 21 of the Walmart 10-K 2026-01-31, sent alone as a PDF with
+  the code's settings (temperature 0, JSON reply), came back as `713,163` and
+  `(Amounts in millions, except per share data)`, the figures printed there; 5.1 s, 599
+  input, 42 output and 458 thinking tokens. A whole-filing route A run is not yet measured. Since `P13c`, a shell value wins over
   `.env` (backlog item 46, closed).
   `pdftoppm` is absent and Homebrew 4.4.6 cannot install it on macOS 27.0, so a session
   reads PDFs through `session_extraction text`.
