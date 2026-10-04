@@ -277,8 +277,12 @@ Built 2026-09-20 on Windows. **Development moved to a macOS machine by 2026-09-2
 `docs/8-build/environment.md` owns the detail for both.
 
 - **macOS, measured 2026-10-02:** `.venv/bin/python`, Python **3.11.6**, scipy **1.17.1**,
-  numpy 2.4.6, starlette 1.7.0. The credential is `ANTHROPIC_API_KEY` from `.env`; no
-  Foundry variable is set. **`.env` overrides the environment** (backlog item 46).
+  numpy 2.4.6, starlette 1.7.0. **Corrected 2026-10-04: the user has no Anthropic API
+  key.** `.env` holds `ANTHROPIC_API_KEY` with a 27-character value that does not start with
+  `sk-ant-` (checked by length and prefix only), so it is not a usable key, but
+  `_resolve_claude` reads it as set. The user holds a Gemini key (in `.env`) and a DeepSeek
+  key (not in `.env`). No Foundry variable is set. Since `P13c`, a shell value wins over
+  `.env` (backlog item 46, closed).
   `pdftoppm` is absent and Homebrew 4.4.6 cannot install it on macOS 27.0, so a session
   reads PDFs through `session_extraction text`.
 - **Windows interpreter:** `.venv/Scripts/python.exe`, Python **3.14.4**.
