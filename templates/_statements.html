@@ -331,13 +331,14 @@
         </div>
 
         {# Balance check: each printed total row against the sum of the lines mapped
-           under it. FAIL when the difference exceeds 1 in the filing's units
-           (BalanceSheet.printed_total_check, the one threshold). A failure is shown
-           and the figures are kept: the user's decision of 2026-10-02. #}
+           under it. FAIL when the difference exceeds 1 in the filing's printed unit
+           (BalanceSheet.printed_total_check, the one threshold). The figures are in
+           millions, so that is 0.001 $M for a filing in thousands (P14a). A failure
+           is shown and the figures are kept: the user's decision of 2026-10-02. #}
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>Balance Check (printed total vs. sum of the mapped lines; FAIL above {{ "{:,.0f}".format(bs.printed_total_tolerance()) }} in the filing's units)</th>
+                    <th>Balance Check (printed total vs. sum of the mapped lines; FAIL above {{ "{:,g}".format(bs.printed_total_tolerance()) }} $M: {{ "{:,g}".format(bs.printed_total_tolerance() / bs.printed_unit()) }} in the filing's printed unit, and 1 printed unit = {{ "{:,g}".format(bs.printed_unit()) }} $M)</th>
                     <th class="num">Printed ($M)</th>
                     <th class="num">Mapped lines ($M)</th>
                     <th class="num">Difference</th>
@@ -352,11 +353,14 @@
                 {% set status = bs.printed_total_check(difference) %}
                 {# Not "alert-error": that class marks the page that replaces a failed
                    run, and this run has not failed. The word FAIL is the signal. #}
+                {# $M to the printed unit, as the CLI prints them, so a gap below 1 $M
+                   (a filing in thousands) shows: +0.002, not +0. #}
+                {% set places = bs.printed_unit_decimals() %}
                 <tr{% if status != "OK" %} class="check-fail" style="color: #b00020;"{% endif %}>
                     <td>{{ check_label }}</td>
-                    <td class="num">{% if printed is none %}not extracted{% else %}{{ "{:,.0f}".format(printed) }}{% endif %}</td>
-                    <td class="num">{{ "{:,.0f}".format(mapped) }}</td>
-                    <td class="num">{% if difference is none %}—{% else %}{{ "{:+,.0f}".format(difference) }}{% endif %}</td>
+                    <td class="num">{% if printed is none %}not extracted{% else %}{{ "{:,.{}f}".format(printed, places) }}{% endif %}</td>
+                    <td class="num">{{ "{:,.{}f}".format(mapped, places) }}</td>
+                    <td class="num">{% if difference is none %}—{% else %}{{ "{:+,.{}f}".format(difference, places) }}{% endif %}</td>
                     <td><strong>{{ status }}</strong></td>
                 </tr>
                 {% endfor %}

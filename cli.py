@@ -63,7 +63,6 @@ from ingestion.price_fetcher import fetch_price_data
 from ingestion.session_extraction import load_session_extraction
 from models.financial_statements import (
     BALANCE_CHECK_TOLERANCE,
-    BalanceSheet,
     FinancialStatements,
     NonRecurringItem,
 )
@@ -230,7 +229,12 @@ def build_overrides(args: argparse.Namespace) -> ProjectionAssumptions:
 # BalanceSheet carries the two printed totals. A cache written before that holds
 # figures some of which the model added up, and balance sheets with no printed
 # totals, so it is refused by marker rather than read.
-CACHE_FORMAT = "p11a-printed-lines-v1"
+# P14a changed it again: every figure is converted to millions from the filing's
+# printed unit statements, and each BalanceSheet carries printed_unit_in_millions.
+# A cache written before that holds figures never converted (a filing in thousands
+# reads 1,000 times too large) and balance sheets with no printed unit, so it is
+# refused by the same marker check.
+CACHE_FORMAT = "p14a-units-in-millions-v1"
 
 
 @dataclass(frozen=True)
@@ -512,13 +516,19 @@ def print_extracted_financials(financials: FinancialStatements) -> None:
         print(f"{left:<{2 + lw + bw}}{gap}{right}")
 
     # Balance check: each printed total row against the sum of the lines mapped
-    # under it. FAIL when the difference exceeds 1 in the filing's units, which
-    # allows for rounding and nothing more (the user, 2026-10-02: "if the balance
-    # sheet check doesn't pass, just fail it and show it"). A failure is shown and
-    # the figures are kept; nothing here repairs one. The threshold and the status
-    # are BalanceSheet.printed_total_check's, the same the parser and the page use.
+    # under it. FAIL when the difference exceeds 1 in the filing's printed unit,
+    # which allows for rounding and nothing more (the user, 2026-10-02: "if the
+    # balance sheet check doesn't pass, just fail it and show it"). A failure is
+    # shown and the figures are kept; nothing here repairs one. The figures are in
+    # millions, so the threshold in millions is 1 printed unit (0.001 for a filing
+    # in thousands). The threshold and the status are bs.printed_total_check's,
+    # the same the parser and the page use.
     print(f"\n  Balance check — printed total against the sum of the mapped lines "
-          f"(FAIL above {BALANCE_CHECK_TOLERANCE:,.0f} in the filing's units):")
+          f"(FAIL above {bs.printed_total_tolerance():,g} $M: "
+          f"{BALANCE_CHECK_TOLERANCE:,g} in the filing's printed unit, and 1 printed "
+          f"unit = {bs.printed_unit():,g} $M):")
+    # $M to the printed unit, so a gap below 1 $M (a filing in thousands) shows.
+    places = bs.printed_unit_decimals()
     for check_label, printed, mapped, difference in (
         ("Total Assets", bs.printed_total_assets, bs.total_assets,
          bs.printed_total_assets_difference),
@@ -526,11 +536,13 @@ def print_extracted_financials(financials: FinancialStatements) -> None:
          bs.total_liabilities_and_equity,
          bs.printed_total_liabilities_and_equity_difference),
     ):
-        status = BalanceSheet.printed_total_check(difference)
-        printed_text = "not extracted" if printed is None else f"{printed:,.0f}"
-        diff_text = "" if difference is None else f"{difference:+,.0f}"
+        # `bs` supplies its own printed unit, so the threshold is 1 printed unit of
+        # this filing.
+        status = bs.printed_total_check(difference)
+        printed_text = "not extracted" if printed is None else f"{printed:,.{places}f}"
+        diff_text = "" if difference is None else f"{difference:+,.{places}f}"
         print(f"    {check_label:<20}  printed {printed_text:>13}  "
-              f"mapped {mapped:>12,.0f}  diff {diff_text:>8}  {status}")
+              f"mapped {mapped:>12,.{places}f}  diff {diff_text:>8}  {status}")
 
     # Key derived metrics
     print(f"\n  Total Debt:           {bs.total_debt:>12,.0f}")

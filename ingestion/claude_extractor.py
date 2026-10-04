@@ -84,6 +84,7 @@ See docs/8-build/environment.md section 3.
 from __future__ import annotations
 
 import base64
+import dataclasses
 import hashlib
 import io
 import json
@@ -92,7 +93,8 @@ import os
 import re
 import textwrap
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from fractions import Fraction
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlsplit
@@ -109,6 +111,7 @@ from models.financial_statements import (
     FinancialStatements,
     IncomeStatement,
     NonRecurringItem,
+    printed_total_status,
 )
 
 Provider = Literal["claude", "gemini"]
@@ -188,7 +191,7 @@ _FINANCIALS_YEAR_SCHEMA: dict[str, str] = {
     "other_non_operating": "lines — CATCH-ALL: every other income/expense row below the operating line not listed above (signed)",
     "tax_expense": "lines — income tax provision. POSITIVE.",
     "net_income": "lines — the printed TOTAL CONSOLIDATED net income row (net income INCLUDING noncontrolling interests, i.e. after tax_expense, BEFORE any allocation to noncontrolling interests). Do NOT use 'net income attributable to common shareholders' or 'attributable to the parent'. Never []: every income statement prints it.",
-    "diluted_shares": "lines — the diluted weighted-avg shares row (same units as F/S)",
+    "diluted_shares": "lines — the diluted weighted-avg shares row, as printed. Its unit is the one 'share_units' states",
     "cfo": "lines — the 'Net cash provided by operating activities' row",
     "capex": "lines — the 'Purchases of PP&E' row and the 'Acquisitions and intangible asset purchases' row(s) from the investing section, each as its own line. Do NOT include securities. POSITIVE.",
     "sbc": "lines — stock-based compensation (from CFS operating section)",
@@ -227,14 +230,34 @@ _PRINTED_LINE_SCHEMA: dict[str, str] = {
     "page": "int — the 1-based PDF page the row is printed on",
 }
 
+# `units` and `share_units` are each one printed unit statement: the words that state
+# the unit of a set of figures, exactly as printed, and the page they are printed on.
+# The model copies the words; Python reads the scale word in them (`printed_scale`)
+# and converts (rule 1; the user's approval of 2026-10-04, backlog item 44). The
+# model returns no scale word of its own and converts nothing.
 _FINANCIALS_SCHEMA = {
     "ticker": "string",
     "company_name": "string",
     "currency": "string (e.g. 'USD')",
-    "units": "string (e.g. 'Millions')",
+    "units": {
+        "printed": "string — the statement of the unit of the money figures, exactly as printed (usually just under the income statement's title), e.g. '(in millions, except per share data)'",
+        "page": "int — the 1-based PDF page it is printed on",
+    },
+    "share_units": {
+        "printed": "string — the words that state the unit of the diluted share count, exactly as printed. If one statement covers both, copy it here too, with its page",
+        "page": "int — the 1-based PDF page it is printed on",
+    },
     "historical_years": [_FINANCIALS_YEAR_SCHEMA],
     "latest_balance_sheet": _FINANCIALS_BALANCE_SHEET_SCHEMA,
 }
+
+# The two printed unit statements a Pass 1 answer carries, each with the figures it
+# states the unit of: `units` the money figures, `share_units` the diluted share count.
+_UNIT_STATEMENT_FIELDS: tuple[tuple[str, UnitOf], ...] = (
+    ("units", "money figures"),
+    ("share_units", "share count"),
+)
+PASS1_UNIT_FIELDS: tuple[str, ...] = tuple(key for key, _ in _UNIT_STATEMENT_FIELDS)
 
 # Every key a Pass 1 answer must carry, per historical year and in the balance sheet.
 # Both routes require them: an absent key stops, naming the field and the year
@@ -301,7 +324,11 @@ _FINANCIALS_SYSTEM_PROMPT = textwrap.dedent(f"""\
 
     EXTRACTION RULES:
     - Extract ONLY the fiscal years specified in the user instructions.
-    - All monetary values: same currency and units as the source (usually USD Millions).
+    - Copy every figure as printed, in the unit the filing prints it in. NEVER
+      convert a figure to another unit: Python reads "units" and "share_units"
+      and converts.
+    - "units" and "share_units" are statements the filing prints, copied word for
+      word with their page. Never write a unit the filing does not print.
     - All values must be POSITIVE (signs implied by field name).
     - If a line item is not reported, use an empty list [].
     - Do NOT invent or estimate numbers. Only extract what is explicitly stated.
@@ -522,6 +549,293 @@ def check_row_from_printed_lines(lines: object, field: str, where: str) -> float
     return figure_from_printed_lines(lines, field, where)
 
 
+# ---------------------------------------------------------------------------
+# Printed unit statements: the model copies them, Python reads the scale
+# ---------------------------------------------------------------------------
+# Backlog item 44, on the user's approval of 2026-10-04 (rule 1, option C applied to
+# units). Filings print in different units: Walmart "(Amounts in millions, except
+# per share data)", Chipotle "(in thousands, except per share data)", Okta "(dollars
+# in millions, shares in thousands, except per share data)". The model copies two
+# such statements, each with its page: `units` for the money figures and
+# `share_units` for the diluted share count. Python reads the scale word in each
+# (`printed_scale`), the page check confirms each text on its page, and
+# `convert_filing_to_millions` converts every figure once. The model returns no
+# scale word of its own and converts nothing.
+
+# One printed unit, in millions, for each scale word the reader accepts. Rule 2: a
+# table of numbers. A Fraction, so that the conversion divides by 1,000 (thousands)
+# or multiplies by 1,000 (billions) in one operation on a whole number, never
+# multiplies by 0.001, which has no exact binary form.
+_SCALE_IN_MILLIONS: dict[str, Fraction] = {
+    "thousands": Fraction(1, 1000),
+    "millions": Fraction(1),
+    "billions": Fraction(1000),
+}
+
+# "in thousands", "in millions", "in billions", in any letter case (the text is
+# casefolded first). The words before it, back to the previous clause, are the
+# clause's subject: "dollars in millions", "shares in thousands", "in millions".
+_SCALE_CLAUSE = re.compile(r"\bin\s+(thousands|millions|billions)\b")
+# "per share" (and "per-share") excepts only per-share figures, never the share count.
+_PER_SHARE = re.compile(r"\bper[\s-]+shares?\b")
+_SHARE_WORD = re.compile(r"\bshares?\b")
+_EXCEPT_WORD = re.compile(r"\bexcept\b")
+# "in millions of dollars": the word after "of" names the figures, as a subject does.
+_OF_WORD = re.compile(r"\s+of\s+(\$|\w+)")
+_MONEY_WORD = re.compile(r"\$|\bdollars?\b")
+# A subject made only of these words states the unit of every figure, money and
+# shares alike, and so does a clause with no subject at all ("(In millions)", the
+# L3Harris 10-K 2023-12-29 page 17). Only a word a filing in 10K_filings/ prints in
+# that position is listed:
+# - "amounts": Walmart 10-K 2026-01-31 page 21, "(Amounts in millions, except per
+#   share data)".
+_GENERIC_SUBJECT_WORDS: frozenset[str] = frozenset({"amounts"})
+
+UnitOf = Literal["money figures", "share count"]
+
+
+@dataclass(frozen=True)
+class PrintedScale:
+    """A scale word read from a printed unit statement, and what one printed unit
+    of it is in millions."""
+
+    word: str
+    in_millions: Fraction
+
+
+@dataclass(frozen=True)
+class _ScaleClause:
+    """One "<subject> in <scale>" clause of a printed unit statement."""
+
+    word: str
+    subject: str
+    mentions_money: bool
+    mentions_shares: bool
+    generic: bool
+
+
+def _unit_statement_clauses(printed: str) -> tuple[list[_ScaleClause], str]:
+    """The scale clauses of a printed unit statement, and its exception text.
+
+    The text is casefolded and cut at commas, semicolons and parentheses. In each
+    piece, the words after "except" are exception text, and so is every later piece
+    that holds no scale word ("except share, per share and ratio data" is one list).
+    Each "in <scale>" outside the exception text is a clause, and its subject is the
+    words before it back to the previous clause.
+
+    Raises:
+        ValueError: a scale word is printed inside the exception text, whose meaning
+            ("except X in millions") this reader does not decide.
+    """
+    clauses: list[_ScaleClause] = []
+    exception_parts: list[str] = []
+    in_exception = False
+    for piece in re.split(r"[,;()]", printed.casefold()):
+        head, *tail = _EXCEPT_WORD.split(piece, maxsplit=1)
+        if tail:
+            in_exception = True
+            exception_parts.append(tail[0])
+        elif in_exception and not _SCALE_CLAUSE.search(piece):
+            exception_parts.append(piece)
+            continue
+        previous_end = 0
+        for match in _SCALE_CLAUSE.finditer(head):
+            # The subject, and an "of <word>" just after the scale word ("in
+            # millions of dollars"), say which figures the clause is about.
+            of_word = _OF_WORD.match(head, match.end())
+            subject = _PER_SHARE.sub(" ", head[previous_end:match.start()]) + (
+                f" {of_word.group(1)}" if of_word else ""
+            )
+            previous_end = match.end()
+            mentions_money = _MONEY_WORD.search(subject) is not None
+            mentions_shares = _SHARE_WORD.search(subject) is not None
+            clauses.append(_ScaleClause(
+                word=match.group(1),
+                subject=subject,
+                mentions_money=mentions_money,
+                mentions_shares=mentions_shares,
+                generic=(not mentions_money and not mentions_shares
+                         and set(re.findall(r"\w+", subject)) <= _GENERIC_SUBJECT_WORDS),
+            ))
+    exception_text = " ".join(exception_parts)
+    if _SCALE_CLAUSE.search(exception_text):
+        raise ValueError(
+            "it prints a scale word inside its exception ('except ...'), and which "
+            "figures that scale applies to is not read here",
+        )
+    return clauses, exception_text
+
+
+def _one_scale(words: set[str], unit_of: UnitOf) -> str | None:
+    """The one scale word in `words`; None when there is none; a stop when two differ."""
+    if len(words) > 1:
+        raise ValueError(
+            f"it states {len(words)} different scales ({', '.join(sorted(words))}) "
+            f"for the {unit_of}, so which one applies is not known",
+        )
+    return next(iter(words)) if words else None
+
+
+def _named_outside_its_clauses(
+    printed: str, named: re.Pattern[str], clauses: list[_ScaleClause],
+) -> bool:
+    """True when the statement, its "per share" phrases removed, names `named`
+    (dollars, or shares) more often than the subjects of its scale clauses do: the
+    word is printed somewhere else, in a form this reader does not name ("excluding
+    share data", "other than shares", "shares in actual numbers")."""
+    everywhere = len(named.findall(_PER_SHARE.sub(" ", printed.casefold())))
+    in_clauses = sum(len(named.findall(clause.subject)) for clause in clauses)
+    return everywhere > in_clauses
+
+
+def printed_scale(printed: str, unit_of: UnitOf) -> PrintedScale:
+    """The scale of the money figures or of the share count, read from the words of
+    a printed unit statement. The one place a scale is read, for both routes.
+
+    A clause whose subject names dollars (or "$") states the money scale; one whose
+    subject names shares states the share scale; one with no subject, or only
+    "amounts", states both ("(Amounts in millions, except per share data)"). A
+    clause naming its subject wins over one that does not. "per share" (and
+    "per-share") excepts only per-share figures, so it is removed before anything
+    else is read. After that, shares are read in one form only: a "<shares> in
+    <scale>" clause ("shares in thousands", "dollar and share amounts in
+    thousands"). A statement that names shares anywhere else stops the share
+    scale: in an exception ("except share and per share data", "except shares"),
+    or in words this reader does not name ("excluding share data", "other than
+    shares", "shares in actual numbers"). Dollars are read the same way for the
+    money scale. Scale words are "thousands", "millions" and "billions", in any
+    letter case.
+
+    Never falls back to millions (rule 3): every case not read stops.
+
+    Raises:
+        ValueError: no scale word states the unit of `unit_of`, two scales do, the
+            statement names shares (or dollars) outside a scale clause, or a scale
+            word is printed inside the exception text. The message says which, and
+            the caller adds the field, the text and the page.
+    """
+    clauses, exception_text = _unit_statement_clauses(printed)
+    if unit_of == "money figures":
+        if _named_outside_its_clauses(printed, _MONEY_WORD, clauses):
+            raise ValueError(
+                "it names dollars outside a clause of the form '<dollars> in <scale>', "
+                "so which scale the money figures take is not read here. Cite the "
+                "words that state the unit of the money figures",
+            )
+        word = _one_scale({c.word for c in clauses if c.mentions_money}, unit_of)
+    else:
+        if _SHARE_WORD.search(_PER_SHARE.sub(" ", exception_text)):
+            raise ValueError(
+                "it excepts the share count from its scale ('except "
+                f"{' '.join(exception_text.split())}'), so it does not state the unit of the "
+                "share count. Cite the words that do",
+            )
+        if _named_outside_its_clauses(printed, _SHARE_WORD, clauses):
+            raise ValueError(
+                "it names shares outside a clause of the form '<shares> in <scale>', so "
+                "whether the share count takes a scale it states is not read here. "
+                "Cite the words that state the unit of the share count",
+            )
+        word = _one_scale({c.word for c in clauses if c.mentions_shares}, unit_of)
+    if word is None:
+        word = _one_scale({c.word for c in clauses if c.generic}, unit_of)
+    if word is None:
+        raise ValueError(
+            f"it holds no scale word (thousands, millions or billions) that states "
+            f"the unit of the {unit_of}",
+        )
+    return PrintedScale(word=word, in_millions=_SCALE_IN_MILLIONS[word])
+
+
+@dataclass(frozen=True)
+class UnitStatement:
+    """One printed unit statement of a Pass 1 answer: the words, their page, and the
+    scale Python read in them."""
+
+    field: str
+    printed: str
+    page: int
+    scale: PrintedScale
+
+
+@dataclass(frozen=True)
+class FilingUnits:
+    """The two printed unit statements of one filing's Pass 1 answer: `units` (the
+    money figures) and `share_units` (the diluted share count)."""
+
+    money: UnitStatement
+    shares: UnitStatement
+
+
+def _unit_statement_problems(data: dict[str, Any]) -> list[str]:
+    """Every problem with the two printed unit statements of a Pass 1 answer.
+
+    Each must be a JSON object with a non-empty string `printed` and a positive
+    integer `page`, and its scale must be readable (`printed_scale`). A problem
+    names the field, the text and the page.
+    """
+    problems: list[str] = []
+    for key, unit_of in _UNIT_STATEMENT_FIELDS:
+        if key not in data:
+            problems.append(
+                f"key 'pass1.{key}' is absent. It is the statement of the unit of the "
+                f"{unit_of}, exactly as printed, with its page: "
+                '{"printed": ..., "page": ...}.',
+            )
+            continue
+        statement = data[key]
+        if not isinstance(statement, dict):
+            problems.append(
+                f"'pass1.{key}' must be a JSON object {{\"printed\": ..., \"page\": ...}}: "
+                f"the statement of the unit of the {unit_of} exactly as printed, and its "
+                f"page. Got {type(statement).__name__} {statement!r}.",
+            )
+            continue
+        shape: list[str] = [
+            f"'pass1.{key}': key '{sub}' is absent." for sub in ("printed", "page")
+            if sub not in statement
+        ]
+        if "printed" in statement and (
+            not isinstance(statement["printed"], str) or not statement["printed"].strip()
+        ):
+            shape.append(
+                f"'pass1.{key}.printed' must be the statement of units exactly as "
+                f"printed, a non-empty string, got {statement['printed']!r}.",
+            )
+        if "page" in statement and (not _is_json_int(statement["page"]) or statement["page"] < 1):
+            shape.append(
+                f"'pass1.{key}.page' must be a positive integer (a 1-based PDF page), "
+                f"got {statement['page']!r}.",
+            )
+        if shape:
+            problems += shape
+            continue
+        try:
+            printed_scale(statement["printed"], unit_of)
+        except ValueError as exc:
+            problems.append(
+                f"'pass1.{key}' {statement['printed']!r} (page {statement['page']}): "
+                f"the scale of the {unit_of} cannot be read: {exc}.",
+            )
+    return problems
+
+
+def _filing_units(data: dict[str, Any]) -> FilingUnits:
+    """The two unit statements of a Pass 1 answer that `pass1_problems` has passed."""
+    def statement(key: str, unit_of: UnitOf) -> UnitStatement:
+        return UnitStatement(
+            field=key,
+            printed=data[key]["printed"],
+            page=data[key]["page"],
+            scale=printed_scale(data[key]["printed"], unit_of),
+        )
+
+    return FilingUnits(
+        money=statement("units", "money figures"),
+        shares=statement("share_units", "share count"),
+    )
+
+
 def _line_field_problems(
     entry: dict[str, Any],
     label: str,
@@ -554,11 +868,14 @@ def pass1_problems(data: object) -> list[str]:
     Pass1ShapeError on a non-empty result, and route B's loader prefixes each
     problem with the session file and the filing. An absent key is never read as
     zero (rule 3). `latest_balance_sheet` must be present: `{}` is the answer for
-    "skip the balance sheet", and anything else must carry every key.
+    "skip the balance sheet", and anything else must carry every key. The two
+    printed unit statements, `units` and `share_units`, must be present, well
+    formed, and each must state a scale Python can read (`printed_scale`): a
+    statement whose scale cannot be read stops, and never falls back to millions.
     """
     if not isinstance(data, dict):
         return [f"the Pass 1 answer must be a JSON object, got {type(data).__name__}."]
-    problems: list[str] = []
+    problems: list[str] = _unit_statement_problems(data)
 
     if "historical_years" not in data:
         problems.append("key 'pass1.historical_years' is absent.")
@@ -695,7 +1012,9 @@ def _validate_extracted_data(
     against the mapped asset lines, and the printed total liabilities and equity
     row against the mapped liability and equity lines (the noncontrolling interest
     memos are in neither), failing when the difference exceeds 1 in the filing's
-    units, or when the total was not extracted (BalanceSheet.printed_total_check).
+    units, or when the total was not extracted (`printed_total_status`). The
+    figures here are as printed, before the conversion to millions, so a
+    difference is already in printed units.
 
     A check is a check, never a repair: nothing here changes a figure. Returns one
     _CheckFailure per failure (empty = all passed); neither wording asks for a
@@ -792,7 +1111,8 @@ def _validate_extracted_data(
              bs.printed_total_liabilities_and_equity_difference, le_formula,
              _LIABILITY_AND_EQUITY_FIELDS),
         ):
-            status = BalanceSheet.printed_total_check(difference)
+            # As printed: the difference is in printed units, the threshold's own.
+            status = printed_total_status(difference)
             printed_text = "(none)" if printed is None else f"{printed:,.0f}"
             diff_text = "" if difference is None else f"{difference:+,.0f}"
             print(f"  {bs.year:<6}  {label:<18}  {printed_text:>10}  {mapped:>10,.0f}  {diff_text:>9}  {status}")
@@ -1038,6 +1358,164 @@ def _printed_line_failures(data: dict[str, Any], pdf_bytes: bytes) -> list[_Chec
 
 
 # ---------------------------------------------------------------------------
+# Checks: each printed unit statement looked up on the page it cites
+# ---------------------------------------------------------------------------
+# P14a. A unit statement is checked on the page it cites (`_read_cited_pages`), with
+# one difference in consequence from a printed line: a printed line not found is
+# shown and kept, but a unit statement not confirmed STOPS the run once route A's
+# retries are spent, and stops route B's loader at once. A wrong scale moves every
+# figure by a factor of 1,000, and nothing downstream can detect it.
+#
+# Two checks (review round 1, F1 and F6):
+# - the statement is printed on its page as a whole: one parenthesised group, or
+#   one whole text line, equal to the text the model returned with only its
+#   whitespace normalised. The words of "(in thousands)" are on Okta's page 58,
+#   inside "(dollars in millions, shares in thousands, except per share data)";
+#   the statement "(in thousands)" is not, and it is not confirmed;
+# - the statement is on a page of the figures it governs: `units` on a page that a
+#   printed line of the income statement cites, `share_units` on the `units` page
+#   or a page that a `diluted_shares` line cites. "(In thousands)" heads a
+#   stock-award table on page 62 of the L3Harris 10-K 2026-01-02, whose statements
+#   print in millions on page 35.
+
+_UNIT_NOT_CONFIRMED_STOPS = (
+    "A unit statement that is not confirmed stops the run: the scale read from it "
+    "converts every figure to millions, a wrong scale moves every figure by a factor "
+    "of 1,000, and nothing downstream can detect it."
+)
+
+# The income statement's line fields: the figures the `units` statement governs.
+# `depreciation_amortization`, `cfo`, `capex`, `sbc` and `change_in_working_capital`
+# are read from the cash flow statement, so their pages are not the income
+# statement's.
+_INCOME_STATEMENT_LINE_FIELDS: tuple[str, ...] = (
+    "revenue", "cost_of_revenue", "gross_profit", "sga", "rd_expense",
+    "other_operating_expense", "operating_income", "interest_expense",
+    "interest_income", "other_non_operating", "tax_expense", "net_income",
+    "diluted_shares",
+)
+
+# One parenthesised group of a page's text, with no parenthesis inside it.
+_PARENTHESISED_GROUP = re.compile(r"\([^()]*\)")
+
+
+def _whitespace_normalised(text: str) -> str:
+    """Every run of whitespace (a line break included) made one space, stripped."""
+    return " ".join(text.split())
+
+
+def unit_statement_on_page(printed: str, page_text: str) -> bool:
+    """True when `printed` is printed on the page as a whole printed unit.
+
+    Only whitespace is normalised, on both sides (`_whitespace_normalised`): case,
+    parentheses, commas and every other character are compared as they are. A
+    statement in parentheses must equal one whole parenthesised group of the page's
+    text, taken with its line breaks made spaces, so a statement that wraps onto a
+    second text line is found, and so is one printed on the same text line as the
+    column headings (L3Harris: "(In millions, except per share amounts) 2025 2024
+    2023"). A statement with no parenthesis must equal one whole text line. A
+    fragment of a longer statement is never found: "(in thousands)" is not found
+    on a page that prints "(dollars in millions, shares in thousands, except per
+    share data)".
+
+    Pure: no PDF, no I/O.
+    """
+    wanted = _whitespace_normalised(printed)
+    if not wanted:
+        return False
+    if "(" in wanted or ")" in wanted:
+        groups = _PARENTHESISED_GROUP.findall(_whitespace_normalised(page_text))
+        return wanted in groups
+    return any(_whitespace_normalised(text_line) == wanted
+               for text_line in page_text.splitlines())
+
+
+def _unit_statement_pages_allowed(data: dict[str, Any]) -> dict[str, set[int]]:
+    """For each unit statement, the pages it may cite: the pages of the figures it
+    governs. `units`: every page a printed line of the income statement cites, in
+    any year of the answer. `share_units`: the `units` page, and every page a
+    `diluted_shares` line cites."""
+    income_pages = {
+        line["page"]
+        for entry in data["historical_years"]
+        for field in _INCOME_STATEMENT_LINE_FIELDS
+        for line in entry[field]
+    }
+    diluted_pages = {
+        line["page"] for entry in data["historical_years"] for line in entry["diluted_shares"]
+    }
+    return {
+        "units": income_pages,
+        "share_units": {data["units"]["page"]} | diluted_pages,
+    }
+
+
+# What each statement's allowed pages are, in the words of the failure message.
+_PAGES_ALLOWED_ARE: dict[str, str] = {
+    "units": "the pages the income statement's printed lines cite",
+    "share_units": "the 'units' page and the pages the diluted share count's printed lines cite",
+}
+
+
+def _unit_statement_failures(data: dict[str, Any], pdf_bytes: bytes) -> list[_CheckFailure]:
+    """Look both printed unit statements of a Pass 1 answer up on the pages they cite.
+
+    `data` is the parsed answer after `pass1_problems` has passed. Returns one
+    _CheckFailure per statement that cites a page outside the pages of the figures
+    it governs (`_unit_statement_pages_allowed`), a page beyond the PDF, or a page
+    with no text layer (a page not looked at is not confirmed; rule 3), or that is
+    not printed on its page as a whole (`unit_statement_on_page`). Each message
+    names the field, the text and the page.
+
+    Raises:
+        ValueError: the PDF cannot be opened by pdfplumber.
+    """
+    statements = [
+        (key, unit_of, data[key]["printed"], data[key]["page"])
+        for key, unit_of in _UNIT_STATEMENT_FIELDS
+    ]
+    pages_allowed = _unit_statement_pages_allowed(data)
+    page_count, page_texts = _read_cited_pages(
+        pdf_bytes, {page for *_, page in statements},
+    )
+    failures: list[_CheckFailure] = []
+    for key, unit_of, printed, page in statements:
+        copy_again = (
+            f"Copy the statement of the unit of the {unit_of} again, word for word as "
+            "the filing prints it, with the page it is printed on."
+        )
+        text = page_texts[page] if page <= page_count else None
+        if page not in pages_allowed[key]:
+            reason = (
+                f"cites page {page}, which is not a page of the figures it states the "
+                f"unit of: the pages allowed are {sorted(pages_allowed[key])}, "
+                f"{_PAGES_ALLOWED_ARE[key]}"
+            )
+        elif page > page_count:
+            reason = f"cites page {page}, but the PDF has {page_count} pages"
+        elif text is None or not text.strip():
+            reason = (f"cannot be confirmed, because page {page} has no text layer; it "
+                      "was not looked for")
+        elif unit_statement_on_page(printed, text):
+            continue
+        else:
+            reason = (f"was not found on page {page}, the page it cites, as a whole "
+                      "printed statement")
+        failures.append(_CheckFailure(
+            message=(
+                f"'{key}' (the unit of the {unit_of}): the statement {printed!r} "
+                f"{reason}. {_UNIT_NOT_CONFIRMED_STOPS}"
+            ),
+            retry_message=(
+                f"'{key}': the unit statement {printed!r} {reason}. {copy_again}"
+            ),
+        ))
+    print(f"  Unit statements looked up on their cited pages: {len(statements)} checked, "
+          f"{len(statements) - len(failures)} found, {len(failures)} not confirmed.")
+    return failures
+
+
+# ---------------------------------------------------------------------------
 # PDF reader — raw bytes for native LLM ingestion
 # ---------------------------------------------------------------------------
 
@@ -1277,7 +1755,11 @@ def _parse_financials_response(
     ticker: str,
     company_name: str,
 ) -> tuple[FinancialStatements, list[_CheckFailure]]:
-    """Parse Pass 1 JSON → FinancialStatements + failed checks.
+    """Parse Pass 1 JSON → FinancialStatements, as printed, + failed checks.
+
+    The figures are in the filing's own units; `convert_filing_to_millions`
+    converts them to millions once, after Pass 2. The checks here run on the
+    figures as printed, so the balance check's 1 printed unit is 1.
 
     Every figure is `figure_from_printed_lines` over the field's printed lines, and
     every key is read with `[]` after `pass1_problems` has proved it present: an
@@ -1404,6 +1886,10 @@ def _parse_financials_response(
                 bs_data["total_liabilities_and_equity"], "total_liabilities_and_equity",
                 f"balance sheet {bs_year}",
             ),
+            # The figures are as printed, not yet in millions: None says so, and
+            # BalanceSheet.printed_total_check stops on it. The conversion
+            # (convert_filing_to_millions) sets it from the printed money scale.
+            printed_unit_in_millions=None,
         )
         balance_sheets.append(balance)
 
@@ -1616,8 +2102,21 @@ def _run_financials_pass(
     target_years: list[int] | None = None,
     include_bs: bool = True,
     debug: bool = False,
-) -> FinancialStatements:
-    """Execute Pass 1: extract I/S, C/F, and optionally B/S."""
+) -> tuple[FinancialStatements, FilingUnits]:
+    """Execute Pass 1: extract I/S, C/F, and optionally B/S.
+
+    Returns the statements AS PRINTED, in the filing's own units, and the two
+    printed unit statements with the scale Python read in each. The caller builds
+    Pass 2's prompt from the statements as printed and then converts both passes
+    to millions (`convert_filing_to_millions`, in `extract_financials`).
+
+    Raises:
+        ValueError: a unit statement is still not found on the page it cites after
+            the last retry (P14a), naming the field, the text and the page; or the
+            PDF cannot be opened by pdfplumber.
+        json.JSONDecodeError, Pass1ShapeError: the answer still cannot be parsed
+            after the last retry.
+    """
     # The same builder `pass1_prompts` calls, so the prompt sent here and the one
     # the session route prints for the same plan are one string, not two copies.
     system_prompt, user_prompt = _pass1_prompt_pair(target_years, include_bs)
@@ -1637,13 +2136,16 @@ def _run_financials_pass(
         print(f"\n{'='*65}\nPASS 1 RAW RESPONSE\n{'='*65}\n{raw}\n{'='*65}\n")
 
     # Parse + Validate + Retry loop. Three kinds of answer go back to the model:
-    # text that is not JSON, an answer with an absent key or a malformed printed
-    # line (Pass1ShapeError), and an answer whose printed subtotals or totals fail
-    # their check or whose printed lines are not found on their cited pages. Each
-    # retry asks the model to READ the rows again; none asks it to change a figure
-    # so that a check passes (rule 1). After the last retry, the first two stop the
-    # run, and a failed check is shown and kept. A PDF that pdfplumber cannot open
-    # stops at once: nothing could be looked up, so no retry could help.
+    # text that is not JSON, an answer with an absent key, a malformed printed
+    # line or a unit statement whose scale cannot be read (Pass1ShapeError), and an
+    # answer whose printed subtotals or totals fail their check or whose printed
+    # lines or unit statements are not found on their cited pages. Each retry asks
+    # the model to READ the rows again; none asks it to change a figure so that a
+    # check passes (rule 1). After the last retry, the first two stop the run, a
+    # unit statement not found stops the run (P14a: a wrong scale moves every
+    # figure by 1,000), and any other failed check is shown and kept. A PDF that
+    # pdfplumber cannot open stops at once: nothing could be looked up, so no retry
+    # could help.
     MAX_RETRIES = 2
     json_str = _extract_json(raw)
 
@@ -1683,7 +2185,10 @@ def _run_financials_pass(
                 "PROBLEMS:\n" + error_list + "\n\n"
                 "Every field except 'year' is a list of printed lines, each "
                 '{"label": ..., "value": ..., "page": ...}, and an empty list means '
-                "the filing prints no such row. Read the missing rows from the "
+                "the filing prints no such row. 'units' and 'share_units' are each "
+                '{"printed": ..., "page": ...}: the words that state the unit of the '
+                "money figures and of the share count, copied exactly as printed, "
+                "with their page. Read the missing rows from the "
                 "filing and return the whole JSON with every key present. Each value "
                 "is one figure printed on its row; do not add rows together. Return "
                 "ONLY the corrected JSON.\n\n"
@@ -1699,21 +2204,34 @@ def _run_financials_pass(
             json_str = _extract_json(raw2)
             continue
 
-        # The answer parsed. Each printed line is now looked up on the page it
-        # cites (backlog item 59): a line not found is a failed check like any
-        # other, retried and then shown. A PDF pdfplumber cannot open stops here.
-        val_errors = val_errors + _printed_line_failures(json.loads(json_str), pdf_bytes)
+        # The answer parsed. Each unit statement and each printed line is now
+        # looked up on the page it cites (P14a; backlog item 59): one not found is
+        # a failed check like any other, and retried. A PDF pdfplumber cannot open
+        # stops here.
+        data = json.loads(json_str)
+        unit_failures = _unit_statement_failures(data, pdf_bytes)
+        val_errors = val_errors + unit_failures + _printed_line_failures(data, pdf_bytes)
         if not val_errors:
-            return financials
+            return financials, _filing_units(data)
 
-        # A check failed. The figures are kept and the failure is shown; it is
-        # never repaired here.
         if attempt >= MAX_RETRIES:
+            # A unit statement still not found stops: its scale converts every
+            # figure, and a wrong one cannot be detected downstream.
+            if unit_failures:
+                raise ValueError(
+                    f"Pass 1: after {MAX_RETRIES} retries, "
+                    f"{len(unit_failures)} printed unit statement(s) are still not "
+                    "confirmed on the page they cite, so the scale of the figures is "
+                    "not known and the run stops:\n"
+                    + "\n".join(f"  - {failure.message}" for failure in unit_failures),
+                )
+            # Any other failed check: the figures are kept and the failure is
+            # shown; it is never repaired here.
             print(f"\n  [Pass 1 FAIL] Checks still fail after {MAX_RETRIES} retries. "
                   "The figures are kept as read and the failures are shown:")
             for failure in val_errors:
                 print(f"    {failure.message}")
-            return financials
+            return financials, _filing_units(data)
 
         print(f"\n  [Pass 1] Checks failed — asking for the rows to be read again "
               f"(retry {attempt + 1}/{MAX_RETRIES})...")
@@ -1725,7 +2243,8 @@ def _run_financials_pass(
         fix_prompt = (
             "Python added up the printed lines in the following JSON and compared "
             "the sums with the subtotals and totals the filing prints, and looked "
-            "for each line on the page it cites. These checks failed:\n\n"
+            "for each line and each unit statement on the page it cites. These "
+            "checks failed:\n\n"
             "FAILED CHECKS:\n" + error_list + "\n\n"
             "A failed check means a row was misread, missed, listed under two "
             "fields, or not found on the page it cites. Read the statement rows "
@@ -1744,7 +2263,8 @@ def _run_financials_pass(
             print(f"  [Pass 1] Retry tokens — input: {in2:,}  output: {out2:,}")
         json_str = _extract_json(raw2)
 
-    return financials
+    # Unreachable: the last attempt returns or raises in every branch above.
+    raise AssertionError("Pass 1 retry loop ended without a result")
 
 
 # ---------------------------------------------------------------------------
@@ -1824,7 +2344,9 @@ def _run_nri_pass(
         print(f"  [Pass 2] Found {len(nri)} non-recurring item(s):")
         for item in nri:
             sign = "+" if item.direction == "add_back" else "-"
-            print(f"    {item.year} {sign}{item.amount:,.0f}M on "
+            # As printed, in the filing's own unit: converted to millions later,
+            # with Pass 1 (convert_filing_to_millions).
+            print(f"    {item.year} {sign}{item.amount:,.0f} (as printed) on "
                   f"{item.line_item} — {item.description[:60]}")
     else:
         print("  [Pass 2] No non-recurring items identified")
@@ -2149,6 +2671,10 @@ def parse_pass1(
 ) -> tuple[FinancialStatements, list[str]]:
     """Parse a Pass 1 answer into statements plus one message per failed check.
 
+    The statements are AS PRINTED, in the filing's own units, and each balance
+    sheet's `printed_unit_in_millions` is None: `convert_filing_to_millions`
+    converts them, after Pass 2 (whose prompt is built from them as printed).
+
     The messages are the full wording (printed figure, Python's sum, the gap), the
     one route B's `check` and the CLI print. Route A's retry uses the wording
     without amounts, inside `_run_financials_pass`.
@@ -2181,6 +2707,244 @@ def parse_pass2(json_str: str) -> list[NonRecurringItem]:
     return _parse_nri_response(json_str)
 
 
+def filing_units(json_str: str) -> FilingUnits:
+    """The two printed unit statements of a Pass 1 answer, with the scale Python
+    read in each (`printed_scale`).
+
+    Raises:
+        json.JSONDecodeError: the text is not JSON.
+        Pass1ShapeError: an absent key, a malformed printed line, or a unit
+            statement whose scale cannot be read.
+    """
+    data = json.loads(json_str)
+    problems = pass1_problems(data)
+    if problems:
+        raise Pass1ShapeError(problems)
+    return _filing_units(data)
+
+
+def unit_statement_page_failures(json_str: str, pdf_bytes: bytes) -> list[str]:
+    """One message per printed unit statement not found on the page it cites.
+
+    Route B's unit check, the same lookup route A runs in `_run_financials_pass`.
+    The loader stops on any: a wrong scale moves every figure by 1,000.
+
+    Raises:
+        json.JSONDecodeError: the text is not JSON.
+        Pass1ShapeError: the answer's shape is not usable.
+        ValueError: the PDF cannot be opened by pdfplumber.
+    """
+    data = json.loads(json_str)
+    problems = pass1_problems(data)
+    if problems:
+        raise Pass1ShapeError(problems)
+    return [failure.message for failure in _unit_statement_failures(data, pdf_bytes)]
+
+
+# ---------------------------------------------------------------------------
+# The conversion to millions: once per filing, after Pass 2, before any merge
+# ---------------------------------------------------------------------------
+# docs/4-conventions/units-and-signs.md: every money figure is in millions, the
+# share count in millions of shares. Both routes call `convert_filing_to_millions`
+# on each filing's statements and Pass 2 items, after that filing's Pass 2 (whose
+# prompt is built from the statements as printed, so the model sees and answers in
+# the filing's own units) and before any merge.
+
+# Every field of each statement the conversion handles, beside `year`. A field
+# added to a model and not listed here stops the conversion by name, rather than
+# reaching the valuation unconverted (rule 3).
+_INCOME_STATEMENT_CONVERTED: frozenset[str] = frozenset({
+    "revenue", "cost_of_revenue", "sga", "rd_expense", "depreciation_amortization",
+    "other_operating_expense", "interest_expense", "interest_income",
+    "other_non_operating", "tax_expense", "diluted_shares_outstanding",
+    "non_recurring_items",
+})
+_BALANCE_SHEET_CONVERTED: frozenset[str] = frozenset({
+    "cash_and_equivalents", "short_term_investments", "accounts_receivable",
+    "inventory", "other_current_assets", "ppe_net", "goodwill", "intangible_assets",
+    "other_non_current_assets", "accounts_payable", "short_term_debt",
+    "current_portion_lt_debt", "accrued_liabilities", "other_current_liabilities",
+    "long_term_debt", "other_non_current_liabilities", "total_equity",
+    "noncontrolling_interest_nonredeemable", "noncontrolling_interest_redeemable",
+    "printed_total_assets", "printed_total_liabilities_and_equity",
+    "printed_unit_in_millions",
+})
+_CASH_FLOW_CONVERTED: frozenset[str] = frozenset({
+    "net_income", "depreciation_amortization", "stock_based_compensation",
+    "change_in_working_capital", "other_operating_activities", "capital_expenditures",
+    "acquisitions", "other_investing_activities", "debt_issued", "debt_repaid",
+    "shares_issued", "shares_repurchased", "dividends_paid", "other_financing_activities",
+})
+_NON_RECURRING_ITEM_CONVERTED: frozenset[str] = frozenset({"amount"})
+_NON_RECURRING_ITEM_NOT_FIGURES: frozenset[str] = frozenset({
+    "year", "description", "line_item", "direction", "category", "confidence", "source",
+})
+
+
+def _require_every_field_converted(
+    cls: type, converted: frozenset[str], not_figures: frozenset[str],
+) -> None:
+    """Stop when `cls` has a field the conversion does not list."""
+    unlisted = sorted({f.name for f in dataclasses.fields(cls)} - converted - not_figures)
+    if unlisted:
+        raise ValueError(
+            f"{cls.__name__} has field(s) {unlisted} that the conversion to millions "
+            "does not handle, so they would reach the valuation in the filing's own "
+            "units. List each in claude_extractor.py's conversion.",
+        )
+
+
+def _in_millions(value: float, scale: Fraction) -> float:
+    """`value`, printed in units of `scale`, in millions. ONE operation: divide by
+    1,000 for thousands, multiply by 1,000 for billions, multiply by 1 (exact) for
+    millions. A float division by an integer is correctly rounded; a
+    multiplication by 0.001 is not, so it is never used."""
+    if scale.denominator == 1:
+        return value * scale.numerator
+    if scale.numerator != 1:
+        raise ValueError(f"a scale of {scale} millions is neither 1/n nor n")
+    return value / scale.denominator
+
+
+def _optional_in_millions(value: float | None, scale: Fraction) -> float | None:
+    """`_in_millions`, keeping None ("not extracted") as None."""
+    return None if value is None else _in_millions(value, scale)
+
+
+def convert_filing_to_millions(
+    financials: FinancialStatements,
+    non_recurring: list[NonRecurringItem],
+    units: FilingUnits,
+) -> tuple[FinancialStatements, list[NonRecurringItem]]:
+    """One filing's statements and Pass 2 items, converted to millions once.
+
+    Every money figure with the money scale read from `units` (the `units`
+    statement), the diluted share count with the share scale (the `share_units`
+    statement), and every balance sheet's `printed_unit_in_millions` set to the
+    money scale, so its check stays at 1 printed unit. Pass 2's amounts are in the
+    filing's own units (its schema says "same units as financials", and its prompt
+    shows the statements as printed), so they take the money scale too.
+
+    Both routes call this, per filing, after that filing's Pass 2 and before any
+    merge: route A in `extract_financials`, route B in `load_session_extraction`.
+    Each figure is converted once, after its printed lines are summed.
+
+    Raises:
+        ValueError: a balance sheet already carries `printed_unit_in_millions` (the
+            filing was converted before; a second conversion would move every
+            figure again), or a statement has a field this conversion does not list.
+    """
+    _require_every_field_converted(
+        IncomeStatement, _INCOME_STATEMENT_CONVERTED, frozenset({"year"}))
+    _require_every_field_converted(
+        BalanceSheet, _BALANCE_SHEET_CONVERTED, frozenset({"year"}))
+    _require_every_field_converted(
+        CashFlowStatement, _CASH_FLOW_CONVERTED, frozenset({"year"}))
+    _require_every_field_converted(
+        NonRecurringItem, _NON_RECURRING_ITEM_CONVERTED, _NON_RECURRING_ITEM_NOT_FIGURES)
+    _require_every_field_converted(
+        FinancialStatements,
+        frozenset({"income_statements", "balance_sheets", "cash_flow_statements"}),
+        frozenset({"ticker", "company_name"}),
+    )
+    converted_already = [
+        bs.year for bs in financials.balance_sheets if bs.printed_unit_in_millions is not None
+    ]
+    if converted_already:
+        raise ValueError(
+            f"the balance sheet(s) {converted_already} of {financials.ticker!r} already "
+            "carry printed_unit_in_millions, so this filing was converted to millions "
+            "before. A second conversion would move every figure again; it stops.",
+        )
+
+    money = units.money.scale.in_millions
+    shares = units.shares.scale.in_millions
+    print(f"  Units: money {units.money.printed!r} (page {units.money.page}) -> "
+          f"{units.money.scale.word}; share count {units.shares.printed!r} (page "
+          f"{units.shares.page}) -> {units.shares.scale.word}. Converted to millions.")
+
+    income_statements = [
+        replace(
+            inc,
+            revenue=_in_millions(inc.revenue, money),
+            cost_of_revenue=_in_millions(inc.cost_of_revenue, money),
+            sga=_in_millions(inc.sga, money),
+            rd_expense=_in_millions(inc.rd_expense, money),
+            depreciation_amortization=_in_millions(inc.depreciation_amortization, money),
+            other_operating_expense=_in_millions(inc.other_operating_expense, money),
+            interest_expense=_in_millions(inc.interest_expense, money),
+            interest_income=_in_millions(inc.interest_income, money),
+            other_non_operating=_in_millions(inc.other_non_operating, money),
+            tax_expense=_in_millions(inc.tax_expense, money),
+            diluted_shares_outstanding=_in_millions(inc.diluted_shares_outstanding, shares),
+            non_recurring_items={
+                key: _in_millions(amount, money)
+                for key, amount in inc.non_recurring_items.items()
+            },
+        )
+        for inc in financials.income_statements
+    ]
+    balance_sheets = [
+        replace(
+            bs,
+            cash_and_equivalents=_in_millions(bs.cash_and_equivalents, money),
+            short_term_investments=_in_millions(bs.short_term_investments, money),
+            accounts_receivable=_in_millions(bs.accounts_receivable, money),
+            inventory=_in_millions(bs.inventory, money),
+            other_current_assets=_in_millions(bs.other_current_assets, money),
+            ppe_net=_in_millions(bs.ppe_net, money),
+            goodwill=_in_millions(bs.goodwill, money),
+            intangible_assets=_in_millions(bs.intangible_assets, money),
+            other_non_current_assets=_in_millions(bs.other_non_current_assets, money),
+            accounts_payable=_in_millions(bs.accounts_payable, money),
+            short_term_debt=_in_millions(bs.short_term_debt, money),
+            current_portion_lt_debt=_in_millions(bs.current_portion_lt_debt, money),
+            accrued_liabilities=_in_millions(bs.accrued_liabilities, money),
+            other_current_liabilities=_in_millions(bs.other_current_liabilities, money),
+            long_term_debt=_in_millions(bs.long_term_debt, money),
+            other_non_current_liabilities=_in_millions(bs.other_non_current_liabilities, money),
+            total_equity=_in_millions(bs.total_equity, money),
+            noncontrolling_interest_nonredeemable=_optional_in_millions(
+                bs.noncontrolling_interest_nonredeemable, money),
+            noncontrolling_interest_redeemable=_optional_in_millions(
+                bs.noncontrolling_interest_redeemable, money),
+            printed_total_assets=_optional_in_millions(bs.printed_total_assets, money),
+            printed_total_liabilities_and_equity=_optional_in_millions(
+                bs.printed_total_liabilities_and_equity, money),
+            printed_unit_in_millions=float(money),
+        )
+        for bs in financials.balance_sheets
+    ]
+    cash_flow_statements = [
+        replace(
+            cf,
+            net_income=_in_millions(cf.net_income, money),
+            depreciation_amortization=_in_millions(cf.depreciation_amortization, money),
+            stock_based_compensation=_in_millions(cf.stock_based_compensation, money),
+            change_in_working_capital=_in_millions(cf.change_in_working_capital, money),
+            other_operating_activities=_in_millions(cf.other_operating_activities, money),
+            capital_expenditures=_in_millions(cf.capital_expenditures, money),
+            acquisitions=_in_millions(cf.acquisitions, money),
+            other_investing_activities=_in_millions(cf.other_investing_activities, money),
+            debt_issued=_in_millions(cf.debt_issued, money),
+            debt_repaid=_in_millions(cf.debt_repaid, money),
+            shares_issued=_in_millions(cf.shares_issued, money),
+            shares_repurchased=_in_millions(cf.shares_repurchased, money),
+            dividends_paid=_in_millions(cf.dividends_paid, money),
+            other_financing_activities=_in_millions(cf.other_financing_activities, money),
+        )
+        for cf in financials.cash_flow_statements
+    ]
+    items = [replace(item, amount=_in_millions(item.amount, money)) for item in non_recurring]
+    converted = replace(
+        financials,
+        income_statements=income_statements,
+        balance_sheets=balance_sheets,
+        cash_flow_statements=cash_flow_statements,
+    )
+    return converted, items
+
+
 # ===========================================================================
 # Public API
 # ===========================================================================
@@ -2202,6 +2966,9 @@ def extract_financials(
 
     Pass 1: Extract I/S + C/F (+ optional B/S) for target years.
     Pass 2: Analyze footnotes for non-recurring items, using Pass 1 I/S as context.
+    Then both are converted to millions once (`convert_filing_to_millions`), from
+    the scales Python read in the filing's printed unit statements. Pass 2's prompt
+    is built from the statements as printed, before the conversion.
 
     Args:
         pdf_path:      Path to the PDF filing.
@@ -2215,7 +2982,7 @@ def extract_financials(
         debug:         Print raw LLM responses.
 
     Returns:
-        (FinancialStatements, list[NonRecurringItem])
+        (FinancialStatements, list[NonRecurringItem]), every figure in millions.
     """
     resolution = resolve_provider(provider, model)
 
@@ -2224,19 +2991,21 @@ def extract_financials(
     print(f"\n  {describe_resolution(resolution)}")
     pdf_bytes = _read_pdf_bytes(pdf_path)
 
-    # Pass 1: Financial data extraction
-    financials = _run_financials_pass(
+    # Pass 1: Financial data extraction, as printed, with its unit statements
+    financials, units = _run_financials_pass(
         pdf_bytes, ticker, company_name, resolution,
         target_years=target_years, include_bs=include_bs, debug=debug,
     )
 
-    # Pass 2: Non-recurring item analysis (receives Pass 1 I/S as context)
+    # Pass 2: Non-recurring item analysis (receives Pass 1 I/S as context, as
+    # printed, so its amounts are in the filing's own units too)
     nri = _run_nri_pass(
         pdf_bytes, financials, resolution,
         target_years=target_years, debug=debug,
     )
 
-    return financials, nri
+    # Both passes to millions, once, before any merge (extract_multi_year merges).
+    return convert_filing_to_millions(financials, nri, units)
 
 
 def extract_multi_year(

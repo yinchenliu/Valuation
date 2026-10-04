@@ -2,12 +2,50 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-# The balance sheet check's tolerance, in the filing's own units (a filing in
-# millions: 1 million). A printed total and the sum of the lines mapped under it
-# may differ by rounding and by nothing more: the user's decision of 2026-10-02,
-# "if the balance sheet check doesn't pass, just fail it and show it". It decides
-# a status, never a figure, and every output that shows the status names it.
+# The balance sheet check's tolerance, in PRINTED UNITS: 1 in the unit the filing
+# prints its figures in (1 million for a filing in millions, 1 thousand for a filing
+# in thousands). A printed total and the sum of the lines mapped under it may differ
+# by rounding and by nothing more: the user's decision of 2026-10-02, "if the
+# balance sheet check doesn't pass, just fail it and show it". It decides a status,
+# never a figure, and every output that shows the status names it.
+#
+# The figures a BalanceSheet holds are in millions after the conversion
+# (`claude_extractor.convert_filing_to_millions`, P14a), so the threshold in
+# millions is this times `BalanceSheet.printed_unit_in_millions`: 0.001 for a
+# filing in thousands, 1 for a filing in millions.
 BALANCE_CHECK_TOLERANCE = 1.0
+
+# Decimal places, in printed units, to which a balance check difference is rounded
+# before it is compared with the tolerance. Not a figure and not an assumption about
+# the company: it removes the binary floating-point noise the conversion to millions
+# leaves (a filing in thousands: each figure divided by 1,000, and 0.001 has no exact
+# binary form, so a gap of exactly 1 printed unit reads as 0.99999999999 or
+# 1.00000000001 printed units, about 1e-8 either side). No statement prints a figure
+# to a millionth of its unit, so rounding there changes no real difference. It
+# decides only whether a gap of exactly 1 printed unit reads as 1, as it does on the
+# page.
+PRINTED_UNIT_DECIMALS = 6
+
+
+def printed_total_status(difference_in_printed_units: float | None) -> str:
+    """'OK', 'FAIL' or 'FAIL: not extracted' for one printed-total difference given
+    in the filing's printed units.
+
+    FAIL when the difference exceeds BALANCE_CHECK_TOLERANCE (1 printed unit, after
+    rounding to PRINTED_UNIT_DECIMALS): rounding, and nothing more. The user decided
+    on 2026-10-02 that a balance sheet that does not pass is failed and shown, never
+    repaired. The one threshold for the parser (which checks the figures as printed,
+    before the conversion), the CLI and the page (which check them in millions,
+    through BalanceSheet.printed_total_check).
+
+    None (the printed total was not extracted) fails too, and says why: every
+    balance sheet prints both totals, so a missing one is a reading that did not
+    happen, never a pass and never a printed 0 (review F1).
+    """
+    if difference_in_printed_units is None:
+        return "FAIL: not extracted"
+    gap = round(abs(difference_in_printed_units), PRINTED_UNIT_DECIMALS)
+    return "FAIL" if gap > BALANCE_CHECK_TOLERANCE else "OK"
 
 
 @dataclass
@@ -215,6 +253,18 @@ class BalanceSheet:
     printed_total_assets: float | None = None
     printed_total_liabilities_and_equity: float | None = None
 
+    # What ONE PRINTED UNIT of the filing is, in millions: 0.001 for a filing that
+    # prints in thousands, 1.0 for millions, 1000.0 for billions. Set by the
+    # conversion to millions (`claude_extractor.convert_filing_to_millions`), from
+    # the money scale Python reads in the filing's printed unit statement (P14a).
+    # The balance check's threshold is BALANCE_CHECK_TOLERANCE of these.
+    #
+    # Required, with no default: a default would assume millions, and a filing in
+    # thousands would then be checked at 1,000 printed units (rule 3). None is
+    # stated explicitly by the parser, whose figures are still as printed: it means
+    # "not converted to millions", and the check stops on it, naming this field.
+    printed_unit_in_millions: float | None = field(kw_only=True)
+
     # Derived
     @property
     def total_debt(self) -> float:
@@ -253,28 +303,54 @@ class BalanceSheet:
             return None
         return self.printed_total_liabilities_and_equity - self.total_liabilities_and_equity
 
-    @staticmethod
-    def printed_total_check(difference: float | None) -> str:
-        """'OK', 'FAIL' or 'FAIL: not extracted' for one printed-total difference.
+    def printed_unit(self) -> float:
+        """`printed_unit_in_millions`, or a stop naming it when it is None.
 
-        FAIL when the difference exceeds BALANCE_CHECK_TOLERANCE, which is 1 in the
-        filing's own units: rounding, and nothing more. The user decided on
-        2026-10-02 that a balance sheet that does not pass is failed and shown,
-        never repaired. The one threshold for the parser, the CLI and the page.
-
-        None (the printed total was not extracted) fails too, and says why: every
-        balance sheet prints both totals, so a missing one is a reading that did
-        not happen, never a pass and never a printed 0 (review F1).
+        None means the figures are still as printed, not in millions, so no
+        threshold in millions can be stated for them (rule 3).
         """
-        if difference is None:
-            return "FAIL: not extracted"
-        return "FAIL" if abs(difference) > BALANCE_CHECK_TOLERANCE else "OK"
+        if self.printed_unit_in_millions is None:
+            raise ValueError(
+                f"BalanceSheet {self.year}: 'printed_unit_in_millions' is None, so "
+                "these figures were never converted to millions, and the balance "
+                "check's threshold (1 printed unit, in millions) is not known. "
+                "Convert the filing with claude_extractor.convert_filing_to_millions."
+            )
+        return self.printed_unit_in_millions
 
-    @staticmethod
-    def printed_total_tolerance() -> float:
-        """BALANCE_CHECK_TOLERANCE, for the page: a template reaches it through `bs`,
-        so the threshold it prints is the one `printed_total_check` applies."""
-        return BALANCE_CHECK_TOLERANCE
+    def printed_total_check(self, difference: float | None) -> str:
+        """'OK', 'FAIL' or 'FAIL: not extracted' for one printed-total difference in
+        millions, at 1 printed unit: `printed_total_status` of the difference
+        expressed in printed units. The CLI and the page call this.
+
+        Raises:
+            ValueError: `printed_unit_in_millions` is None (never converted).
+        """
+        unit = self.printed_unit()
+        return printed_total_status(None if difference is None else difference / unit)
+
+    def printed_total_tolerance(self) -> float:
+        """The threshold `printed_total_check` applies, in millions:
+        BALANCE_CHECK_TOLERANCE printed units. A template reaches it through `bs`,
+        so the threshold it prints is the one the check applies.
+
+        Raises:
+            ValueError: `printed_unit_in_millions` is None (never converted).
+        """
+        return BALANCE_CHECK_TOLERANCE * self.printed_unit()
+
+    def printed_unit_decimals(self) -> int:
+        """Decimal places of $M that show one printed unit: 0 for a filing in
+        millions or billions, 3 for one in thousands. Display only, so a gap of
+        0.002 $M is not printed as 0 beside a FAIL.
+
+        Raises:
+            ValueError: `printed_unit_in_millions` is None (never converted).
+        """
+        unit = self.printed_unit()
+        if unit >= 1:
+            return 0
+        return len(f"{unit:f}".rstrip("0").split(".")[1])
 
     @property
     def net_working_capital(self) -> float:

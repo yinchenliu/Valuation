@@ -21,7 +21,56 @@ Millions ÷ millions gives a per-share figure in whole units, so the equity brid
 without a conversion. **That is the reason share counts are in millions**, and it is
 why converting one to units breaks the headline number silently.
 
-### The one live conversion
+### Where the filing's figures become millions
+
+Filings do not all print in millions. Chipotle prints `(in thousands, except per share
+data)`; Okta prints `(dollars in millions, shares in thousands, except per share
+data)`, money and share count on two scales. The model copies every figure **as
+printed** and copies the two statements of units with their pages (`units` for money,
+`share_units` for the share count). Python converts, **once per filing**, in
+`ingestion/claude_extractor.py:convert_filing_to_millions` (`P14a`, backlog item 44):
+
+| Printed scale (`printed_scale`) | One operation per figure |
+|---|---|
+| thousands | ÷ 1,000 |
+| millions | × 1 (exact: a filing in millions does not move) |
+| billions | × 1,000 |
+
+Every money figure takes the money scale; `diluted_shares_outstanding` takes the share
+scale. A division by 1,000 is correctly rounded; a multiplication by 0.001 is not, so
+it is never used. Each figure is converted after its printed lines are summed.
+
+**Where.** Both routes call it after the filing's Pass 2 and before any merge: route A
+in `extract_financials`, route B in `load_session_extraction`. **Before that point the
+figures are as printed**: `parse_pass1`'s result, the arithmetic check table, and the
+Pass 2 prompt's summary are in the filing's own units. Pass 2's `amount` values are
+converted with the filing's money scale, as if each were printed in it, because Pass
+2's schema asks for them in the "same units as financials". **So when a note prints
+another scale, the model scales the figure** (Walmart's session file holds `700` from
+"$0.7 billion"): a conversion by the model, against rule 1. Backlog item 77; the user
+decides the fix. **After it, everything is in millions**:
+the merge, `models/`, `analysis/`, the CLI and the page. A unit statement whose scale
+cannot be read, that is not found on its page as a whole printed statement, or that
+cites a page other than the figures it governs, stops the run; nothing falls back to
+millions.
+
+### The balance check's threshold: 1 printed unit
+
+The printed totals are checked against the mapped lines at **1 in the filing's printed
+unit** (`BALANCE_CHECK_TOLERANCE` = 1.0 printed unit): rounding, nothing more. The
+parser checks the figures as printed, so its threshold is 1. After the conversion,
+`BalanceSheet.printed_unit_in_millions` holds what one printed unit is in millions, so
+`printed_total_check` and `printed_total_tolerance()` apply 1 printed unit in $M: 1 for
+a filing in millions, **0.001 for a filing in thousands**, 1,000 for billions. The CLI
+and the page print that threshold and what one printed unit is, and both print the
+printed total, the mapped sum and the difference in $M to `printed_unit_decimals()`
+places (0 for millions, 3 for thousands), so a gap of 2 printed units in a filing in
+thousands reads `+0.002`, not `+0`. A difference is rounded
+to 6 decimal places of a printed unit before it is compared (`PRINTED_UNIT_DECIMALS`),
+because 0.001 has no exact binary form and a gap of exactly 1 printed unit otherwise
+reads as 1.00000001 and fails.
+
+### The one live conversion of market data
 
 `api/routes_valuation.py:184`:
 

@@ -154,12 +154,15 @@ filing prints, read from the Pass 1 keys `total_assets` and
   `total_liabilities_and_equity` (derived: `total_liabilities + total_equity`; the
   noncontrolling interest memos are in neither).
 - **The check.** `printed_total_assets_difference` and
-  `printed_total_liabilities_and_equity_difference` are printed minus mapped, `None` when
-  the printed total is `None`. `BalanceSheet.printed_total_check(difference)` returns
-  `FAIL` when the difference exceeds `BALANCE_CHECK_TOLERANCE` (1.0, in the filing's
-  units: rounding, nothing more), `OK` otherwise, and `FAIL: not extracted` for `None`. It is
-  the one threshold, used by the parser's check, `cli.py` and
-  `templates/_statements.html`. A failure is shown and the figures are kept.
+  `printed_total_liabilities_and_equity_difference` are printed minus mapped, in
+  millions, `None` when the printed total is `None`. `printed_total_status(difference_in_printed_units)`
+  returns `FAIL` when the difference, rounded to `PRINTED_UNIT_DECIMALS` (6) places,
+  exceeds `BALANCE_CHECK_TOLERANCE` (1.0, **in printed units**: rounding, nothing more),
+  `OK` otherwise, and `FAIL: not extracted` for `None`. The parser's check calls it on
+  the figures as printed. `BalanceSheet.printed_total_check(difference)`, an instance
+  method since `P14a`, divides a difference in millions by `printed_unit_in_millions`
+  and calls it; `cli.py` and `templates/_statements.html` use that. One threshold, 1
+  printed unit, in either unit. A failure is shown and the figures are kept.
 - **`None` is not a zero default.** It means "not extracted", and the check then says
   `FAIL: not extracted`, never `OK`. The Pass 1 keys are required, so an absent key
   stops the parse. **`[]` for a total is `None`, not `0`** (`P11a` round 2, review F1):
@@ -168,8 +171,33 @@ filing prints, read from the Pass 1 keys `total_assets` and
   printed figure. The check fails, the outputs print `not extracted` and no gap, and the
   run continues.
 - **The threshold on the page.** `BalanceSheet.printed_total_tolerance()` returns
-  `BALANCE_CHECK_TOLERANCE`, so `templates/_statements.html` prints the threshold the
-  check applies rather than a copy of it.
+  `BALANCE_CHECK_TOLERANCE × printed_unit_in_millions`, in millions (0.001 for a filing
+  in thousands), so `templates/_statements.html` and `cli.py` print the threshold the
+  check applies rather than a copy of it, beside `printed_unit()` (what 1 printed unit
+  is in $M).
+
+## `BalanceSheet.printed_unit_in_millions` — what one printed unit is, set by the conversion
+
+`printed_unit_in_millions: float | None`, keyword-only and **required, with no
+default**, added by `P14a` (backlog item 44). It is what one unit the filing prints its
+money figures in is worth in millions: 0.001 for a filing in thousands, 1.0 for
+millions, 1000.0 for billions. `claude_extractor.py:convert_filing_to_millions` sets it
+from the money scale Python read in the filing's printed `units` statement, when it
+converts the balance sheet's figures to millions.
+
+- **No default.** A default would assume millions, and a filing in thousands would then
+  be checked at 1,000 printed units (rule 3). Every construction states it.
+- **`None` is stated, never defaulted.** The parser (`_parse_financials_response`)
+  builds the balance sheet with `printed_unit_in_millions=None`, because its figures
+  are still as printed. `printed_unit()`, `printed_total_check`,
+  `printed_total_tolerance` and `printed_unit_decimals` **stop** on `None`, naming the
+  field: a balance sheet that was never converted has no threshold in millions.
+- **The conversion stops** on a balance sheet whose field is already set: the filing
+  was converted before, and a second conversion would move every figure again.
+
+Every money field of `IncomeStatement`, `BalanceSheet` and `CashFlowStatement`, and
+`NonRecurringItem.amount`, is in millions after the conversion; `diluted_shares_outstanding`
+is in millions of shares. `parse_pass1` alone returns the figures as printed.
 
 ## `ProjectionAssumptions` — `None` is meaningful
 

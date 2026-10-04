@@ -12,6 +12,11 @@ The two routes meet at the parser. This module calls, and never copies:
     parse_pass1 / parse_pass2       route A's parsers
     printed_line_page_failures      route A's page check: each printed line
                                     looked up on the page it cites
+    unit_statement_page_failures    route A's unit check: each printed unit
+                                    statement looked up on the page it cites
+    filing_units / convert_filing_to_millions
+                              the scales read from the unit statements, and
+                              route A's conversion of each filing to millions
     merge_filing_extractions  route A's merge
 
 so the same two JSON answers give the same `FinancialStatements` and the same
@@ -20,10 +25,10 @@ so the same two JSON answers give the same `FinancialStatements` and the same
 **This module holds no model client, no prompt text and no credential.**
 `docs/2-rules/llm-boundary.md`: `claude_extractor.py` is the only file that may.
 
-The file format, `session-extraction-v2`:
+The file format, `session-extraction-v3`:
 
     {
-      "format": "session-extraction-v2",
+      "format": "session-extraction-v3",
       "ticker": "CMG",
       "company_name": "Chipotle Mexican Grill, Inc.",
       "extracted_by": {"model": null, "tool": "Claude Code", "date": null},
@@ -45,9 +50,16 @@ The file format, `session-extraction-v2`:
 `pass1` and `pass2` hold exactly the JSON objects route A parses. In `pass1` every
 figure is a list of the printed lines that make it up, each
 `{"label": ..., "value": ..., "page": ...}`, and Python adds them
-(`figure_from_printed_lines`); `[]` means the filing prints no such row. A
-`session-extraction-v1` file, which held one figure per field, is refused by name:
-it must be extracted again. `pages_read` is a locator (1-based PDF pages); it is
+(`figure_from_printed_lines`); `[]` means the filing prints no such row. `pass1`
+also carries two printed unit statements, each `{"printed": ..., "page": ...}`:
+`units` for the money figures and `share_units` for the diluted share count. Each is
+looked up on its page (the loader stops on one not found), Python reads the scale
+word in it, and each filing is converted to millions once, after its Pass 2 and
+before the merge. A `session-extraction-v1` file, which held one figure per field,
+is refused by name: it must be extracted again. A `session-extraction-v2` file,
+whose `units` is a free string and which has no `share_units`, is refused by name
+too: run the `extract-filing` skill again, or add the two keys from the filing's
+printed unit statement. `pages_read` is a locator (1-based PDF pages); it is
 recorded and printed, never computed from.
 `extracted_by.model` is the model ID the session declares; it cannot be verified and
 is printed as declared. `extracted_by.tool` and `extracted_by.date` are a record for a
@@ -79,8 +91,11 @@ from typing import Any
 from ingestion.claude_extractor import (
     _NRI_SCHEMA,
     FilingPlan,
+    FilingUnits,
     ProviderResolution,
+    convert_filing_to_millions,
     describe_resolution,
+    filing_units,
     merge_filing_extractions,
     parse_pass1,
     parse_pass2,
@@ -89,17 +104,24 @@ from ingestion.claude_extractor import (
     pass2_prompts,
     plan_filings,
     printed_line_page_failures,
+    unit_statement_page_failures,
 )
 from ingestion.filings import fingerprint_filings, parse_pdf_args
 from models.financial_statements import FinancialStatements, NonRecurringItem
 
-SESSION_FORMAT = "session-extraction-v2"
+SESSION_FORMAT = "session-extraction-v3"
 
 # The format before P11a. Its Pass 1 holds one figure per field, and some of those
 # figures were sums the session worked out; v2 holds the printed lines and Python
 # adds them. A v1 file is refused by name rather than read, because its figures
 # cannot be turned back into the lines they came from.
 _SESSION_FORMAT_V1 = "session-extraction-v1"
+
+# The format before P14a. Its `pass1.units` is a free string no code read, and it has
+# no `share_units`, so a filing printed in thousands was read as millions (backlog
+# item 44). Refused by name: its figures are fine, and the two unit statements can
+# be added by hand from the filing.
+_SESSION_FORMAT_V2 = "session-extraction-v2"
 
 # Every key a Pass 2 item must carry, read from the schema route A's Pass 2 prompt is
 # built from, so the two cannot drift. `claude_extractor.py` exports no public name
@@ -168,6 +190,9 @@ class SessionFiling:
     size_bytes: int
     pages_pass1: tuple[int, ...]
     pages_pass2: tuple[int, ...]
+    # The two printed unit statements, each confirmed on its page, and the scale
+    # Python read in each: what this filing's figures were converted from (P14a).
+    units: FilingUnits
 
 
 @dataclass(frozen=True)
@@ -233,6 +258,20 @@ def _read_session_json(path: Path) -> dict[str, Any]:
             "holds one figure per field, some of them sums the session worked out. "
             "A v1 file cannot be converted. Extract the filing again in the new "
             "shape: run `plan`, then `prompt --pass 1` prints the schema.",
+        )
+    if data["format"] == _SESSION_FORMAT_V2:
+        raise ValueError(
+            f"{path}: format is {_SESSION_FORMAT_V2!r}, and this reader understands "
+            f"{SESSION_FORMAT!r} only. The Pass 1 shape changed: 'units' is now the "
+            "statement of the unit of the money figures exactly as printed, with its "
+            'page, {"printed": ..., "page": ...}, where v2 held a free string; and '
+            "'share_units' is new, the same shape, for the unit of the diluted share "
+            "count. Python reads the scale word in each and converts every figure to "
+            "millions. Remedy: run the extract-filing skill again, or add the two keys "
+            "to each filing's pass1 from the filing's printed unit statement (usually "
+            "just under the income statement's title; if one statement covers both, "
+            "'share_units' copies it with its page), then set 'format' to "
+            f"{SESSION_FORMAT!r}.",
         )
     if data["format"] != SESSION_FORMAT:
         raise ValueError(
@@ -541,6 +580,27 @@ def _pass2_problems(where: str, pass2: object) -> list[str]:
     return []
 
 
+def _unit_statement_problems(where: str, plan: FilingPlan, pass1: object) -> list[str]:
+    """Each printed unit statement looked up on the page it cites; one problem per
+    statement not found. A problem, not a failed check: the loader STOPS on it,
+    because the scale read from it converts every figure, and a wrong scale moves
+    every figure by 1,000 with nothing downstream to detect it (P14a).
+
+    Run only when Pass 1's shape is usable (its own problems are reported by
+    `_pass1_problems`), against the PDF `_pdf_problems` has proved is the one the
+    session read. A PDF pdfplumber cannot open is a problem too.
+    """
+    if not isinstance(pass1, dict) or pass1_problems(pass1):
+        return []
+    try:
+        failures = unit_statement_page_failures(
+            json.dumps(pass1), Path(plan.pdf_path).read_bytes(),
+        )
+    except ValueError as exc:
+        return [f"{where}: {exc}"]
+    return [f"{where}: {failure}" for failure in failures]
+
+
 def _filing_problems(
     path: Path, index: int, plan: FilingPlan, entry: dict[str, Any],
 ) -> list[str]:
@@ -553,6 +613,7 @@ def _filing_problems(
     if problems:
         return problems
     problems += _pass1_problems(where, plan, entry["pass1"])
+    problems += _unit_statement_problems(where, plan, entry["pass1"])
     problems += _pass2_problems(where, entry["pass2"])
     for which in ("pass1", "pass2"):
         page_problems, pages = _pages(where, entry, which)
@@ -636,6 +697,11 @@ def load_session_extraction(path: str | Path) -> SessionExtraction:
         except ValueError as exc:
             raise ValueError(f"{where}: {exc}") from exc
         items = parse_pass2(json.dumps(entry["pass2"]))
+        # This filing to millions, once, after its Pass 2 and before the merge, as
+        # route A does in extract_financials. `_filing_problems` has proved both
+        # unit statements readable and found on their pages.
+        units = filing_units(json.dumps(entry["pass1"]))
+        financials, items = convert_filing_to_millions(financials, items, units)
         validation_errors += [f"{where}: {e}" for e in errors]
         extractions.append((plan, financials, items))
         _, pages1 = _pages(where, entry, "pass1")
@@ -647,6 +713,7 @@ def load_session_extraction(path: str | Path) -> SessionExtraction:
             size_bytes=entry["size_bytes"],
             pages_pass1=pages1,
             pages_pass2=pages2,
+            units=units,
         ))
 
     # Combined exactly as route A combines: one filing is returned as parsed,
@@ -926,6 +993,11 @@ def cmd_check(path: Path) -> int:
               f"sha256 {record.pdf_sha256[:16]}…  "
               f"pages read: pass 1 {_compress(list(record.pages_pass1))}; "
               f"pass 2 {_compress(list(record.pages_pass2))}")
+        print(f"    units {record.units.money.printed!r} (page "
+              f"{record.units.money.page}) -> money in {record.units.money.scale.word}; "
+              f"share_units {record.units.shares.printed!r} (page "
+              f"{record.units.shares.page}) -> share count in "
+              f"{record.units.shares.scale.word}. Converted to millions.")
     print(f"  Years: {session.financials.years}  |  "
           f"balance sheet(s): {[b.year for b in session.financials.balance_sheets]}  |  "
           f"non-recurring items: {len(session.non_recurring)}")
@@ -938,8 +1010,9 @@ def cmd_check(path: Path) -> int:
             print(f"  - {error}")
         return 1
     print("\nClean: every key present, every line well formed, every PDF unchanged, "
-          "every printed subtotal and total agrees with Python's sum of the lines, "
-          "and every printed line was found on the page it cites.")
+          "both unit statements found on their pages, every printed subtotal and "
+          "total agrees with Python's sum of the lines, and every printed line was "
+          "found on the page it cites.")
     return 0
 
 

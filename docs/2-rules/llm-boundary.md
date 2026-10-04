@@ -78,9 +78,32 @@ line; the filing prints no total, so `analysis/dcf.py:total_noncontrolling_inter
 them, not the model. The keys `total_assets` and `total_liabilities_and_equity` were
 added by `P11a` under the decision above; they are read only to check the balance sheet.
 
+**Pass 1 returns two printed unit statements, and Python reads the scale.** `units` is
+the words that state the unit of the money figures, exactly as printed, with the page
+they are printed on (`{"printed": "(in thousands, except per share data)", "page":
+29}`); `share_units` is the same for the diluted share count, which a filing can print
+on another scale (Okta: "(dollars in millions, shares in thousands, except per share
+data)"). Approved by the user on 2026-10-04 ("approve", backlog item 44): option C
+applied to units. The page check confirms each text on its page, as a whole printed
+statement (a fragment such as `(in thousands)` of a longer statement is not
+confirmed), and on a page of the figures it governs (`units` on a page the income
+statement's lines cite, `share_units` on that page or the diluted share count's); a
+statement not confirmed stops the run. `claude_extractor.py:printed_scale` reads the scale word in
+each text, and `convert_filing_to_millions` converts every figure once. **The model
+returns no scale word of its own and converts nothing**: the prompt tells it to copy
+every figure as printed and never convert one. Before `P14a`, `units` was a free
+string no code read, so a filing printed in thousands reached the valuation as
+millions.
+
 Pass 2 receives the Pass 1 income statement summary as context. That is an **anchor**,
 not a calculation input: it exists so the model cites items that reconcile to figures we
-already hold, rather than inventing a line the statement does not have.
+already hold, rather than inventing a line the statement does not have. It shows the
+figures as printed, before the conversion to millions, so the model sees the filing's
+own units. **Pass 2 still crosses the line on units**: its schema asks for each
+`amount` in the "same units as financials", so when a note prints another scale, the
+model scales the figure. Walmart's session file holds `700` from a note printed as
+"$0.7 billion". Python then converts the amounts with the filing's money scale, as if
+each were printed in it. This is backlog item 77, and the user decides the fix.
 
 ## What the model may never return
 
@@ -89,6 +112,10 @@ already hold, rather than inventing a line the statement does not have.
 - a discount rate, a beta, a terminal value
 - a judgement phrased as a number ("a reasonable normalised margin is 32%")
 - a figure it did not read off a page, including one it is confident about
+- a figure converted to another unit, or a unit (a scale word) the filing does not
+  print. Pass 1 asks for neither. **Pass 2's schema still asks for the first**: an
+  `amount` in the "same units as financials" makes the model scale a note printed in
+  another unit (backlog item 77)
 
 **A model that is asked for one of these will answer.** That is the failure mode. It
 does not refuse and it does not flag; it returns a plausible number in the right shape,
