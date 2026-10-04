@@ -4,9 +4,9 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `17381f3` (`P13a`, `P13b`), 2026-10-03**, on an export of that commit; `P13c` re-measured on that base by its round 3 review (2 failed, 773 passed; ruff 5; mypy 10), on branch `main`, **on the macOS machine**
+**Measured at `P13c-tests` on top of `5b03600`, 2026-10-03**, in the working tree, on branch `main`, **on the macOS machine**
 (`.venv/bin/python`, Python 3.11.6). Every figure before `cde33cb` was measured on the
-Windows machine. **Thirty-three work units accepted, and not one on its own report.** Every programmer run went to a reviewer that
+Windows machine. **Thirty-six work units accepted, and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; **five** times a reviewer or a
 programmer overturned a claim — twice against a programmer, **three times against the
 orchestrator**. The journal is [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
@@ -23,10 +23,10 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `17381f3` (macOS) |
+| Gate | Command | Result at `P13c-tests` (macOS) |
 |---|---|---|
-| Tests | `.venv/bin/python -m pytest -q` | **775 tests. 773 pass, 2 fail**: the 2 red on purpose |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **773 passed, 0 failed** |
+| Tests | `.venv/bin/python -m pytest -q` | **795 tests. 793 pass, 2 fail**: the 2 red on purpose |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **793 passed, 0 failed** |
 | Lint | `.venv/bin/python -m ruff check .` | **5 errors**, every one `BLE001` |
 | Types | `.venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **10 errors in 4 files**, 20 files checked |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
@@ -454,7 +454,7 @@ started — **every one of them was found by running the code**, not by reading 
 41 and 42, both found at `6e58f13` by a reviewer exhausting inputs rather than reading
 the branch.
 
-**Phase 13 (silent defects first, the user's decision of 2026-10-03) is in progress.** Wave 1: `P13a` (`47b8b09`) closes items 25 and 38, `P13b` (`aa6f80d`) closes items 15, 32, 39 and 42, each reviewed and tested. `P13c` closes item 46 after three review rounds; its tester is next. Items 10, 44 and 50 wait for the user's decision on the Pass 1 role. The runs found items 65 to 69 and restated 38b.
+**Phase 13 (silent defects first, the user's decision of 2026-10-03) is in progress.** Wave 1: `P13a` (`47b8b09`) closes items 25 and 38, `P13b` (`aa6f80d`) closes items 15, 32, 39 and 42, each reviewed and tested. `P13c` (`5b03600`) closes item 46 after three review rounds, and `P13c-tests` locks the key order and both labels without reading the real `.env`. Wave 1 is done. Items 10, 44 and 50 wait for the user's decision on the Pass 1 role. The runs found items 65 to 69 and restated 38b.
 
 **Phase 12 (every printed line is found on its page) is done at `1888ccb`.** `P12a`
 (`a64818b`): both routes look up each Pass 1 line's label and figure on its cited page
@@ -503,8 +503,8 @@ Things that have already misled a reader of this repository.
    nothing at all. "It ran" is not evidence. Name an input that came from a filing.
 3. **`cli.py` and the web app can disagree.** They build assumptions by separate code
    paths. A figure verified in one is not verified in the other.
-4. **Two test cases are red on purpose.** On macOS `pytest -q` reports `2 failed, 773
-   passed` at `17381f3`. That is the expected
+4. **Two test cases are red on purpose.** On macOS `pytest -q` reports `2 failed, 793
+   passed` at `P13c-tests`. That is the expected
    state. Do not fix it by weakening it; fix backlog item 2. The gate
    form that excludes it is `pytest -q --ignore-glob="*_rule3_red.py"`.
 5. **A green test inside `*_rule3_red.py` is invisible to the gate.** That happened

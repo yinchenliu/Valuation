@@ -27,7 +27,8 @@ in a comment beside each. No value here was read off the code's output.
 that raises; the route A tests replace it again with a stub that answers only the
 exact (system prompt, user prompt, PDF bytes) triples it was given, and raises on
 anything else. `resolve_provider` is replaced too, so no test depends on what
-`.env` holds (`config.py` loads it with `override=True`). The PDFs are written under
+`.env` holds (`config.py` fills from it each name the environment does not already
+set, once, at import). The PDFs are written under
 `tmp_path` by `tests/unit/_pass1_pdf.py`, each printing its filing's Pass 1 rows on
 the pages they cite (P12a); nothing reads `10K_filings/`.
 """

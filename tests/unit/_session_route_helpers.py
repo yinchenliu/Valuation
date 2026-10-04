@@ -18,8 +18,9 @@ taken with `hashlib` here, as the test's own record of the bytes. Nothing reads 
 **No test reaches the API or the network.** `open_closed_client` replaces
 `ingestion.claude_extractor._call_llm`, the route module's `fetch_price_data` and
 `yfinance.Ticker` with functions that raise, removes every credential variable after
-`config` has loaded `.env` (backlog item 46: `override=True` would otherwise put a
-real key back), and points `UPLOAD_DIR` at `tmp_path`.
+`config` has filled the absent names from `.env` (it does so once, at import, and
+never again; a variable removed before that import would be filled from `.env`,
+backlog item 46), and points `UPLOAD_DIR` at `tmp_path`.
 """
 
 from __future__ import annotations
@@ -37,7 +38,7 @@ import pytest
 from starlette.testclient import TestClient
 
 import app as app_module
-import config  # noqa: F401 -- imported FIRST so its load_dotenv has run before we edit the env
+import config  # noqa: F401 -- imported FIRST so its one .env fill has run before we edit the env
 import ingestion.claude_extractor as ce
 from api import routes_upload, routes_valuation
 from ingestion.claude_extractor import (
@@ -239,8 +240,9 @@ def _refuse(name: str):
 def open_closed_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> TestClient:
     """A client over the real app with every boundary closed and no credential.
 
-    `config` was imported at the top of this module, so `load_dotenv(override=True)`
-    has already run; removing the variables now cannot be undone by it.
+    `config` was imported at the top of this module, so its one fill from `.env`
+    (absent names only, at import) has already run; removing the variables now
+    cannot be undone by it.
     """
     monkeypatch.setattr(routes_upload, "UPLOAD_DIR", tmp_path / "uploads")
     monkeypatch.setattr(routes_valuation, "_extraction_cache", {}, raising=False)
