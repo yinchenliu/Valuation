@@ -113,7 +113,7 @@ rather than lying.
 | 78 | The "already converted" guard sees balance sheets only | — | `ingestion/claude_extractor.py` | **new, the `P14a` review's F5.** A filing with no balance sheet, which is every route A filing but the newest, carries no marker. No call site converts twice today |
 | 79 | Route A's unit stop names the field, the text and the page, but not the PDF | — | `ingestion/claude_extractor.py` | **new, the `P14a` programmer.** `_run_financials_pass` holds only bytes. The same shape as item 73 |
 | 80 | The arithmetic check table and route B's failed-check messages are in printed units, and say nothing about it | — | `ingestion/claude_extractor.py` | **new, the `P14a` programmer.** For a filing in thousands, `printed=11,313,853` appears beside statements shown in $M |
-| 81 | The Pass 2 page check's summary line miscounts the items not confirmed | — | `ingestion/claude_extractor.py` | **new, the overall lead's review of `P14b-pass2-units`.** `_pass2_item_failures` counts an item as failed when its description is a substring of any failure message. Walmart's 2024 description is a prefix of the 2025 one, so one failed 2025 item prints "4 checked, 2 found, 2 not confirmed". The stop and its list of problems are right. Assigned to `P14b-reasoning` |
+| 81 | The Pass 2 page check's summary line miscounts the items not confirmed | — | `ingestion/claude_extractor.py` | **closed by `P14b-reasoning` (`49cf0f5`), locked at `158f25d`**: each item records whether any of its checks failed, and the summary counts those items |
 
 ---
 

@@ -158,3 +158,64 @@ Run every command with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`. **Make no paid API 
 
 Items 1, 10, 51, 53, 61, 63, 64, 73, 74, 78, 79, 80 (all in `claude_extractor.py`), and
 item 72 (`cli.py`). Item 81 is in scope.
+
+## Handoff
+
+### Commits
+- `49cf0f5`: `P14b-reasoning: route A adaptive thinking and effort, reasoning label, item 81 fix`
+- `158f25d`: `P14b-reasoning tester: repair ProviderResolution fixtures, lock streaming thinking and item 81`
+
+### Verdicts
+- Programmer: `complete` (round 1), entry: `.agent/journal/2026-10-04T1548-programmer-p14b-reasoning.md`
+- Code reviewer: `approved` (round 1), entry: `.agent/journal/2026-10-04T1604-code_reviewer-p14b-reasoning.md`
+- Tester: `pass` (round 1), entry: `.agent/journal/2026-10-04T1606-tester-p14b-reasoning.md`
+
+### Gates
+- Test gate: 1021 passed (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q --ignore-glob="*_rule3_red.py"`)
+- Full suite: 2 failed (the known two), 1021 passed (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q`)
+- Lint: 4 errors, all `BLE001` (`.venv/bin/python -m ruff check .`)
+- Types: 9 errors in 4 files (`.venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports`)
+- Rule 3 census: 65 (`grep -rnE "if [^)]+ else 0(\.0)?\b|\bor +0(\.0)?\b|\.get\([^,]+, *0(\.0)?\)|: *float *= *0\.0" '--include=*.py' models analysis api ingestion | wc -l`)
+- Web root route: HTTP 200 (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -c "from starlette.testclient import TestClient; from app import app; print(TestClient(app).get('/').status_code)"`)
+- Guard check: 48/48 correct (`.venv/bin/python .claude/check_guard.py`)
+- Walmart Route B check: exit 0; 89 of 89 printed lines found; 4 of 4 Pass 2 items confirmed; `Reasoning: as the Claude Code session ran; not set by this code` printed (`.venv/bin/python -m ingestion.session_extraction check extractions/WMT.json`)
+- Walmart end-to-end: stages 1 to 10 match `21125ed`; PV of terminal value 214,819M; implied price $28.02; downside -73.1% (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python cli.py --session-file extractions/WMT.json`)
+
+### Findings and notes
+- Criterion 10 (real route A call through Foundry gateway): not run because it is a paid API call; left for overall lead / user verification.
+
+### Questions for the overall lead
+None.
+
+
+## Overall lead review
+
+**Verdict: `accepted`**, 2026-10-04, at `158f25d`, by the overall lead.
+
+**Scope.** `49cf0f5` touches only the files in scope and two journal entries. `158f25d`
+touches `tests/`, its assignment, its entry and the journal index.
+
+**Re-measured** (keys empty, sockets blocked where a call could start):
+
+| # | Result |
+|---|---|
+| 1 | stub client: `thinking={"type": "adaptive"}`, `output_config={"effort": "high"}`, `max_tokens=64000`; no `temperature`, `top_p`, `top_k` or `budget_tokens`; `messages.create` not used |
+| 2 | a thinking block holding `SECRET` and a text block: the return is the text only; `SECRET` in no return value and no printed output |
+| 3 | only a thinking block → the "no text block" stop; `stop_reason "max_tokens"` → the stop naming 64,000 |
+| 4 | `EXTRACTION_EFFORT`: 1 definition in `config.py`; read by `_call_claude` and the three Claude labels |
+| 5 | CLI on Walmart: `Reasoning: as the Claude Code session ran; not set by this code`; `GET /assumptions` and `POST /valuation` with the Walmart session file: 200, and each shows the `Reasoning` row with that text |
+| 6 | item 81: the 795 copy prints `4 checked, 3 found, 1 not confirmed`, exit 2, 1 problem; the clean file `4 checked, 4 found, 0 not confirmed`, exit 0 |
+| 7 | Walmart: identical to the `P14b-pass2-units` run except the `Reasoning` text and the file path; $28.02 |
+| 8 | gate 1021 passed; full 2 failed (the known two); ruff 4; mypy 9 in 4 files; census 65; guard 48/48 |
+| 10 | not measured, and it cannot be: the user has no Anthropic key |
+
+**Findings.**
+
+- **F1, note.** No test checks the `Reasoning` row on the two web pages; only the
+  overall lead's run above shows it. Sent to `P15a-two-routes`, whose tester locks the
+  Gemini label there.
+- **F2, note, the user's later decision.** The user decided "1a" after this unit
+  started: route A becomes Gemini only. `P15a-two-routes` deletes this unit's streamed
+  `_call_claude`, `_CLAUDE_MAX_TOKENS`, `config.EXTRACTION_EFFORT` and the three Claude
+  labels. The reasoning label on `ProviderResolution`, the Gemini and route B labels,
+  the two template rows and the item 81 fix stay.

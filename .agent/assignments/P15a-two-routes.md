@@ -31,10 +31,10 @@ When this unit is done:
 
 ## What is already true — verify, do not redo
 
-Measured by the overall lead at `2e7bfae`, with `P14b-reasoning` still in flight.
-`P14b-reasoning` lands before this unit and adds `reasoning_label`,
-`config.EXTRACTION_EFFORT` and a streamed `_call_claude`. Re-take every number at its
-commit.
+Measured by the overall lead at `158f25d` (`P14b-reasoning`, accepted): gate 1021 passed,
+full 2 failed (the known two), ruff 4, mypy 9 in 4 files, census 65, guard 48/48.
+`P14b-reasoning` added `reasoning_label`, `config.EXTRACTION_EFFORT`,
+`_CLAUDE_MAX_TOKENS` and a streamed `_call_claude`.
 
 | Fact | Command | Result |
 |---|---|---|
@@ -139,6 +139,10 @@ decision.
 - `docs/8-build/environment.md`, section 3: the current credential and transport setup.
 
 ## Known open items
+
+- No test checks the `Reasoning` row on the two web pages (the overall lead's review of
+  `P14b-reasoning`, F1). The tester of this unit adds one, with the Gemini label and the
+  route B label.
 
 - `gemini-3.1-pro-preview` is the default Gemini model ID in `_DEFAULT_MODELS`. Nobody has
   called it from this machine. Criterion 12 is the first real call.
