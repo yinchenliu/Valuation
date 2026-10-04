@@ -229,3 +229,54 @@ If any of these disagrees with what you measure, stop and report the disagreemen
 - Item 64: the page check's joined-line form.
 - Item 72: the conditional zeros at `cli.py:1035` and `:1043`.
 - Item 1's sites in the files in scope.
+
+## Round 2 amendment (orchestrator, 2026-10-04, from the round 1 review)
+
+The review is `.agent/journal/2026-10-04T1037-code_reviewer-p14a-units.md`. Answer every
+finding by number in your round 2 entry. Your round 1 code stays in the working tree;
+build on it.
+
+- **F1 (blocker).** The unit page check must match the statement as a whole printed
+  unit: the full text the model returned, parentheses included, with only whitespace
+  normalised as `P12a` does. A fragment such as `(in thousands)` cited on Okta page 58,
+  where the page prints `(dollars in millions, shares in thousands, except per share
+  data)`, must fail. Re-run the reviewer's 16-filing scan
+  (`scratchpad/p14a_reviewer/`): every real statement must still be found on its page.
+- **F2 (major, rule 3).** Recognise shares only in forms you can name, and stop on any
+  other. After the `per share` and `per-share` phrases are removed, if the text still
+  mentions a share or shares, the share scale is read only from a `shares in <scale>`
+  clause. Any other mention of shares stops the share scale. These four must stop:
+  `(In millions, excluding share data)`, `(in millions, other than shares)`,
+  `(in millions, but not shares)`, `(in millions; shares in actual numbers)`. The 34
+  real statements in the reviewer's scan must read as they do now.
+- **F6, made a requirement.** Tie each unit statement to the figures it governs:
+  `units.page` must be a page that at least one printed line of that filing's income
+  statement fields cites. `share_units.page` must be the `units` page or a page that a
+  `diluted_shares` line cites. Otherwise it is a unit problem that names the field, its
+  page and the pages allowed, and it stops as step 3 says. L3Harris 10-K 2026 page 62
+  (`(In thousands)` above a stock-award table) cited as `units` must stop. Walmart,
+  Okta, Chipotle and AbbVie must pass.
+- **F4 (minor). Scope widened** to `templates/_statements.html`'s balance check value
+  cells (the reviewer's `:357-359`). Format them with the printed-unit decimals, as the
+  CLI does, so a filing in thousands shows `+0.002`, not `+0`.
+- **F7.** Make the doc and the code agree on the generic subjects. Keep only a word that
+  a filing in `10K_filings/` prints in that position, and name the filing in a comment.
+  Remove any other.
+- **F3 (escalated, not yours to fix).** The Pass 2 schema asks for `amount` in the "same
+  units as financials". So when a note prints another scale, the model scales the
+  figure: Walmart's session file holds 700 from "$0.7 billion". That breaks rule 1, and
+  it is older than this unit. It is now backlog item 77, and the user decides the fix.
+  **Do not change the Pass 2 schema or prompt.** Correct the doc lines that claim the
+  opposite (`llm-boundary.md:99,108`, `units-and-signs.md:46`): state what the schema
+  asks, that the model can scale a note's figure, and that this is item 77. The
+  conversion of Pass 2 amounts with the filing's money scale stays as it is.
+- **F5, F8.** No change. The orchestrator records them in the backlog.
+
+Add a criterion for each of F1, F2, F4 and F6, and re-run criteria 1 to 13. Keep the
+round 1 measurements in your entry; write round 2 in a new entry,
+`.agent/journal/YYYY-MM-DDTHHMM-programmer-p14a-units-r2.md`.
+- **Your finding 4. Scope widened** to `cli.py`'s import block, for this only: call
+  `bs.printed_total_check(difference)`, and remove the `BalanceSheet` import if nothing
+  else in `cli.py` uses it.
+- **Your finding 6.** `docs/3-architecture/extraction.md` is in scope: remove the stale
+  "Known defects" row for `_run_nri_pass`'s `except Exception`, which `P13g` closed.
