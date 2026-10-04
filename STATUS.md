@@ -4,9 +4,9 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `bce6fae` (wave 2 committed), 2026-10-04**, in the working tree, on branch `main`, **on the macOS machine**
+**Measured at `bc30be4` (`P13h` committed), 2026-10-04**, in the working tree, on branch `main`, **on the macOS machine**
 (`.venv/bin/python`, Python 3.11.6). Every figure before `cde33cb` was measured on the
-Windows machine. **Forty-four work units accepted, and not one on its own report.** Every programmer run went to a reviewer that
+Windows machine. **Forty-five work units accepted, and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; **five** times a reviewer or a
 programmer overturned a claim — twice against a programmer, **three times against the
 orchestrator**. The journal is [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
@@ -23,7 +23,7 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `bce6fae` (macOS) |
+| Gate | Command | Result at `bc30be4` (macOS) |
 |---|---|---|
 | Tests | `.venv/bin/python -m pytest -q` | **859 tests. 857 pass, 2 fail**: the 2 red on purpose |
 | **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **857 passed, 0 failed** |
@@ -458,7 +458,7 @@ started — **every one of them was found by running the code**, not by reading 
 41 and 42, both found at `6e58f13` by a reviewer exhausting inputs rather than reading
 the branch.
 
-**Phase 13 (silent defects first, the user's decision of 2026-10-03) is in progress.** Wave 1: `P13a` (`47b8b09`) closes items 25 and 38, `P13b` (`aa6f80d`) closes items 15, 32, 39 and 42, each reviewed and tested. `P13c` (`5b03600`) closes item 46 after three review rounds, and `P13c-tests` locks the key order and both labels without reading the real `.env`. Wave 1 is done. **Wave 2 is done at `bce6fae`**: `P13d` item 65, `P13e` items 66 and 67, `P13f` item 69 and 38b part (b), `P13g` item 50, each reviewed and tested. One step of `P13f` was withdrawn as a defect in the assignment: item 38b part (a), a company that repaid its debt, waits for the user's decision. The runs found items 70 to 76. Items 10, 44 and 50 wait for the user's decision on the Pass 1 role. The runs found items 65 to 69 and restated 38b.
+**Phase 13 (silent defects first, the user's decision of 2026-10-03) is in progress.** Wave 1: `P13a` (`47b8b09`) closes items 25 and 38, `P13b` (`aa6f80d`) closes items 15, 32, 39 and 42, each reviewed and tested. `P13c` (`5b03600`) closes item 46 after three review rounds, and `P13c-tests` locks the key order and both labels without reading the real `.env`. Wave 1 is done. **Wave 2 is done at `bce6fae`**: `P13d` item 65, `P13e` items 66 and 67, `P13f` item 69 and 38b part (b), `P13g` item 50, each reviewed and tested. One step of `P13f` was withdrawn as a defect in the assignment: item 38b part (a), a company that repaid its debt, waits for the user's decision. The runs found items 70 to 76. The runs found items 65 to 69 and restated 38b. **Wave 3, on the user's option 1 of 2026-10-04:** `P13h` (`bc30be4`) closes item 38b part (a) with `--confirm-zero-debt` and a "Confirm zero debt" checkbox, approved in round 1; its tester is in progress. Gates at `bc30be4`, measured: gate 857 passed, full 2 failed (the known two), ruff 4, mypy 9 in 4 files, census 65. `P14a-units` (item 44) is in progress; the user approved `share_units` on 2026-10-04.
 
 **Phase 12 (every printed line is found on its page) is done at `1888ccb`.** `P12a`
 (`a64818b`): both routes look up each Pass 1 line's label and figure on its cited page
