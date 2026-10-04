@@ -15,8 +15,7 @@ The LLM is strictly an extraction layer — it reads numbers from PDFs. All proj
 
 ### Prerequisites
 
-- Python 3.10+
-- A Google Gemini API key (default) or Anthropic API key (for PDF extraction)
+- A Google Gemini API key (route A extraction) or a Claude Code session file (route B extraction)
 
 ### Installation
 
@@ -130,6 +129,6 @@ valuation_platform/
 
 - **FastAPI** + **Uvicorn** — async web framework
 - **Jinja2** — server-side HTML templates
-- **Google Gemini API** (default) or **Anthropic Claude API** — PDF financial data extraction
+- **Google Gemini API** (route A API extraction) or **Claude Code session** (route B session file extraction) — PDF financial data extraction
 - **yfinance** — historical stock and market price data
 - **SciPy / NumPy / Pandas** — numerical computation and data handling

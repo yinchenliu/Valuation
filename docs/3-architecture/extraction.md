@@ -41,19 +41,22 @@ layout rather than a flattened text rendering.
 `text` subcommands do, to find pages and print their text layer for a session to read
 (below); neither computes from what it reads.
 
-## Providers
+## Providers and Transports
+
+There are two routes to extraction:
+- **Route A (API)**: reads the filing through the Google Gemini API (`GEMINI_API_KEY`). The provider is `"gemini"`, transport is `"gemini-direct"`.
+- **Route B (Claude Code session)**: Claude reads the filing in a Claude Code session (`extract-filing` skill) and writes a session file (`ingestion/session_extraction.py`). The provider is `"claude"`, transport is `"claude-code-session"`. No API key is used.
 
 ```python
 _DEFAULT_MODELS = {
-    "claude": "claude-sonnet-4-6",
     "gemini": "gemini-3.1-pro-preview",
 }
 ```
 
-`_call_llm` dispatches to `_call_claude` or `_call_gemini`. `_resolve_provider`
-(`:815`) picks the model ID and reads the key, and **raises when the key is absent** —
-naming the variable and where to put it. That is the correct shape for a missing input,
-and the rest of the codebase should copy it.
+`_call_llm` calls `_call_gemini` when `resolution.provider == "gemini"`.
+`resolve_provider` resolves `"gemini"` and reads `GEMINI_API_KEY`, and **raises when the key is absent** —
+naming the variable and where to put it. Calling `resolve_provider("claude", ...)` raises `ValueError`
+directing the caller to route B.
 
 > **Defect — the provider changes with the number of files uploaded.** Measured at
 > `bc19431`:
@@ -68,26 +71,7 @@ and the rest of the codebase should copy it.
 > second for several, and passes **no** `provider` argument either way. So uploading one
 > PDF uses Gemini and uploading two uses Claude — a different model, a different key, and
 > different extraction output for the same company, with nothing in the UI saying so.
-> Recorded as backlog item 13.
-
-> **Note.** `claude-sonnet-4-6` is not a current model ID. Verify against the Claude API
-> model list before relying on the Claude provider.
-
-### Claude call parameters (`_call_claude`)
-
-Since `P14b-reasoning`, `_call_claude` invokes Claude using a streamed request
-(`client.messages.stream(...)` as a context manager and `stream.get_final_message()`).
-Parameters sent:
-- `model`: `resolution.model`
-- `max_tokens`: `_CLAUDE_MAX_TOKENS = 64000`
-- `thinking`: `{"type": "adaptive"}`
-- `output_config`: `{"effort": config.EXTRACTION_EFFORT}` (defaulting to `"high"`)
-- `system` and `messages`: prompts and content as before
-
-A response that hits the token limit (`stop_reason == "max_tokens"`) raises a
-`ValueError` naming the 64,000-token output ceiling. Only text blocks
-(`block.type == "text"`) are read; if none arrive, a `ValueError` is raised. Thinking
-blocks are never read, printed, or logged (Rule 1 option 0).
+> Recorded as backlog item 13. Closed in `0e4649f` and unified under `config.DEFAULT_EXTRACTION_PROVIDER`.
 
 ## Multi-PDF year routing
 
@@ -238,7 +222,6 @@ credential. [llm-boundary.md](../2-rules/llm-boundary.md) still names
 `Reasoning: <label>` directly after `Model`, and both web templates show a `Reasoning`
 row in their extraction tables.
 
-- Route A, Claude: `reasoning_label` is `f"adaptive thinking, effort {config.EXTRACTION_EFFORT!r} (config.EXTRACTION_EFFORT)"`.
 - Route A, Gemini: `reasoning_label` is `"the provider's default; this code sets no thinking for Gemini"`.
 - Route B: `reasoning_label` is `"as the Claude Code session ran; not set by this code"`.
 
@@ -246,8 +229,8 @@ Route B's `ProviderResolution` is `provider="claude"`, the model the session dec
 `transport="claude-code-session"`, `credential="claude-code-session"`. A session is a
 **transport**, not a provider: the model is still Claude. The transport label names the
 session file and says the model ID is as declared and cannot be verified; the credential
-label says no API call was made. `_build_claude_client` refuses this resolution, so it
-can never be used to make a call.
+label says no API call was made. `resolve_provider("claude", ...)` refuses to call an API, so it
+can never be used to make an API call.
 
 ### The session file, `session-extraction-v4`
 
@@ -698,5 +681,5 @@ Full detail in [9-reference/refactor-backlog.md](../9-reference/refactor-backlog
 |---|---|
 | ~~46 `.get(field, 0)` calls~~ | **closed in the Pass 1 parser by `P11a`**: every key is read with `[]` after `pass1_problems` proved it present. The file's census count fell 49 → 2; the two left are the Gemini token counts (`getattr(…, 0) or 0`), not figures. Item 1 |
 | **D&A subtracted inside the parser** (`_parse_financials_response`) | an accounting decision taken silently in a parser, now on two summed figures that are never defaulted. Item 10 |
-| **1 mypy error** (measured at `P11a`; 16 when this table was written) | `_call_claude`'s `content` list against the SDK's TypedDict. Item 11 |
+| ~~1 mypy error~~ (measured at `P11a`; 16 when this table was written) | `_call_claude` deleted in `P15a`. Item 11 |
 | **Provider default divergence** | above. Item 13 |

@@ -17,9 +17,9 @@ UPLOAD_DIR = BASE_DIR / "uploads"
 # .env ONCE, with dotenv_values, and fills only the names that are absent from
 # os.environ. A name that is set, even to the empty string, is not filled. So:
 #
-#   * `ANTHROPIC_API_KEY=shell-value ...` runs on the shell's key;
-#   * `ANTHROPIC_API_KEY= ...` (empty) runs with the key OFF for that one run;
-#   * `env -u ANTHROPIC_API_KEY ...` does NOT turn the key off — the name is absent,
+#   * `GEMINI_API_KEY=shell-value ...` runs on the shell's key;
+#   * `GEMINI_API_KEY= ...` (empty) runs with the key OFF for that one run;
+#   * `env -u GEMINI_API_KEY ...` does NOT turn the key off — the name is absent,
 #     so it is filled from .env.
 #
 # This is the behaviour of `load_dotenv(override=False)`, done here by hand so the
@@ -30,8 +30,6 @@ UPLOAD_DIR = BASE_DIR / "uploads"
 #
 # The credential names whose origin a run labels (rule 6).
 CREDENTIAL_NAMES: Final = (
-    "ANTHROPIC_API_KEY",
-    "ANTHROPIC_FOUNDRY_API_KEY",
     "GEMINI_API_KEY",
 )
 
@@ -106,30 +104,14 @@ def credential_origin(name: str) -> str:
 # (rule 6), so it is named in one place and shown in the output. No other module
 # defines a provider default: ingestion, api/ and cli.py all read this constant.
 #
-# "claude" and not "gemini": Gemini is unreachable from the network this platform
-# runs on. See docs/8-build/environment.md section 3.
+# On the user's decision of 2026-10-04, route A uses Gemini. Gemini's reachability
+# from this machine is not yet measured (the overall lead asks the user for one
+# paid run). Claude reads a filing only in a Claude Code session (route B).
 #
 # `Final` with no annotation is deliberate — it makes the inferred type
-# Literal["claude"], which satisfies ingestion.claude_extractor.Provider without
+# Literal["gemini"], which satisfies ingestion.claude_extractor.Provider without
 # config.py having to import from ingestion.
-DEFAULT_EXTRACTION_PROVIDER: Final = "claude"
-
-# Extraction reasoning effort — AN ASSUMPTION. Rule 6.
-#
-# Controls how much the model reasons before it answers, and so the output tokens
-# paid for.
-#
-# "high" is the API default for `claude-opus-5`, so this unit moves no model
-# behaviour, and extraction is the step every figure depends on. It is shown in
-# the output beside the provider, model and transport.
-EXTRACTION_EFFORT: Final = "high"
-
-# Entra ID (Azure AD) token scope for the Microsoft Foundry gateway.
-#
-# This is the *audience* the gateway validates, not a secret and not a URL we call.
-# `https://ai.azure.com/.default` is rejected with HTTP 401; the gateway names this
-# scope in the body of that 401. See docs/8-build/environment.md section 3.
-ENTRA_TOKEN_SCOPE: Final = "https://cognitiveservices.azure.com/.default"
+DEFAULT_EXTRACTION_PROVIDER: Final = "gemini"
 
 # Default valuation assumptions
 DEFAULT_PROJECTION_YEARS = 5

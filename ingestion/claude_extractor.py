@@ -50,17 +50,17 @@ USAGE
 
 PROVIDER, TRANSPORT AND CREDENTIAL
 ==================================
-There are two *providers* — Claude and Gemini — and the default is named once, in
-`config.DEFAULT_EXTRACTION_PROVIDER`. Nothing in this file, in `api/` or in `cli.py`
-carries a second provider default.
+There are two *routes* to extraction:
+  - Route A (API): Google Gemini API, with GEMINI_API_KEY. The provider is "gemini",
+    the transport is "gemini-direct". The default provider is named once, in
+    `config.DEFAULT_EXTRACTION_PROVIDER = "gemini"`.
+  - Route B (Claude Code session): Claude reads the filing inside a Claude Code
+    session (`extract-filing` skill) and writes a session file
+    (`ingestion/session_extraction.py`). The provider is "claude", the transport is
+    "claude-code-session", and no API key is used.
 
-A **transport** is not a provider. Claude can be reached two ways, and the model is
-the same Claude either way:
-
-    ANTHROPIC_FOUNDRY_BASE_URL / _RESOURCE set  → anthropic.AnthropicFoundry
-                                                  (a Microsoft Foundry gateway)
-    otherwise                                   → anthropic.Anthropic
-                                                  (the public Anthropic API)
+Claude reads a filing only through route B. `resolve_provider("claude", ...)` stops
+and names route B.
 
 Which model read the filing, over which transport, on whose credential, is an
 assumption about every figure downstream — rule 6. `resolve_provider` returns that
@@ -68,22 +68,13 @@ as a `ProviderResolution`, the CLI prints it and the web result page shows it.
 
 ENVIRONMENT VARIABLES
 =====================
-    ANTHROPIC_FOUNDRY_BASE_URL  — the Foundry gateway endpoint. Setting it (or
-                                  ANTHROPIC_FOUNDRY_RESOURCE) selects the Foundry
-                                  transport for provider="claude".
-    ANTHROPIC_FOUNDRY_API_KEY   — optional. When absent, the Foundry transport uses
-                                  an Entra ID token from DefaultAzureCredential,
-                                  which on a developer machine means `az login`.
-    ANTHROPIC_API_KEY           — required for provider="claude" when no Foundry
-                                  gateway is configured.
-    GEMINI_API_KEY              — required when provider="gemini".
+    GEMINI_API_KEY              — required when provider="gemini" (route A).
 
 See docs/8-build/environment.md section 3.
 """
 
 from __future__ import annotations
 
-import base64
 import dataclasses
 import hashlib
 import io
@@ -92,18 +83,12 @@ import math
 import os
 import re
 import textwrap
-from collections.abc import Callable
 from dataclasses import dataclass, replace
 from fractions import Fraction
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
-from urllib.parse import urlsplit
+from typing import Any, Literal
 
 import config
-
-if TYPE_CHECKING:  # the SDKs are imported lazily at the call site, not at import time
-    import anthropic
-
 from models.financial_statements import (
     BALANCE_CHECK_TOLERANCE,
     BalanceSheet,
@@ -116,22 +101,18 @@ from models.financial_statements import (
 
 Provider = Literal["claude", "gemini"]
 
-# How the request reaches the provider. NOT a third provider — the model served over
-# "foundry" is the same Claude served over "anthropic-direct".
-#
-# "claude-code-session" is the same reasoning carried one step further: the figures
-# were read by Claude inside a Claude Code session and stored in a session file
-# (ingestion/session_extraction.py). The model is still Claude, so the provider is
-# still "claude"; only the road the PDF took to the model changed, and on this road
-# no API request is made at all. docs/8-build/environment.md section 3.
+# How the request reaches the provider.
+# Route A: "gemini-direct" calls the Google Gemini API.
+# Route B: "claude-code-session" reads figures from a session file written during
+# a Claude Code session (ingestion/session_extraction.py).
 Transport = Literal[
-    "foundry", "anthropic-direct", "gemini-direct", "claude-code-session",
+    "gemini-direct", "claude-code-session",
 ]
 
 # Which credential the transport carries. The kind, never the value.
 # "claude-code-session" carries none: the session file is read from disk.
 CredentialKind = Literal[
-    "foundry-api-key", "entra-token", "anthropic-api-key", "gemini-api-key",
+    "gemini-api-key",
     "claude-code-session",
 ]
 
@@ -156,11 +137,7 @@ class ProviderResolution:
 
 
 # Default model IDs per provider. A lookup of a *string*, not of behaviour.
-# claude-opus-5 is the model decided on 2026-09-20 and is served by the Foundry
-# gateway on this network (measured, docs/8-build/environment.md section 3).
-# gemini-3-flash-preview is the other Gemini model available.
 _DEFAULT_MODELS: dict[str, str] = {
-    "claude": "claude-opus-5",
     "gemini": "gemini-3.1-pro-preview",
 }
 
@@ -1750,129 +1727,7 @@ def _extract_json(raw: str) -> str:
 # Provider-specific API calls
 # ---------------------------------------------------------------------------
 
-# The Entra ID bearer-token provider, built once on first use.
-#
-# Cached because constructing DefaultAzureCredential probes several credential
-# sources, and the provider returned by get_bearer_token_provider caches and
-# refreshes the token itself. Rebuilding it per API call would repeat that probe —
-# and an `az` subprocess — once per LLM call, six times in one valuation.
-#
-# This holds a credential *object*. It never holds, prints or logs a token value.
-_ENTRA_TOKEN_PROVIDER: Callable[[], str] | None = None
 
-
-def _entra_token_provider() -> Callable[[], str]:
-    """Return the Entra ID bearer-token provider, building it on first use."""
-    global _ENTRA_TOKEN_PROVIDER
-    if _ENTRA_TOKEN_PROVIDER is None:
-        from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-        _ENTRA_TOKEN_PROVIDER = get_bearer_token_provider(
-            DefaultAzureCredential(), config.ENTRA_TOKEN_SCOPE,
-        )
-    return _ENTRA_TOKEN_PROVIDER
-
-
-def _build_claude_client(resolution: ProviderResolution) -> anthropic.Anthropic:
-    """Build the Anthropic client the resolution calls for.
-
-    Foundry is a transport, not a provider: both branches below speak to Claude.
-    The *decision* between them was already taken by `resolve_provider`; this
-    function only reads the credential that decision named, and stops if it has
-    gone missing since.
-    """
-    import anthropic
-
-    # A session resolution labels figures already read and stored in a session
-    # file. It names no credential, so building a client from it would fall
-    # through to ANTHROPIC_API_KEY below and make a paid call under a label that
-    # says no call was made. Stop instead.
-    if resolution.transport == "claude-code-session":
-        raise ValueError(
-            "This ProviderResolution labels a Claude Code session file "
-            f"({resolution.transport_label}). It carries no API credential and "
-            "cannot be used to call the API.",
-        )
-
-    if resolution.credential == "entra-token":
-        return anthropic.AnthropicFoundry(azure_ad_token_provider=_entra_token_provider())
-
-    if resolution.credential == "foundry-api-key":
-        api_key = os.environ.get("ANTHROPIC_FOUNDRY_API_KEY", "").strip()
-        if not api_key:
-            raise ValueError(
-                "ANTHROPIC_FOUNDRY_API_KEY resolved at startup but is empty now. "
-                "Extraction cannot continue.",
-            )
-        return anthropic.AnthropicFoundry(api_key=api_key)
-
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
-    if not api_key:
-        raise ValueError(
-            "ANTHROPIC_API_KEY resolved at startup but is empty now. "
-            "Extraction cannot continue.",
-        )
-    return anthropic.Anthropic(api_key=api_key)
-
-
-_CLAUDE_MAX_TOKENS = 64000
-
-
-def _call_claude(
-    system_prompt: str,
-    user_prompt: str,
-    resolution: ProviderResolution,
-    pdf_bytes: bytes | None = None,
-) -> tuple[str, int, int]:
-    """Call Anthropic Claude. Returns (response_text, input_tokens, output_tokens)."""
-    client = _build_claude_client(resolution)
-
-    content: list[dict] = []
-    if pdf_bytes:
-        content.append({
-            "type": "document",
-            "source": {
-                "type": "base64",
-                "media_type": "application/pdf",
-                "data": base64.standard_b64encode(pdf_bytes).decode("utf-8"),
-            },
-        })
-    content.append({"type": "text", "text": user_prompt})
-
-    with client.messages.stream(
-        model=resolution.model,
-        max_tokens=_CLAUDE_MAX_TOKENS,
-        system=system_prompt,
-        messages=[{"role": "user", "content": content}],
-        thinking={"type": "adaptive"},
-        output_config={"effort": config.EXTRACTION_EFFORT},
-    ) as stream:
-        response = stream.get_final_message()
-
-    # A response is a LIST of blocks, and the first one is not always the text.
-    # claude-opus-5 emits a `thinking` block ahead of its answer on some requests,
-    # and the old `response.content[0].text` raised AttributeError on those —
-    # measured against this gateway, and one of the union-attr errors mypy already
-    # reported on that line. Select the text blocks by type, and stop if there are
-    # none rather than parsing an empty string into a statement full of zeros.
-    text_blocks = [block.text for block in response.content if block.type == "text"]
-    if not text_blocks:
-        kinds = ", ".join(block.type for block in response.content) or "none at all"
-        raise ValueError(
-            f"{resolution.model} returned no text block, so there is nothing to "
-            f"parse. Block types received: {kinds}.",
-        )
-
-    # An answer cut off at the token ceiling is a partial answer. Parsing it would
-    # produce a statement missing whatever the model had not written yet, and every
-    # missing money field defaults to 0.0 downstream. Stop and name the cause.
-    if response.stop_reason == "max_tokens":
-        raise ValueError(
-            f"{resolution.model} hit the {_CLAUDE_MAX_TOKENS:,}-token output ceiling before "
-            "finishing its response, so the extraction is incomplete. Re-run "
-            "against fewer target years, or raise max_tokens in _call_claude.",
-        )
-
-    return "\n".join(text_blocks), response.usage.input_tokens, response.usage.output_tokens
 
 
 def _call_gemini(
@@ -1950,9 +1805,12 @@ def _call_llm(
     pdf_bytes: bytes | None = None,
 ) -> tuple[str, int, int]:
     """Route to the correct provider API."""
-    if resolution.provider == "claude":
-        return _call_claude(system_prompt, user_prompt, resolution, pdf_bytes=pdf_bytes)
-    return _call_gemini(system_prompt, user_prompt, resolution, pdf_bytes=pdf_bytes)
+    if resolution.provider == "gemini":
+        return _call_gemini(system_prompt, user_prompt, resolution, pdf_bytes=pdf_bytes)
+    raise ValueError(
+        f"_call_llm: unexpected provider {resolution.provider!r} with transport "
+        f"{resolution.transport!r}. Route A supports Gemini only.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2649,23 +2507,6 @@ def _run_nri_pass(
 # Provider, transport and credential resolution
 # ---------------------------------------------------------------------------
 
-# The stop when provider="claude" and no credential of any kind resolves.
-# It names BOTH remedies, because either one alone is enough and a reader with no
-# Anthropic account needs to be told the second one exists.
-_NO_CLAUDE_CREDENTIAL = (
-    "No Anthropic credential resolved, so extraction cannot start. "
-    "Either remedy is sufficient:\n"
-    "  (1) Set ANTHROPIC_API_KEY in .env or the system environment, to use the "
-    "public Anthropic API; or\n"
-    "  (2) Set ANTHROPIC_FOUNDRY_BASE_URL (or ANTHROPIC_FOUNDRY_RESOURCE) to a "
-    "Microsoft Foundry gateway and sign in with `az login`, so "
-    "DefaultAzureCredential can issue an Entra ID token for scope "
-    f"{config.ENTRA_TOKEN_SCOPE}. A Foundry gateway also accepts "
-    "ANTHROPIC_FOUNDRY_API_KEY instead of `az login`.\n"
-    "See docs/8-build/environment.md section 3."
-)
-
-
 def _resolve_model(provider: Provider, model: str | None) -> str:
     """Resolve the model ID. An explicitly empty model stops rather than defaulting."""
     if model is None:
@@ -2678,106 +2519,14 @@ def _resolve_model(provider: Provider, model: str | None) -> str:
     return model
 
 
-def _foundry_endpoint_label() -> str:
-    """Name the Foundry endpoint for display. A hostname, never a credential.
-
-    `.hostname`, not `.netloc`: netloc carries the userinfo of a URL, so a base URL
-    written as `https://user:secret@gw.example.net/x` would put `user:secret` on
-    stdout and into the rendered result page. `.hostname` returns the host alone
-    (and drops the port, which names nothing).
-    """
-    base_url = os.environ.get("ANTHROPIC_FOUNDRY_BASE_URL", "").strip()
-    if base_url:
-        host = urlsplit(base_url).hostname
-        if not host:
-            raise ValueError(
-                f"ANTHROPIC_FOUNDRY_BASE_URL is set but is not a URL with a host: "
-                f"{base_url!r}",
-            )
-        return host
-    resource = os.environ.get("ANTHROPIC_FOUNDRY_RESOURCE", "").strip()
-    if resource:
-        return f"{resource}.services.ai.azure.com"
-    raise ValueError(
-        "_foundry_endpoint_label called with no Foundry gateway configured.",
-    )
-
-
-def _resolve_claude(model: str) -> ProviderResolution:
-    """Choose the transport and the credential for Claude, or stop naming both remedies."""
-    base_url = os.environ.get("ANTHROPIC_FOUNDRY_BASE_URL", "").strip()
-    resource = os.environ.get("ANTHROPIC_FOUNDRY_RESOURCE", "").strip()
-
-    if base_url and resource:
-        raise ValueError(
-            "ANTHROPIC_FOUNDRY_BASE_URL and ANTHROPIC_FOUNDRY_RESOURCE are both "
-            "set. The Anthropic SDK treats them as mutually exclusive. Unset one.",
-        )
-
-    if base_url or resource:
-        endpoint = _foundry_endpoint_label()
-        transport_label = f"Microsoft Foundry gateway ({endpoint})"
-
-        if os.environ.get("ANTHROPIC_FOUNDRY_API_KEY", "").strip():
-            return ProviderResolution(
-                provider="claude",
-                model=model,
-                reasoning_label=f"adaptive thinking, effort {config.EXTRACTION_EFFORT!r} (config.EXTRACTION_EFFORT)",
-                transport="foundry",
-                transport_label=transport_label,
-                credential="foundry-api-key",
-                credential_source=config.credential_origin("ANTHROPIC_FOUNDRY_API_KEY"),
-            )
-
-        # No Foundry key, so an Entra ID token. Prove the library is importable
-        # here rather than letting the first API call fail with an ImportError
-        # that names neither the cause nor the remedy.
-        try:
-            import azure.identity  # noqa: F401
-        except ModuleNotFoundError as exc:
-            raise ValueError(
-                f"A Microsoft Foundry gateway is configured ({endpoint}) and no "
-                "ANTHROPIC_FOUNDRY_API_KEY is set, so an Entra ID token is "
-                "required — but azure-identity is not installed. Run "
-                "`pip install -r requirements.txt`, then `az login`. "
-                "Alternatively set ANTHROPIC_API_KEY and unset the Foundry "
-                "variables to use the public Anthropic API.",
-            ) from exc
-
-        return ProviderResolution(
-            provider="claude",
-            model=model,
-            reasoning_label=f"adaptive thinking, effort {config.EXTRACTION_EFFORT!r} (config.EXTRACTION_EFFORT)",
-            transport="foundry",
-            transport_label=transport_label,
-            credential="entra-token",
-            credential_source=(
-                f"Entra ID token via DefaultAzureCredential (`az login`), scope "
-                f"{config.ENTRA_TOKEN_SCOPE}"
-            ),
-        )
-
-    if os.environ.get("ANTHROPIC_API_KEY", "").strip():
-        return ProviderResolution(
-            provider="claude",
-            model=model,
-            reasoning_label=f"adaptive thinking, effort {config.EXTRACTION_EFFORT!r} (config.EXTRACTION_EFFORT)",
-            transport="anthropic-direct",
-            transport_label="Anthropic public API (api.anthropic.com)",
-            credential="anthropic-api-key",
-            credential_source=config.credential_origin("ANTHROPIC_API_KEY"),
-        )
-
-    raise ValueError(_NO_CLAUDE_CREDENTIAL)
-
-
 def _resolve_gemini(model: str) -> ProviderResolution:
-    """Choose the transport and the credential for Gemini, or stop naming the remedy."""
+    """Choose the transport and the credential for Gemini, or stop naming both remedies."""
     if not os.environ.get("GEMINI_API_KEY", "").strip():
         raise ValueError(
-            "GEMINI_API_KEY is not set, so extraction cannot start with "
-            "provider='gemini'. Add it to .env or the system environment, or use "
-            f"provider='{config.DEFAULT_EXTRACTION_PROVIDER}'.",
+            "GEMINI_API_KEY is not set, so extraction cannot start. "
+            "Either remedy is sufficient:\n"
+            "  (1) Set GEMINI_API_KEY in .env or the system environment to use the Gemini API (route A); or\n"
+            "  (2) Extract in a Claude Code session with the `extract-filing` skill and run with --session-file (route B).",
         )
     return ProviderResolution(
         provider="gemini",
@@ -2803,13 +2552,17 @@ def resolve_provider(
     kind resolves (rule 3). A missing credential must never produce a client that
     fails later with an unrelated message.
     """
-    if provider not in ("claude", "gemini"):
+    if provider == "claude":
+        raise ValueError(
+            "Claude reads a filing only in a Claude Code session (route B), on the "
+            "user's decision of 2026-10-04. Run the `extract-filing` skill and pass "
+            "--session-file (CLI) or upload the session file (web). "
+            "Route A uses Gemini, with GEMINI_API_KEY.",
+        )
+    if provider != "gemini":
         raise ValueError(f"provider must be 'claude' or 'gemini', got '{provider}'")
 
     resolved_model = _resolve_model(provider, model)
-
-    if provider == "claude":
-        return _resolve_claude(resolved_model)
     return _resolve_gemini(resolved_model)
 
 

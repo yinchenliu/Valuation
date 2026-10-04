@@ -90,83 +90,32 @@ fails. SciPy 1.17.1 raises its own `ValueError` for a constant regressor, before
 
 ## 3. The extraction credential
 
-Extraction needs one. Nothing else does. **On the Windows machine it is not a key** — it
-is an Entra ID sign-in. **On macOS it is a key.** No Foundry variable is set there and
-`az` is not installed, so Claude is reached over the public API with
-`ANTHROPIC_API_KEY` from `.env` (measured 2026-10-02). Read the whole of this section
-before setting anything.
+Extraction needs one on route A. Route B needs none.
+
+On 2026-10-04, the Microsoft Foundry gateway and Anthropic API routes were removed on the user's decision ("remove the foundry gateway, we only keep two gateway, 1 is the api, another is the chat box from the claude code"; "I dont' have anthropic api KEY, i only have gemini and deepseek").
+
+### The two routes
+
+There are two routes to extraction:
+- **Route A (API)**: reads the filing through the Google Gemini API, requiring `GEMINI_API_KEY`. The provider is `gemini` (transport `gemini-direct`).
+- **Route B (Claude Code session)**: Claude reads the filing inside a Claude Code session (`extract-filing` skill) and writes a session file (`ingestion/session_extraction.py`). The provider is `claude` (transport `claude-code-session`). No API key is used.
 
 ### The default
 
-`config.DEFAULT_EXTRACTION_PROVIDER` is **`"claude"`**, and it is the only provider
+`config.DEFAULT_EXTRACTION_PROVIDER` is **`"gemini"`**, and it is the only provider
 default in the repository. `ingestion/`, `api/` and `cli.py` all read that constant,
 so the CLI and the web app cannot disagree, and the number of PDFs you upload cannot
-change which model reads them. The default Claude model is **`claude-opus-5`**
+change which model reads them. The default Gemini model is **`gemini-3.1-pro-preview`**
 (`_DEFAULT_MODELS` in `ingestion/claude_extractor.py`).
 
-### Provider vs transport — they are different things
+Calling `resolve_provider("claude", ...)` or `-p claude` stops and names route B.
 
-There are two **providers**: `claude` and `gemini`. Claude is reachable over two
-**transports**, and it is the same Claude either way:
-
-| Configured | Transport | Client |
-|---|---|---|
-| `ANTHROPIC_FOUNDRY_BASE_URL` or `ANTHROPIC_FOUNDRY_RESOURCE` | Microsoft Foundry gateway | `anthropic.AnthropicFoundry` |
-| neither | the public Anthropic API | `anthropic.Anthropic` |
-
-Foundry is **not a third provider**, and `Provider` stays
-`Literal["claude", "gemini"]`. Adding a third value would be wrong: the model did not
-change, only the road to it did.
-
-### Setup on the Windows machine (Foundry + Entra ID)
-
-`ANTHROPIC_FOUNDRY_BASE_URL` is already set in the environment. There is **no API
-key** and there will not be one. Two steps:
-
-```
-pip install -r requirements.txt     # brings azure-identity
-az login                            # the credential; no key anywhere
-```
-
-That is all. `ingestion/claude_extractor.py` builds the token provider with
-`get_bearer_token_provider(DefaultAzureCredential(), config.ENTRA_TOKEN_SCOPE)`.
-**Library code never shells out to `az`** — a subprocess call is untestable and
-breaks wherever the CLI is absent. `az login` only populates the credential store
-that `DefaultAzureCredential` reads.
-
-### The scope, and the 401 that tells you it is wrong
-
-```
-ENTRA_TOKEN_SCOPE = "https://cognitiveservices.azure.com/.default"
-```
-
-This is the **audience the gateway validates**. It is not a URL the platform calls,
-and it is not a secret.
-
-**`https://ai.azure.com/.default` is rejected.** If you use it you get an HTTP 401,
-and the gateway names the audience it wanted in the body of that 401. That message is
-the fastest diagnosis available for this whole area — read it before changing
-anything else. A 401 here means the *scope*, not the sign-in.
-
-### PDF input on Foundry is a beta feature
-
-Native PDF ingestion through the Foundry gateway is **beta** on Anthropic's platform
-availability table. It was measured working on 2026-09-21: a one-line PDF reading
-`Total net revenues 4321` returned `4321`, and a three-year statement set extracted
-with every arithmetic reconciliation passing.
-
-**Treat a future failure here as a platform change, not as a defect in this
-repository.** Check the availability table first.
-
-### Setup elsewhere (no Foundry gateway)
+### Setup for Route A
 
 Create `.env` in the repository root — `config.py` loads it, and `.gitignore` already
 excludes it:
 
 ```
-# Claude over the public Anthropic API — only when no Foundry gateway is configured:
-ANTHROPIC_API_KEY=...
-# Gemini — unreachable from the network this platform runs on, but kept working:
 GEMINI_API_KEY=...
 ```
 
@@ -180,15 +129,15 @@ That is the behaviour of `load_dotenv(override=False)`. It has held since
 
 | You run | Result |
 |---|---|
-| `ANTHROPIC_API_KEY=<key> …` | the shell's key is used, not the one in `.env` |
-| `ANTHROPIC_API_KEY= …` (empty) | **the key is off for that one run.** `resolve_provider` stops before any network call |
-| `env -u ANTHROPIC_API_KEY …` | **the key is NOT off.** The name is absent, so `config.py` fills it from `.env` |
+| `GEMINI_API_KEY=<key> …` | the shell's key is used, not the one in `.env` |
+| `GEMINI_API_KEY= …` (empty) | **the key is off for that one run.** `resolve_provider` stops before any network call |
+| `env -u GEMINI_API_KEY …` | **the key is NOT off.** The name is absent, so `config.py` fills it from `.env` |
 | nothing | `.env` supplies the key |
 
 **To run with the key off, set it empty for that run:**
 
 ```bash
-ANTHROPIC_API_KEY= .venv/bin/python cli.py …
+GEMINI_API_KEY= .venv/bin/python cli.py …
 ```
 
 **Never use `env -u` to prevent a paid API call while `.env` holds the key.** It does
@@ -196,8 +145,6 @@ not work under either load order. Backlog item 46
 ([refactor-backlog.md](../9-reference/refactor-backlog.md), item 46) holds the probe
 table that measured this: with `override=False`, an empty shell value removes the key
 and `env -u` does not. On 2026-10-02 an `env -u` run started Pass 1 on a real 10-K.
-
-The same order holds for `GEMINI_API_KEY` and `ANTHROPIC_FOUNDRY_API_KEY`.
 
 ### Whether the key in use is the one in `.env` is in the output
 
@@ -208,8 +155,8 @@ comparison of values, made at the moment the label is built.** The value in use 
 
 | Label | Meaning |
 |---|---|
-| `ANTHROPIC_API_KEY (.env file)` | the value in use equals the value in `.env` |
-| `ANTHROPIC_API_KEY (shell or parent process, not .env)` | the value in use differs from the value in `.env`, or `.env` does not hold the name |
+| `GEMINI_API_KEY (.env file)` | the value in use equals the value in `.env` |
+| `GEMINI_API_KEY (shell or parent process, not .env)` | the value in use differs from the value in `.env`, or `.env` does not hold the name |
 
 **A shell value that equals the file's value reads `(.env file)`.** That is harmless:
 the key in use is the key in the file, whoever set it.

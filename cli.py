@@ -121,8 +121,11 @@ def parse_args() -> argparse.Namespace:
     g.add_argument(
         "-p", "--provider",
         default=None,
-        choices=["claude", "gemini"],
-        help=f"LLM provider (default: {config.DEFAULT_EXTRACTION_PROVIDER})",
+        choices=["gemini"],
+        help=(
+            f"LLM provider (default: {config.DEFAULT_EXTRACTION_PROVIDER}). "
+            "Claude reads a filing only through --session-file"
+        ),
     )
     g.add_argument("-m", "--model", default=None, help="Override LLM model ID")
     g.add_argument("--cache-dir", default=None, help="Directory for pickle cache")

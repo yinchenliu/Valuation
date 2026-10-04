@@ -25,6 +25,7 @@ Units and signs are owned by
 | `ProjectedFCFF` | `valuation.py` | one year, EBIT-based |
 | `DCFResult` | `valuation.py` | the whole valuation, ending in `implied_share_price` |
 | `ProjectionAssumptions` | `valuation.py` | the user's overrides. **`None` means "derive it"** |
+| `ProviderResolution` | `claude_extractor.py` | who read the filing, over what, on whose credential |
 | `Company` | `company.py` | **dead.** Nothing imports it |
 
 ## Stored fields versus derived properties
@@ -225,3 +226,12 @@ return dataclasses.replace(financials, income_statements=adjusted_is)
 **Keep this.** The adjusted and unadjusted statements both need to be displayable side
 by side, which is impossible if normalisation edits in place. No `analysis/` function
 may mutate its argument.
+
+## `ProviderResolution`, `Transport` and `CredentialKind`
+
+`ProviderResolution` records who read the filing, over what transport, and on what credential.
+
+- **`Provider`**: `"claude"` or `"gemini"`.
+- **`Transport`**: `"gemini-direct"` (route A calls Google Gemini API) or `"claude-code-session"` (route B reads from a Claude Code session file).
+- **`CredentialKind`**: `"gemini-api-key"` (route A) or `"claude-code-session"` (route B, no API key).
+

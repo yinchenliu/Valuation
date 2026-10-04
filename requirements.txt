@@ -9,6 +9,4 @@ scipy
 yfinance
 python-dotenv
 pdfplumber
-anthropic
-azure-identity
 google-genai
