@@ -48,6 +48,9 @@ from models.valuation import (
     ASSUMPTION_ORIGIN_DERIVED,
     ASSUMPTION_ORIGIN_SUBSTITUTED,
     ASSUMPTION_ORIGIN_SUPPLIED,
+    ASSUMPTION_PADDED_CLAUSE_TEMPLATE,
+    ASSUMPTION_SOURCE_SUPPLIED,
+    ASSUMPTION_TRUNCATED_CLAUSE_TEMPLATE,
     AssumptionSource,
     ProjectionAssumptions,
 )
@@ -627,6 +630,98 @@ def test_a_derived_growth_rate_carries_no_padded_clause() -> None:
 
     assert sources["revenue_growth_rates"].origin == ASSUMPTION_ORIGIN_DERIVED
     assert "REPEATED" not in sources["revenue_growth_rates"].detail
+
+
+# --------------------------------------------------------------------------
+# 4b. The truncation clause — backlog item 42, added by `P13b-tests`.
+#
+# Rule 6: the reader typed five numbers and must see that the valuation used
+# two. Before `P13b-models-silent` the list was cut with no word in the label.
+#
+# The counts are fixed by the inputs each test writes: 5 rates typed, a 2-year
+# projection, so 2 used and 5 - 2 = 3 dropped. The clause is checked against
+# `ASSUMPTION_TRUNCATED_CLAUSE_TEMPLATE` (the wording contract in
+# `models/valuation.py`) filled with those hand counts, and separately for the
+# words a reader needs, so a template that lost a number would still fail.
+#
+# Not asserted here: the label for `projection_years` below 1 (review F1 of
+# P13b-models-silent; it describes a projection that never runs and goes to
+# the backlog), and whether `derive_assumptions` changes the caller's list.
+# --------------------------------------------------------------------------
+
+
+def test_a_long_growth_list_uses_the_first_rates_and_says_the_rest_were_dropped() -> None:
+    """Five supplied rates over two projection years.
+
+    Rates used: the first two of [0.10, 0.20, 0.30, 0.40, 0.50] -> [0.10, 0.20].
+    Label: supplied sentence + the truncation clause for 5 supplied, 2 used,
+    5 - 2 = 3 dropped.
+    """
+    out = derive_assumptions(
+        _one_zero_margin_year(),
+        ProjectionAssumptions(
+            projection_years=2,
+            revenue_growth_rates=[0.10, 0.20, 0.30, 0.40, 0.50],
+        ),
+    )
+
+    assert out["revenue_growth_rates"] == pytest.approx([0.10, 0.20])
+
+    growth = out["sources"]["revenue_growth_rates"]
+    _assert_source_is_self_consistent(growth)
+    assert growth.origin == ASSUMPTION_ORIGIN_SUPPLIED
+    assert growth.observations == 0
+
+    expected_clause = ASSUMPTION_TRUNCATED_CLAUSE_TEMPLATE.format(
+        supplied_years=5, projection_years=2, dropped_years=3
+    )
+    assert growth.detail == ASSUMPTION_SOURCE_SUPPLIED + expected_clause
+
+    # The words a reader needs, independent of the template.
+    assert "5 rate(s)" in growth.detail     # how many were typed
+    assert "2 year(s)" in growth.detail     # how long the projection runs
+    assert "first 2" in growth.detail       # which ones were used
+    assert "last 3" in growth.detail        # how many were not
+    assert "DROPPED" in growth.detail
+    assert "REPEATED" not in growth.detail  # padding and truncation exclude each other
+
+
+def test_a_growth_list_of_the_right_length_carries_no_truncation_clause() -> None:
+    """Two supplied rates over two years: nothing cut, nothing repeated.
+
+    The label is the supplied sentence and nothing appended.
+    """
+    out = derive_assumptions(
+        _one_zero_margin_year(),
+        ProjectionAssumptions(projection_years=2, revenue_growth_rates=[0.10, 0.20]),
+    )
+
+    assert out["revenue_growth_rates"] == pytest.approx([0.10, 0.20])
+    growth = out["sources"]["revenue_growth_rates"]
+    assert growth.detail == ASSUMPTION_SOURCE_SUPPLIED
+    assert "DROPPED" not in growth.detail
+
+
+def test_a_short_growth_list_keeps_the_pad_clause_and_has_no_truncation_clause() -> None:
+    """One supplied rate over three years: the pad case, not the cut case.
+
+    Rates used: 0.10, then 0.10 repeated twice -> [0.10, 0.10, 0.10].
+    Label: supplied sentence + the pad clause for a 3-year projection reached
+    by 1 rate, and no truncation clause.
+    """
+    out = derive_assumptions(
+        _one_zero_margin_year(),
+        ProjectionAssumptions(projection_years=3, revenue_growth_rates=[0.10]),
+    )
+
+    assert out["revenue_growth_rates"] == pytest.approx([0.10, 0.10, 0.10])
+    growth = out["sources"]["revenue_growth_rates"]
+    expected_pad = ASSUMPTION_PADDED_CLAUSE_TEMPLATE.format(
+        projection_years=3, supplied_years=1
+    )
+    assert growth.detail == ASSUMPTION_SOURCE_SUPPLIED + expected_pad
+    assert "REPEATED" in growth.detail
+    assert "DROPPED" not in growth.detail
 
 
 # --------------------------------------------------------------------------

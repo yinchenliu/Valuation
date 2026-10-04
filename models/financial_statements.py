@@ -32,7 +32,10 @@ class NonRecurringItem:
     line_item: str          # IncomeStatement field name (see above)
     direction: str          # "add_back" | "remove"
     category: str
-    confidence: str = "high"   # "high" | "medium" | "low"
+    # "high" | "medium" | "low". Required, with no default: an absent
+    # confidence must not arrive as the strongest reading. Rule 3; backlog
+    # item 39.
+    confidence: str
     source: str = ""           # e.g. "Note 12 — Restructuring charges"
 
     @property
@@ -368,4 +371,18 @@ class FinancialStatements:
 
     @property
     def latest_year(self) -> int:
-        return max(self.years) if self.years else 0
+        """The most recent fiscal year with an income statement.
+
+        Raises `ValueError` when there are no income statements. There is then
+        no latest year, and year 0 is not one: it would read as a fiscal year
+        and every lookup keyed on it would quietly find nothing. Rule 3;
+        backlog item 15.
+        """
+        years = self.years
+        if not years:
+            raise ValueError(
+                f"FinancialStatements for {self.ticker!r} holds no income "
+                "statements, so there is no latest year. Extract at least one "
+                "year of the filing; year 0 is not substituted."
+            )
+        return max(years)

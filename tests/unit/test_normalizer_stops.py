@@ -82,6 +82,9 @@ def test_an_unrecognised_line_item_stops_the_run() -> None:
         line_item="Goodwill impairment charge",
         direction="add_back",
         category="impairment",
+        # `high` is applied by `partition_by_confidence`, so this item reaches
+        # `apply_adjustments` on a live run; a `low` one would be withheld first.
+        confidence="high",
     )
 
     with pytest.raises(ValueError) as excinfo:
@@ -118,6 +121,8 @@ def test_an_unrecognised_direction_stops_the_run() -> None:
         line_item="sga",
         direction="addback",
         category="restructuring",
+        # `high`, for the same reason as above: an applied item reaches the stop.
+        confidence="high",
     )
 
     with pytest.raises(ValueError) as excinfo:

@@ -22,6 +22,7 @@ from models.valuation import (
     ASSUMPTION_SOURCE_DERIVED_TEMPLATE,
     ASSUMPTION_SOURCE_SUBSTITUTED_TEMPLATE,
     ASSUMPTION_SOURCE_SUPPLIED,
+    ASSUMPTION_TRUNCATED_CLAUSE_TEMPLATE,
     AssumptionSource,
     ProjectedFCFF,
     ProjectionAssumptions,
@@ -181,6 +182,21 @@ def derive_assumptions(
             + ASSUMPTION_PADDED_CLAUSE_TEMPLATE.format(
                 projection_years=len(rev_growth),
                 supplied_years=rates_before_padding,
+            ),
+        )
+
+    # A cut list needs the same candour as a padded one. The reader typed
+    # more rates than the projection uses, and the label has to say which
+    # ones reached a figure or the dropped ones read as applied. Rule 6;
+    # backlog item 42.
+    if rates_before_padding > len(rev_growth):
+        growth_source = replace(
+            growth_source,
+            detail=growth_source.detail
+            + ASSUMPTION_TRUNCATED_CLAUSE_TEMPLATE.format(
+                supplied_years=rates_before_padding,
+                projection_years=len(rev_growth),
+                dropped_years=rates_before_padding - len(rev_growth),
             ),
         )
     sources["revenue_growth_rates"] = growth_source

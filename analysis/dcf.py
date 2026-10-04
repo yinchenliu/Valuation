@@ -176,6 +176,20 @@ def run_dcf(
             "because the terminal value is built from the final projected FCFF"
         )
 
+    # The share count is the denominator of the headline figure. Zero, a
+    # negative count or NaN is no share count, and the result would show a
+    # price of 0.0 (a company worth nothing) or NaN. Stop before discounting
+    # anything. Rule 3; backlog item 32. `math.isfinite` is tested first
+    # because a guard written as a comparison, such as `<= 0`, lets NaN
+    # through (see `_require_finite`).
+    if not (math.isfinite(diluted_shares) and diluted_shares > 0):
+        raise ValueError(
+            f"diluted_shares is {diluted_shares!r}: the DCF needs a finite "
+            "diluted share count greater than zero, in the units of the "
+            "filing, to divide equity value into a share price. It is not "
+            "substituted; supply the count printed in the filing."
+        )
+
     wacc = wacc_result.wacc
     n = len(projected_fcffs)
 

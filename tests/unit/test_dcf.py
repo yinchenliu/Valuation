@@ -23,7 +23,7 @@ from models.financial_statements import (
     FinancialStatements,
     IncomeStatement,
 )
-from models.valuation import ProjectedFCFF, WACCResult
+from models.valuation import DCFResult, ProjectedFCFF, WACCResult
 
 # ---------------------------------------------------------------------------
 # Fixture builders
@@ -736,3 +736,172 @@ def test_neither_nci_part_enters_any_balance_sheet_total(
     assert sheet.total_liabilities == pytest.approx(200.0)
     assert sheet.total_equity == pytest.approx(200.0)
     assert sheet.balance_check_difference == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------------------
+# Backlog item 32: no share count is no share price. Added by `P13b-tests`.
+#
+# Before `P13b-models-silent`, `DCFResult.implied_share_price` returned 0.0 when
+# `diluted_shares` was zero (a company worth nothing), NaN on a NaN count, 0.0 on
+# an infinite one, and a negative price on a negative one; `run_dcf` checked
+# nothing. Rule 3: the absent input stops and names itself.
+#
+# Nothing below asserts a price of 0.0 for a zero share count. That is the
+# default the unit removed.
+# ---------------------------------------------------------------------------
+
+NO_SHARE_COUNT = [
+    pytest.param(0.0, id="zero"),
+    pytest.param(0, id="integer-zero"),
+    pytest.param(-10.0, id="negative"),
+    pytest.param(math.nan, id="nan"),
+    pytest.param(math.inf, id="inf"),
+    pytest.param(-math.inf, id="minus-inf"),
+]
+
+
+@pytest.mark.parametrize("shares", NO_SHARE_COUNT)
+def test_run_dcf_stops_on_no_share_count_and_names_it(shares: float) -> None:
+    """Every other input is clean, so only the share count can stop the run.
+
+    With a valid count these inputs give a price (the bridge test above uses
+    the same balance sheet), so a run that returned anything here returned a
+    price for a valuation that has no share count.
+    """
+    with pytest.raises(ValueError) as excinfo:
+        run_dcf(
+            projected_fcffs=[make_projected_fcff(2026, 100.0)],
+            wacc_result=make_wacc_result(0.10),
+            financials=_financials_for_the_bridge(40.0, 10.0),
+            terminal_growth_rate=0.0,
+            current_price=50.0,
+            diluted_shares=shares,
+        )
+
+    message = str(excinfo.value)
+    assert "diluted_shares" in message   # the field
+    assert repr(shares) in message       # and the value that was refused
+
+
+@pytest.mark.parametrize("shares", NO_SHARE_COUNT)
+def test_run_dcf_checks_the_share_count_before_it_discounts_anything(
+    shares: float,
+) -> None:
+    """The share check comes first: before discounting and before the balance sheet.
+
+    The other inputs are poisoned so that each later check would raise with a
+    different message:
+
+      * the one projected FCFF is NaN, so `discount_cash_flows` would stop
+        naming "the projected FCFF for year 2026";
+      * there is no balance sheet, so the bridge would stop naming the
+        balance sheet.
+
+    Only a share check that runs before both can produce a message naming
+    `diluted_shares`.
+    """
+    financials = FinancialStatements(
+        ticker="TEST",
+        income_statements=[IncomeStatement(year=2025)],
+        balance_sheets=[],
+    )
+
+    with pytest.raises(ValueError) as excinfo:
+        run_dcf(
+            projected_fcffs=[make_projected_fcff(2026, math.nan)],
+            wacc_result=make_wacc_result(0.10),
+            financials=financials,
+            terminal_growth_rate=0.0,
+            current_price=50.0,
+            diluted_shares=shares,
+        )
+
+    message = str(excinfo.value)
+    assert "diluted_shares" in message
+    assert "projected FCFF" not in message
+    assert "balance sheet" not in message
+
+
+def _result_with_shares(shares: float) -> DCFResult:
+    """EV 400 + 600 = 1000, net debt 250, NCI 150 -> equity 1000 - 250 - 150 = 600."""
+    return DCFResult(
+        ticker="TEST",
+        projection_years=1,
+        terminal_growth_rate=0.0,
+        wacc=0.10,
+        pv_fcffs=400.0,
+        pv_terminal_value=600.0,
+        net_debt=250.0,
+        diluted_shares=shares,
+        current_price=0.0,
+        noncontrolling_interest=150.0,
+        noncontrolling_interest_source="by hand",
+    )
+
+
+@pytest.mark.parametrize("shares", NO_SHARE_COUNT)
+def test_implied_share_price_on_a_result_built_directly_stops_on_no_share_count(
+    shares: float,
+) -> None:
+    """The property guards a result that never passed through `run_dcf`."""
+    result = _result_with_shares(shares)
+
+    with pytest.raises(ValueError, match="diluted_shares"):
+        _ = result.implied_share_price
+
+
+def test_implied_share_price_on_a_result_built_directly_is_equity_over_shares() -> None:
+    """The control for the stop, by hand from the bridge.
+
+    Enterprise  400 + 600            = 1000.0
+    Equity      1000 - 250 - 150     =  600.0
+    Price       600 / 40 shares      =   15.0
+    """
+    result = _result_with_shares(40.0)
+
+    assert result.equity_value == pytest.approx(600.0)
+    assert result.implied_share_price == pytest.approx(15.0)
+
+
+def test_run_dcf_positive_share_count_gives_the_bridge_price_by_hand() -> None:
+    """One positive case through `run_dcf`, every step by hand. WACC 20%, g 0, one year.
+
+    PV of FCFF   120 / 1.20                                  =  100.0
+    Terminal     120 * (1 + 0) / (0.20 - 0)                  =  600.0
+    PV terminal  600 / 1.20                                  =  500.0
+    Enterprise   100 + 500                                   =  600.0
+    Net debt     long-term debt 150 - cash 50 - STI 0        =  100.0
+    NCI          nonredeemable 20 + redeemable 30            =   50.0
+    Equity       600 - 100 - 50                              =  450.0
+    Price        450 / 18 shares                             =   25.0
+    """
+    financials = FinancialStatements(
+        ticker="TEST",
+        income_statements=[IncomeStatement(year=2025)],
+        balance_sheets=[
+            BalanceSheet(
+                year=2025,
+                cash_and_equivalents=50.0,
+                short_term_investments=0.0,
+                long_term_debt=150.0,
+                noncontrolling_interest_nonredeemable=20.0,
+                noncontrolling_interest_redeemable=30.0,
+            ),
+        ],
+    )
+
+    result = run_dcf(
+        projected_fcffs=[make_projected_fcff(2026, 120.0)],
+        wacc_result=make_wacc_result(0.20),
+        financials=financials,
+        terminal_growth_rate=0.0,
+        current_price=50.0,
+        diluted_shares=18.0,
+    )
+
+    assert result.enterprise_value == pytest.approx(600.0)
+    assert result.net_debt == pytest.approx(100.0)
+    assert result.noncontrolling_interest == pytest.approx(50.0)
+    assert result.equity_value == pytest.approx(450.0)
+    assert result.diluted_shares == pytest.approx(18.0)
+    assert result.implied_share_price == pytest.approx(25.0)

@@ -80,7 +80,13 @@ def _item(
     amount: float,
     year: int = 2024,
 ) -> NonRecurringItem:
-    """A non-recurring item with only the four fields the normaliser reads."""
+    """A non-recurring item with only the four fields the normaliser reads.
+
+    `confidence` is required since `P13b-models-silent` (backlog item 39). It is
+    `"high"` because every test here is about the normaliser *applying* an item,
+    and `partition_by_confidence` passes `high` to the normaliser while it
+    withholds `low`. The normaliser itself does not read the field.
+    """
     return NonRecurringItem(
         year=year,
         description="test item",
@@ -88,6 +94,7 @@ def _item(
         line_item=line_item,
         direction=direction,
         category="restructuring",
+        confidence="high",
     )
 
 

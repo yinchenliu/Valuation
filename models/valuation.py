@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Final
 
@@ -102,8 +103,10 @@ ASSUMPTION_SOURCE_SUBSTITUTED_TEMPLATE: Final = (
 )
 
 # Appended to whichever sentence above applies. Each names a step this
-# platform took that the filing did not, and both can land on a figure that
-# is otherwise supplied or otherwise derived, so neither is a fourth origin.
+# platform took that the filing did not, and each can land on a figure that
+# is otherwise supplied or otherwise derived, so none is a fourth origin.
+# Padding and truncation exclude each other: a growth list is either shorter
+# than the projection or longer than it.
 ASSUMPTION_CLAMPED_CLAUSE_TEMPLATE: Final = (
     " It was then CLAMPED into the {low} to {high} band this platform "
     "imposes: {pre_clamp} fell outside it, so {post_clamp} is the figure "
@@ -114,6 +117,12 @@ ASSUMPTION_PADDED_CLAUSE_TEMPLATE: Final = (
     "{supplied_years} rate(s) reached it, so the last rate was REPEATED to "
     "fill the remainder. The repeat is this platform's, and it is not in the "
     "filing."
+)
+ASSUMPTION_TRUNCATED_CLAUSE_TEMPLATE: Final = (
+    " {supplied_years} rate(s) were supplied and the projection runs "
+    "{projection_years} year(s), so only the first {projection_years} were "
+    "used and the last {dropped_years} were DROPPED. The dropped rates reach "
+    "no figure in this valuation."
 )
 
 
@@ -335,7 +344,23 @@ class DCFResult:
 
     @property
     def implied_share_price(self) -> float:
-        return self.equity_value / self.diluted_shares if self.diluted_shares else 0.0
+        """Equity Value / diluted shares.
+
+        Raises `ValueError` when `diluted_shares` is not a finite number
+        greater than zero. A price of 0.0 for a missing share count would read
+        as a company worth nothing. Rule 3; backlog item 32. `run_dcf` stops on
+        the same input before it discounts anything; this guards a result
+        built directly. Infinity is refused too: dividing by it would return
+        the same 0.0. NaN is tested by `isfinite` because a guard written as a
+        comparison, such as `<= 0`, lets NaN through.
+        """
+        if not (math.isfinite(self.diluted_shares) and self.diluted_shares > 0):
+            raise ValueError(
+                f"diluted_shares is {self.diluted_shares!r}, so there is no "
+                "implied share price: equity value is divided by the diluted "
+                "share count, and that count must be a number greater than zero."
+            )
+        return self.equity_value / self.diluted_shares
 
     # Comparison
     current_price: float = 0.0
