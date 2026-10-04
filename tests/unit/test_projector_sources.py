@@ -21,7 +21,7 @@ What `P8a-statements-data` claims, and what this file checks independently:
 **Two things this file deliberately does NOT assert.**
 
 - It never asserts that a substituted ratio equals `0.0`. That zero is
-  `analysis/projector.py:72`, `:90` and `:271` — backlog item 1 — and an
+  `analysis/projector.py:73`, `:91` and `:307` — backlog item 1 — and an
   assertion pinning it would turn its fix red. Where the substituted sentence
   has to be checked against the value it reports, the check is the *identity*
   "the sentence names the figure that was actually used", which holds whatever
@@ -33,12 +33,13 @@ What `P8a-statements-data` claims, and what this file checks independently:
 
 from __future__ import annotations
 
+import re
 from dataclasses import MISSING, fields
 
 import pytest
 
 import config
-from analysis.projector import derive_assumptions
+from analysis.projector import derive_assumptions, project_fcffs
 from models.financial_statements import (
     CashFlowStatement,
     FinancialStatements,
@@ -95,7 +96,7 @@ def _income_only_two_years() -> FinancialStatements:
     EBIT  = revenue - COGS; no other operating line is set.
     EBT   = EBIT, because no interest or non-operating line is set.
 
-    By hand, from `analysis/projector.py:226-276`: `da_pcts`, `capex_pcts` and
+    By hand, from `analysis/projector.py:262-313`: `da_pcts`, `capex_pcts` and
     `nwc_pcts` are each built by a loop whose body runs only when
     `financials.get_cash_flow(y)` is truthy. `cash_flow_statements` is empty, so
     `get_cash_flow` returns `None` for both years
@@ -174,8 +175,8 @@ def _one_zero_da_year() -> FinancialStatements:
     Exists to separate the **two different counting rules** the module applies,
     on one fixture where every other input is identical:
 
-      * `_historical_average` (`:58-74`) drops zero values, so D&A counts 1 year.
-      * the NWC branch (`:264-276`) takes a plain mean, so NWC counts 2 years.
+      * `_historical_average` (`:59-75`) drops zero values, so D&A counts 1 year.
+      * the NWC branch (`:296-313`) takes a plain mean, so NWC counts 2 years.
     """
     return FinancialStatements(
         ticker="TEST",
@@ -208,7 +209,7 @@ def _one_year_above_the_tax_band() -> FinancialStatements:
 
     A single filing year also makes the revenue CAGR window degenerate:
     `lookback = min(3, len([100]) - 1) = min(3, 0) = 0`, so
-    `_historical_cagr(100, 100, 0)` hits its `periods <= 0` guard at `:89`.
+    `_historical_cagr(100, 100, 0)` hits its `periods <= 0` guard at `:90`.
     """
     return FinancialStatements(
         ticker="TEST",
@@ -275,7 +276,7 @@ def _sources(
 def test_the_three_cash_flow_ratios_are_substituted_when_no_cash_flow_was_extracted() -> None:
     """No cash flow statement means no observation, and the label must say so.
 
-    Derived by hand from `analysis/projector.py:226-276`. Each of the three
+    Derived by hand from `analysis/projector.py:262-313`. Each of the three
     loops appends only when `financials.get_cash_flow(y)` is truthy;
     `cash_flow_statements` is empty, so that call returns `None` for 2023 and
     for 2024 and **all three lists stay empty**:
@@ -313,9 +314,9 @@ def test_the_three_cash_flow_ratios_are_substituted_when_no_cash_flow_was_extrac
 def test_a_degenerate_revenue_window_is_substituted_not_a_measured_flat_year() -> None:
     """One filing year gives no growth window, and 0% growth is then a SUBSTITUTION.
 
-    By hand from `analysis/projector.py:161-164`: with one income statement,
+    By hand from `analysis/projector.py:182-184`: with one income statement,
     `lookback = min(3, 1 - 1) = 0`, so `_historical_cagr(100, 100, 0)` meets
-    `periods <= 0` at `:89` and returns `observations = 0`.
+    `periods <= 0` at `:90` and returns `observations = 0`.
 
     A 0% growth rate presented as measured is the same defect as a 0% D&A ratio
     presented as measured (round 2, step 6), so the label must read substituted
@@ -619,7 +620,7 @@ def test_a_complete_growth_list_carries_no_padded_clause() -> None:
 def test_a_derived_growth_rate_carries_no_padded_clause() -> None:
     """The derived branch fills exactly `projection_years`, so it is never padded.
 
-    From `analysis/projector.py:163`, `[cagr.value] * ov.projection_years` is
+    From `analysis/projector.py:184`, `[cagr.value] * ov.projection_years` is
     already the right length, so `len(rev_growth) > rates_before_padding` is
     False. A clause here would tell a reader the platform repeated a rate it
     never repeated.
@@ -644,9 +645,9 @@ def test_a_derived_growth_rate_carries_no_padded_clause() -> None:
 # `models/valuation.py`) filled with those hand counts, and separately for the
 # words a reader needs, so a template that lost a number would still fail.
 #
-# Not asserted here: the label for `projection_years` below 1 (review F1 of
-# P13b-models-silent; it describes a projection that never runs and goes to
-# the backlog), and whether `derive_assumptions` changes the caller's list.
+# The two cases this note used to leave out — `projection_years` below 1, and
+# whether `derive_assumptions` changes the caller's list — are now locked in
+# section 4c below (backlog items 67 and 66, `P13e-tests`).
 # --------------------------------------------------------------------------
 
 
@@ -722,6 +723,180 @@ def test_a_short_growth_list_keeps_the_pad_clause_and_has_no_truncation_clause()
     assert growth.detail == ASSUMPTION_SOURCE_SUPPLIED + expected_pad
     assert "REPEATED" in growth.detail
     assert "DROPPED" not in growth.detail
+
+
+# --------------------------------------------------------------------------
+# 4c. The caller's growth list, and a projection shorter than one year —
+#     backlog items 66 and 67, added by `P13e-tests`.
+#
+# Item 66 (rule 6): the pad used to append to the caller's OWN list, so
+# `[0.1]` with a 3-year projection became `[0.1, 0.1, 0.1]` in the caller's
+# object, and a second call read the repeated rates as supplied and dropped
+# the REPEATED clause.
+#
+# Item 67 (rule 3): `projection_years` was never checked. A value that cannot
+# form a projection must stop and name the field.
+#
+# Every expected value below follows from the inputs the test writes and from
+# the wording contract in `models/valuation.py`; none was read off a run. The
+# stop tests assert the field name and the offending value, NOT the reason
+# sentence: review F1 of `P13e-growth-input` says that sentence is wrong for a
+# non-integer, and it may change.
+# --------------------------------------------------------------------------
+
+
+def test_the_callers_growth_list_is_the_same_object_and_unchanged_after_a_padded_call() -> None:
+    """One supplied rate over three years: the pad must work on a copy.
+
+    Input list `[0.1]`, 3 projection years. The pad repeats the last rate, so
+    the rates USED are `[0.1, 0.1, 0.1]` (1 supplied + 2 repeats = 3). The
+    caller's list must still be the object it handed in, holding `[0.1]` —
+    one element, not three.
+    """
+    rates = [0.1]
+    assumptions = ProjectionAssumptions(projection_years=3, revenue_growth_rates=rates)
+
+    out = derive_assumptions(_one_zero_margin_year(), assumptions)
+
+    # The caller's object: same identity, same one element.
+    assert assumptions.revenue_growth_rates is rates
+    assert rates == [0.1]
+    assert len(rates) == 1
+
+    # The padded list is a different object, so a later append to it cannot
+    # reach the caller either.
+    assert out["revenue_growth_rates"] is not rates
+    assert out["revenue_growth_rates"] == pytest.approx([0.1, 0.1, 0.1])
+
+
+def test_two_calls_with_the_same_assumptions_give_the_same_padded_growth_label() -> None:
+    """The second call must not read the first call's repeats as supplied.
+
+    Both calls see 1 supplied rate over 3 years, so both labels must be the
+    supplied sentence plus the pad clause filled with (3 years, 1 rate). Before
+    the fix the second call saw 3 "supplied" rates and carried no clause.
+    """
+    assumptions = ProjectionAssumptions(projection_years=3, revenue_growth_rates=[0.1])
+    expected = ASSUMPTION_SOURCE_SUPPLIED + ASSUMPTION_PADDED_CLAUSE_TEMPLATE.format(
+        projection_years=3, supplied_years=1
+    )
+
+    first = derive_assumptions(_one_zero_margin_year(), assumptions)
+    second = derive_assumptions(_one_zero_margin_year(), assumptions)
+
+    first_label = first["sources"]["revenue_growth_rates"].detail
+    second_label = second["sources"]["revenue_growth_rates"].detail
+
+    assert first_label == second_label
+    assert first_label == expected
+    assert "REPEATED" in first_label
+    assert "REPEATED" in second_label
+    assert "1 rate(s)" in second_label  # the second call still counts ONE supplied rate
+    assert second["revenue_growth_rates"] == pytest.approx([0.1, 0.1, 0.1])
+
+
+def _names_value(message: str, value: object) -> bool:
+    """True when `repr(value)` appears in `message` as a whole token.
+
+    A bare substring test would let `0` match inside `2.0` or `-1` inside
+    `-10`; the lookarounds stop that, so the message has to name THIS value.
+    A full stop straight after the value (the end of a sentence) is allowed;
+    a full stop followed by a digit (a longer number) is not.
+    """
+    token = re.escape(repr(value))
+    return re.search(rf"(?<![\w.\-]){token}(?!\w|\.\d)", message) is not None
+
+
+@pytest.mark.parametrize(
+    "projection_years",
+    [0, -1, True, 2.0],
+    ids=["zero", "minus_one", "bool_True", "float_2.0"],
+)
+def test_a_projection_years_that_is_not_an_integer_of_one_or_more_stops_and_names_it(
+    projection_years: object,
+) -> None:
+    """0 and -1 form no projection; `True` and `2.0` are not year counts.
+
+    The review of `P13e-growth-input` accepted refusing `True` (an `int` to
+    Python, but not a count anyone typed) and `2.0` (not an integer). Each must
+    raise `ValueError`, and the message must name the field and the value the
+    caller passed, so a reader can find which input to correct.
+    """
+    with pytest.raises(ValueError) as caught:
+        derive_assumptions(
+            _one_zero_margin_year(),
+            ProjectionAssumptions(projection_years=projection_years),  # type: ignore[arg-type]
+        )
+
+    message = str(caught.value)
+    assert "projection_years" in message
+    assert _names_value(message, projection_years), message
+
+
+def test_the_projection_years_stop_comes_before_anything_is_read_from_the_filing() -> None:
+    """The check runs before any rate is derived (assignment step 2).
+
+    An extraction with no statements at all would otherwise fail later, on the
+    revenue list. With `projection_years=0` the first stop a reader sees must
+    be the one that names `projection_years`. This asserts nothing about what
+    an empty extraction does with a valid year count — that case is the red
+    test in `tests/unit/test_projector_rule3_red.py`.
+    """
+    with pytest.raises(ValueError) as caught:
+        derive_assumptions(
+            FinancialStatements(ticker="TEST"),
+            ProjectionAssumptions(projection_years=0),
+        )
+
+    message = str(caught.value)
+    assert "projection_years" in message
+    assert _names_value(message, 0), message
+
+
+def test_a_one_year_projection_still_projects_one_year() -> None:
+    """The smallest valid value must still run, and run exactly once.
+
+    Every ratio is supplied, so each figure is hand arithmetic on
+    `_one_zero_margin_year`, whose latest year is 2024 with revenue 200:
+
+        growth [0.10], 1 year      -> 1 rate used, no pad, no cut
+        year     2024 + 1           = 2025
+        revenue  200 * (1 + 0.10)   = 220
+        EBIT     220 * 0.30         = 66
+        NOPAT    66 * (1 - 0.20)    = 52.8
+        D&A      220 * 0.10         = 22
+        capex    220 * 0.05         = 11
+        dNWC     220 * 0.05         = 11
+        FCFF     52.8 + 22 - 11 - 11 = 52.8
+    """
+    financials = _one_zero_margin_year()
+    out = derive_assumptions(
+        financials,
+        ProjectionAssumptions(
+            projection_years=1,
+            revenue_growth_rates=[0.10],
+            operating_margin=0.30,
+            tax_rate=0.20,
+            da_pct_revenue=0.10,
+            capex_pct_revenue=0.05,
+            nwc_pct_revenue=0.05,
+        ),
+    )
+
+    assert out["projection_years"] == 1
+    assert out["revenue_growth_rates"] == pytest.approx([0.10])
+    # One rate over one year: neither repeated nor dropped.
+    assert out["sources"]["revenue_growth_rates"].detail == ASSUMPTION_SOURCE_SUPPLIED
+
+    projected = project_fcffs(financials, out)
+
+    assert len(projected) == 1
+    (year_one,) = projected
+    assert year_one.year == 2025
+    assert year_one.revenue == pytest.approx(220.0)
+    assert year_one.ebit == pytest.approx(66.0)
+    assert year_one.nopat == pytest.approx(52.8)
+    assert year_one.fcff == pytest.approx(52.8)
 
 
 # --------------------------------------------------------------------------

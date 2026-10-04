@@ -147,6 +147,23 @@ def derive_assumptions(
     dict by name and an added key breaks none of them.
     """
     ov = overrides or ProjectionAssumptions()
+
+    # A projection shorter than one year has no cash flow to discount, and the
+    # growth label below would describe years that never run. Stop and name the
+    # field before any rate is derived. Rule 3; backlog item 67. A bool is
+    # refused too: `True` is an int to Python, but it is not a year count anyone
+    # typed.
+    if (
+        isinstance(ov.projection_years, bool)
+        or not isinstance(ov.projection_years, int)
+        or ov.projection_years < 1
+    ):
+        raise ValueError(
+            f"projection_years must be an integer of 1 or more; got "
+            f"{ov.projection_years!r}. A projection shorter than one year has "
+            f"no cash flow to discount."
+        )
+
     years = financials.years
 
     sources: dict[str, AssumptionSource] = {}
@@ -154,7 +171,10 @@ def derive_assumptions(
     # --- Revenue growth ---
     revenues = [financials.get_income_statement(y).revenue for y in years]
     if ov.revenue_growth_rates:
-        rev_growth = ov.revenue_growth_rates
+        # A copy: the padding below appends, and appending to the caller's own
+        # list would make a second call read the repeated rates as supplied and
+        # drop the REPEATED clause. Rule 6; backlog item 66.
+        rev_growth = list(ov.revenue_growth_rates)
         growth_source = _source_supplied()
     else:
         # Use a rolling lookback window to avoid distortion from one-off macro events
