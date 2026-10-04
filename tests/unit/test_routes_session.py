@@ -433,7 +433,7 @@ def test_route_a_label_survives_removing_the_key_on_a_cache_hit(
     """
     pdf = make_pdf(tmp_path)
     llm_calls = install_route_a_stub(monkeypatch, pdf)
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "placeholder-no-call-is-made")
+    monkeypatch.setenv("GEMINI_API_KEY", "placeholder-no-call-is-made")
     files = _route_a_files(pdf)
 
     assumptions = closed_client.get(
@@ -443,12 +443,12 @@ def test_route_a_label_survives_removing_the_key_on_a_cache_hit(
     assert llm_calls == ["pass1", "pass2"]
     rows = label_rows(assumptions.text)
     assert rows is not None
-    assert "public API" in rows["Transport"]
-    assert "ANTHROPIC_API_KEY" in rows["Credential source"]
+    assert "Google Gemini API" in rows["Transport"]
+    assert "GEMINI_API_KEY" in rows["Credential source"]
 
-    monkeypatch.delenv("ANTHROPIC_API_KEY")
-    with pytest.raises(ValueError, match="No Anthropic credential resolved"):
-        resolve_provider("claude", None)
+    monkeypatch.delenv("GEMINI_API_KEY")
+    with pytest.raises(ValueError, match="GEMINI_API_KEY is not set"):
+        resolve_provider("gemini", None)
 
     response = closed_client.post("/valuation", data=VALUATION_FORM | {"files": files})
 
@@ -457,8 +457,8 @@ def test_route_a_label_survives_removing_the_key_on_a_cache_hit(
     assert llm_calls == ["pass1", "pass2"]  # no new call: the cache answered
     rows = label_rows(response.text)
     assert rows is not None
-    assert "public API" in rows["Transport"]
-    assert "ANTHROPIC_API_KEY" in rows["Credential source"]
+    assert "Google Gemini API" in rows["Transport"]
+    assert "GEMINI_API_KEY" in rows["Credential source"]
     assert "Claude Code session" not in text_of(response.text)
     assert price_calls == [(TICKER, 5, "monthly")]
 
@@ -468,13 +468,14 @@ def test_route_a_on_a_cache_miss_with_no_key_stops_on_the_credential(
 ) -> None:
     """No key, empty cache: the extraction must stop before any call.
 
-    Expected: an error naming `ANTHROPIC_API_KEY` (the credential the stop names
-    as its first remedy, `docs/8-build/environment.md` section 3), zero calls to
+    Expected: an error naming `GEMINI_API_KEY` (the credential the stop names
+    as its remedy, `docs/8-build/environment.md` section 3), zero calls to
     `_call_llm`, and no label on the page — no extraction ran, so no route may be
     named.
     """
     pdf = make_pdf(tmp_path)
     llm_calls = install_route_a_stub(monkeypatch, pdf)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
     response = closed_client.post(
         "/valuation", data=VALUATION_FORM | {"files": _route_a_files(pdf)},
@@ -482,8 +483,9 @@ def test_route_a_on_a_cache_miss_with_no_key_stops_on_the_credential(
 
     message = error_text(response.text)
     assert message is not None
-    assert "No Anthropic credential resolved" in message
-    assert "ANTHROPIC_API_KEY" in message
+    assert "GEMINI_API_KEY is not set, so extraction cannot start" in message
+    assert "GEMINI_API_KEY" in message
+    assert "--session-file" in message
     assert llm_calls == []
     assert label_rows(response.text) is None
 

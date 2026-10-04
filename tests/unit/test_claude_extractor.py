@@ -41,8 +41,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-import anthropic
 import pytest
+from google import genai
 
 import ingestion.claude_extractor as ce
 from ingestion.claude_extractor import (
@@ -626,10 +626,10 @@ def test_merge_keeps_one_item_per_year_amount_direction() -> None:
 _REAL_CALL_LLM = ce._call_llm
 
 _NRI_RESOLUTION = ProviderResolution(
-    provider="claude", model="stub-model",
-    reasoning_label="adaptive thinking, effort 'high' (config.EXTRACTION_EFFORT)",
-    transport="anthropic-direct",
-    transport_label="stub", credential="anthropic-api-key",
+    provider="gemini", model="gemini-3.1-pro-preview",
+    reasoning_label="the provider's default; this code sets no thinking for Gemini",
+    transport="gemini-direct",
+    transport_label="stub", credential="gemini-api-key",
     credential_source="stub: no call is made",
 )
 
@@ -645,14 +645,10 @@ def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
     def _block(*args: object, **kwargs: object) -> Any:
         raise _NetworkReached("a network road was taken")
 
-    for var in ("ANTHROPIC_API_KEY", "ANTHROPIC_FOUNDRY_API_KEY",
-                "GEMINI_API_KEY", "GOOGLE_API_KEY"):
+    for var in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
         monkeypatch.delenv(var, raising=False)
-    monkeypatch.setattr(ce, "_call_claude", _block)
     monkeypatch.setattr(ce, "_call_gemini", _block)
-    monkeypatch.setattr(ce, "_build_claude_client", _block)
-    monkeypatch.setattr(anthropic.Anthropic, "__init__", _block)
-    monkeypatch.setattr(anthropic.AnthropicFoundry, "__init__", _block)
+    monkeypatch.setattr(genai.Client, "__init__", _block)
     monkeypatch.setattr(socket.socket, "connect", _block)
     monkeypatch.setattr(socket, "create_connection", _block)
 
@@ -784,7 +780,7 @@ def test_the_network_guard_fires(no_network: None) -> None:
     with pytest.raises(_NetworkReached):
         _REAL_CALL_LLM("system", "user", _NRI_RESOLUTION)
     with pytest.raises(_NetworkReached):
-        anthropic.Anthropic(api_key="not-a-key")
+        genai.Client(api_key="not-a-key")
     with pytest.raises(_NetworkReached):
         socket.create_connection(("example.invalid", 443))
     with socket.socket() as sock, pytest.raises(_NetworkReached):

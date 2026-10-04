@@ -50,6 +50,7 @@ the routes read; no `.pkl` is loaded. `docs/5-testing/strategy.md` section 3.
 
 from __future__ import annotations
 
+import html
 import re
 from urllib.parse import parse_qs, urlparse
 
@@ -60,7 +61,9 @@ from starlette.testclient import TestClient
 
 import app as app_module
 from api import routes_upload, routes_valuation
+from ingestion.claude_extractor import ProviderResolution
 from ingestion.price_fetcher import PriceData
+from ingestion.session_extraction import SessionExtraction
 from models.financial_statements import (
     BalanceSheet,
     CashFlowStatement,
@@ -91,7 +94,7 @@ def _field_value(body: str, name: str) -> str:
 
 
 def _strip_tags(fragment: str) -> str:
-    return re.sub(r"<[^>]+>", "", fragment).strip()
+    return html.unescape(re.sub(r"<[^>]+>", "", fragment).strip())
 
 
 def _rows_under(body: str, heading: str) -> dict[str, str]:
@@ -283,9 +286,10 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path) -> TestClient:
         "ANTHROPIC_FOUNDRY_BASE_URL",
         "ANTHROPIC_FOUNDRY_RESOURCE",
         "ANTHROPIC_FOUNDRY_API_KEY",
+        "ANTHROPIC_API_KEY",
     ):
         monkeypatch.delenv(var, raising=False)
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "placeholder-no-call-is-made")
+    monkeypatch.setenv("GEMINI_API_KEY", "placeholder-no-call-is-made")
 
     def _closed_boundary(*args: object, **kwargs: object) -> None:
         raise AssertionError(
@@ -838,12 +842,12 @@ def test_post_valuation_shows_and_subtracts_the_noncontrolling_interests(
 def test_post_valuation_names_who_read_the_filing(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Rule 6: the result page names provider, model, transport and credential.
+    """Rule 6: the result page names provider, model, reasoning, transport and credential.
 
     Expected values from `docs/8-build/environment.md` section 3, not from the
-    code: the only provider default is `claude`; the default Claude model is
-    `claude-opus-5`; and with no Foundry variable set the transport is "the
-    public Anthropic API". The `client` fixture pins exactly that environment.
+    code: the default provider is `gemini`; the default Gemini model is
+    `gemini-3.1-pro-preview`; and the transport is "Google Gemini API".
+    The `client` fixture pins exactly that environment with GEMINI_API_KEY.
     """
     monkeypatch.setattr(
         routes_valuation,
@@ -855,23 +859,21 @@ def test_post_valuation_names_who_read_the_filing(
     body = _run_valuation(client)
 
     extraction = _rows_under(body, "Extraction — who read the filing")
-    assert extraction["Provider"] == "CLAUDE"
-    assert extraction["Model"] == "claude-opus-5"
-    assert "Anthropic" in extraction["Transport"]
-    assert "api.anthropic.com" in extraction["Transport"]
-    assert "Foundry" not in extraction["Transport"]
-    assert "ANTHROPIC_API_KEY" in extraction["Credential source"]
+    assert extraction["Provider"] == "GEMINI"
+    assert extraction["Model"] == "gemini-3.1-pro-preview"
+    assert extraction["Reasoning"] == "the provider's default; this code sets no thinking for Gemini"
+    assert "Google Gemini API" in extraction["Transport"]
+    assert "generativelanguage.googleapis.com" in extraction["Transport"]
+    assert "GEMINI_API_KEY" in extraction["Credential source"]
 
 
 def test_post_valuation_distinguishes_the_two_transports(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Same model, different road: rule 6 requires the page to tell them apart.
+    """Same pipeline, different road: rule 6 requires the page to tell them apart.
 
-    Expected value from `docs/8-build/environment.md` section 3's transport
-    table: with `ANTHROPIC_FOUNDRY_BASE_URL` set the transport is the Microsoft
-    Foundry gateway, and the page must say so and must not claim the public API.
-    Only the environment is read — no client is built and no request is made.
+    Route A uses Google Gemini API (gemini-direct transport).
+    Route B uses Claude Code session (claude-code-session transport).
     """
     monkeypatch.setattr(
         routes_valuation,
@@ -879,19 +881,104 @@ def test_post_valuation_distinguishes_the_two_transports(
         lambda *a, **k: (_one_year_financials(), []),
     )
     monkeypatch.setattr(routes_valuation, "fetch_price_data", lambda *a, **k: _price_data())
-    monkeypatch.setenv("ANTHROPIC_FOUNDRY_BASE_URL", "https://gw.example.invalid/api")
-    monkeypatch.setenv("ANTHROPIC_FOUNDRY_API_KEY", "placeholder-no-call-is-made")
 
-    body = _run_valuation(client)
+    # 1. Route A: extracted via Gemini API
+    body_a = _run_valuation(client)
+    extraction_a = _rows_under(body_a, "Extraction — who read the filing")
+    assert extraction_a["Provider"] == "GEMINI"
+    assert extraction_a["Model"] == "gemini-3.1-pro-preview"
+    assert "Google Gemini API" in extraction_a["Transport"]
+    assert "GEMINI_API_KEY" in extraction_a["Credential source"]
+    assert "Claude Code session" not in extraction_a["Transport"]
 
-    extraction = _rows_under(body, "Extraction — who read the filing")
-    assert extraction["Provider"] == "CLAUDE"
-    assert extraction["Model"] == "claude-opus-5"
-    assert "Foundry" in extraction["Transport"]
-    assert "gw.example.invalid" in extraction["Transport"]
-    assert "api.anthropic.com" not in extraction["Transport"]
-    # A label, never a credential: the key itself must not reach the page.
-    assert "placeholder-no-call-is-made" not in body
+    # 2. Route B: extracted via Claude Code session
+    session_res = ProviderResolution(
+        provider="claude",
+        model="claude-opus-5",
+        reasoning_label="as the Claude Code session ran; not set by this code",
+        transport="claude-code-session",
+        transport_label="Claude Code session — figures read from the PDF in a Claude Code session (test.json)",
+        credential="claude-code-session",
+        credential_source="none — no API call was made",
+    )
+    monkeypatch.setattr(
+        routes_valuation,
+        "load_session_extraction",
+        lambda path: SessionExtraction(
+            financials=_one_year_financials(),
+            non_recurring=[],
+            resolution=session_res,
+            validation_errors=[],
+            session_file="test.json",
+            filings=(),
+        ),
+    )
+    resp_b = client.post("/valuation", data=VALUATION_FORM | {"files": "", "session_file": "test.json"})
+    assert resp_b.status_code == 200
+    extraction_b = _rows_under(resp_b.text, "Extraction — who read the filing")
+    assert extraction_b["Provider"] == "CLAUDE"
+    assert extraction_b["Model"] == "claude-opus-5"
+    assert "Claude Code session" in extraction_b["Transport"]
+    assert "no API call was made" in extraction_b["Credential source"]
+    assert "Google Gemini API" not in extraction_b["Transport"]
+
+
+def test_reasoning_row_rendered_on_assumptions_and_valuation_pages_for_both_routes(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verifies Reasoning row on both web pages (/assumptions and /valuation)
+
+    for both Route A (Gemini) and Route B (Claude Code session). (P14b open item F1).
+    """
+    monkeypatch.setattr(
+        routes_valuation,
+        "extract_financials",
+        lambda *a, **k: (_one_year_financials(), []),
+    )
+    monkeypatch.setattr(routes_valuation, "fetch_price_data", lambda *a, **k: _price_data())
+
+    # 1. Route A (Gemini)
+    assumptions_a = client.get("/assumptions", params={"ticker": "TESTCO", "files": "2024:dummy.pdf"})
+    assert assumptions_a.status_code == 200
+    rows_assump_a = _rows_under(assumptions_a.text, "Extraction — who read the filing")
+    assert rows_assump_a["Reasoning"] == "the provider's default; this code sets no thinking for Gemini"
+
+    val_a = client.post("/valuation", data=VALUATION_FORM)
+    assert val_a.status_code == 200
+    rows_val_a = _rows_under(val_a.text, "Extraction — who read the filing")
+    assert rows_val_a["Reasoning"] == "the provider's default; this code sets no thinking for Gemini"
+
+    # 2. Route B (Claude Code session)
+    session_res = ProviderResolution(
+        provider="claude",
+        model="claude-opus-5",
+        reasoning_label="as the Claude Code session ran; not set by this code",
+        transport="claude-code-session",
+        transport_label="Claude Code session — figures read from the PDF in a Claude Code session (test.json)",
+        credential="claude-code-session",
+        credential_source="none — no API call was made",
+    )
+    monkeypatch.setattr(
+        routes_valuation,
+        "load_session_extraction",
+        lambda path: SessionExtraction(
+            financials=_one_year_financials(),
+            non_recurring=[],
+            resolution=session_res,
+            validation_errors=[],
+            session_file="test.json",
+            filings=(),
+        ),
+    )
+    assumptions_b = client.get("/assumptions", params={"session_file": "test.json"})
+    assert assumptions_b.status_code == 200
+    rows_assump_b = _rows_under(assumptions_b.text, "Extraction — who read the filing")
+    assert rows_assump_b["Reasoning"] == "as the Claude Code session ran; not set by this code"
+
+    val_b = client.post("/valuation", data=VALUATION_FORM | {"files": "", "session_file": "test.json"})
+    assert val_b.status_code == 200
+    rows_val_b = _rows_under(val_b.text, "Extraction — who read the filing")
+    assert rows_val_b["Reasoning"] == "as the Claude Code session ran; not set by this code"
 
 
 def test_post_valuation_reports_a_failure_on_a_rendered_page(

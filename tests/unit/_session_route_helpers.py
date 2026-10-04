@@ -319,7 +319,7 @@ def install_route_a_stub(
     def stub(system_prompt: str, user_prompt: str, resolution: ProviderResolution,
              pdf_bytes: bytes | None = None) -> tuple[str, int, int]:
         key = (system_prompt, user_prompt, pdf_bytes or b"")
-        if key not in answers or resolution.transport != "anthropic-direct":
+        if key not in answers or resolution.transport != "gemini-direct":
             raise AssertionError(
                 f"_call_llm given a call it was not: transport={resolution.transport!r} "
                 f"prompt={user_prompt[:80]!r}",

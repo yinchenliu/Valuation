@@ -60,28 +60,23 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 CONFIG_SRC = REPO / "config.py"
 
-# The three names the contract labels (assignment, step 1; config.CREDENTIAL_NAMES).
+# The single name the contract labels (assignment, step 1; config.CREDENTIAL_NAMES).
 # Written out here, not imported, so the test does not take its expectation from
 # the module under test.
-ANTHROPIC = "ANTHROPIC_API_KEY"
-FOUNDRY = "ANTHROPIC_FOUNDRY_API_KEY"
 GEMINI = "GEMINI_API_KEY"
-CREDENTIALS = (ANTHROPIC, FOUNDRY, GEMINI)
+CREDENTIALS = (GEMINI,)
 
 # The two label suffixes, word for word from the round 3 amendment.
 FROM_FILE = "(.env file)"
 NOT_FILE = "(shell or parent process, not .env)"
 
 # Invented values. None of them is, or resembles, a real key.
-FILE_ANTHROPIC = "file-anthropic-p13c-invented"
 FILE_GEMINI = "file-gemini-p13c-invented"
 FILE_OTHER = "file-other-p13c-invented"
 OTHER = "P13C_PROBE_NON_CREDENTIAL"
 
-# The temporary .env. It holds Anthropic and Gemini, and one non-credential name.
-# It does NOT hold the Foundry name, so Foundry is the "file does not hold it" case.
+# The temporary .env. It holds Gemini, and one non-credential name.
 ENV_TEXT = (
-    f"{ANTHROPIC}={FILE_ANTHROPIC}\n"
     f"{GEMINI}={FILE_GEMINI}\n"
     f"{OTHER}={FILE_OTHER}\n"
 )
@@ -254,23 +249,23 @@ def test_the_sandbox_copy_is_the_shipped_config(tmp_path: Path) -> None:
 
 def test_a_value_set_before_config_loads_wins_over_the_file(tmp_path: Path) -> None:
     # Expected: the preset value, unchanged. The file's value for the same name
-    # (FILE_ANTHROPIC) must not replace it. This is the line that override=True
+    # (FILE_GEMINI) must not replace it. This is the line that override=True
     # broke (backlog item 46).
     box = _sandbox(tmp_path)
-    report = _run_in_sandbox(box, {ANTHROPIC: "shell-anthropic-p13c-invented"})
-    assert report["values"][ANTHROPIC] == "shell-anthropic-p13c-invented"
-    assert report["labels"][ANTHROPIC] == f"{ANTHROPIC} {NOT_FILE}"
+    report = _run_in_sandbox(box, {GEMINI: "shell-gemini-p13c-invented"})
+    assert report["values"][GEMINI] == "shell-gemini-p13c-invented"
+    assert report["labels"][GEMINI] == f"{GEMINI} {NOT_FILE}"
 
 
 def test_an_empty_value_set_before_config_loads_stays_empty(tmp_path: Path) -> None:
-    # The off switch: `ANTHROPIC_API_KEY= ...`. The name is present, so it is not
+    # The off switch: `GEMINI_API_KEY= ...`. The name is present, so it is not
     # filled; its value stays "", and there is no credential to label.
     box = _sandbox(tmp_path)
-    report = _run_in_sandbox(box, {ANTHROPIC: ""})
-    assert report["present"][ANTHROPIC] is True
-    assert report["values"][ANTHROPIC] == ""
-    assert report["labels"][ANTHROPIC].startswith("ValueError: ")
-    assert ANTHROPIC in report["labels"][ANTHROPIC]
+    report = _run_in_sandbox(box, {GEMINI: ""})
+    assert report["present"][GEMINI] is True
+    assert report["values"][GEMINI] == ""
+    assert report["labels"][GEMINI].startswith("ValueError: ")
+    assert GEMINI in report["labels"][GEMINI]
 
 
 def test_an_absent_name_is_filled_from_the_file(tmp_path: Path) -> None:
@@ -278,31 +273,28 @@ def test_an_absent_name_is_filled_from_the_file(tmp_path: Path) -> None:
     # the credential and the non-credential alike (load_dotenv(override=False)).
     box = _sandbox(tmp_path)
     report = _run_in_sandbox(box, {})
-    assert report["values"][ANTHROPIC] == FILE_ANTHROPIC
     assert report["values"][GEMINI] == FILE_GEMINI
     assert report["values"][OTHER] == FILE_OTHER
-    assert report["labels"][ANTHROPIC] == f"{ANTHROPIC} {FROM_FILE}"
     assert report["labels"][GEMINI] == f"{GEMINI} {FROM_FILE}"
 
 
 def test_a_name_the_file_does_not_hold_is_not_invented(tmp_path: Path) -> None:
-    # Foundry is in neither the environment nor the file: it stays absent, and its
-    # label stops naming it.
-    box = _sandbox(tmp_path)
+    # Our .env holds only OTHER; GEMINI is in neither the environment nor the file:
+    # it stays absent, and its label stops naming it.
+    box = _sandbox(tmp_path, env_text=f"{OTHER}={FILE_OTHER}\n")
     report = _run_in_sandbox(box, {})
-    assert report["present"][FOUNDRY] is False
-    assert report["labels"][FOUNDRY].startswith("ValueError: ")
-    assert FOUNDRY in report["labels"][FOUNDRY]
+    assert report["present"][GEMINI] is False
+    assert report["labels"][GEMINI].startswith("ValueError: ")
+    assert GEMINI in report["labels"][GEMINI]
 
 
 def test_the_order_is_per_name(tmp_path: Path) -> None:
-    # One run, three names, three treatments: Anthropic preset (wins), Gemini
-    # preset empty (stays off), the non-credential absent (filled).
+    # One run, two names, two treatments: Gemini preset empty (stays off),
+    # the non-credential absent (filled from .env).
     box = _sandbox(tmp_path)
     report = _run_in_sandbox(
-        box, {ANTHROPIC: "shell-anthropic-p13c-invented", GEMINI: ""},
+        box, {GEMINI: ""},
     )
-    assert report["values"][ANTHROPIC] == "shell-anthropic-p13c-invented"
     assert report["values"][GEMINI] == ""
     assert report["values"][OTHER] == FILE_OTHER
 
@@ -312,7 +304,6 @@ def test_no_env_file_fills_nothing_and_a_set_value_is_not_the_file(tmp_path: Pat
     # same). A value set in the environment is then, by the rule, "not .env".
     box = _sandbox(tmp_path, env_text=None)
     report = _run_in_sandbox(box, {GEMINI: "shell-gemini-p13c-invented"})
-    assert report["present"][ANTHROPIC] is False
     assert report["present"][OTHER] is False
     assert report["labels"][GEMINI] == f"{GEMINI} {NOT_FILE}"
 
@@ -326,29 +317,29 @@ def test_no_env_file_fills_nothing_and_a_set_value_is_not_the_file(tmp_path: Pat
 def test_a_child_labels_a_value_inherited_from_the_files_fill_as_the_file(
     tmp_path: Path, mode: str,
 ) -> None:
-    # Round 1 review F1: the parent filled ANTHROPIC from .env, the child inherited
+    # Round 1 review F1: the parent filled GEMINI from .env, the child inherited
     # it, and round 1 labelled it "shell environment" in the child. The value the
     # child uses IS the file's value, so by the round 3 rule both say (.env file).
     box = _sandbox(tmp_path)
     both = _run_parent(box, {}, mode)
-    assert both["parent"]["labels"][ANTHROPIC] == f"{ANTHROPIC} {FROM_FILE}"
-    assert both["child"]["values"][ANTHROPIC] == FILE_ANTHROPIC
-    assert both["child"]["labels"][ANTHROPIC] == f"{ANTHROPIC} {FROM_FILE}"
+    assert both["parent"]["labels"][GEMINI] == f"{GEMINI} {FROM_FILE}"
+    assert both["child"]["values"][GEMINI] == FILE_GEMINI
+    assert both["child"]["labels"][GEMINI] == f"{GEMINI} {FROM_FILE}"
 
 
 @pytest.mark.parametrize("mode", ["parent-chosen-subprocess", "parent-chosen-spawn"])
 def test_a_child_labels_a_value_its_parent_chose_as_not_the_file(
     tmp_path: Path, mode: str,
 ) -> None:
-    # Round 2 review F4: the parent imported config (and so filled ANTHROPIC from
+    # Round 2 review F4: the parent imported config (and so filled GEMINI from
     # .env), then handed the child a value of its own. Round 2 trusted an inherited
     # marker and labelled it (.env file). The value differs from the file's, so the
     # child must say NOT_FILE. The parent's label is taken before it chose a value.
     box = _sandbox(tmp_path)
-    both = _run_parent(box, {}, mode, ANTHROPIC, "parent-chosen-p13c-invented")
-    assert both["parent"]["labels"][ANTHROPIC] == f"{ANTHROPIC} {FROM_FILE}"
-    assert both["child"]["values"][ANTHROPIC] == "parent-chosen-p13c-invented"
-    assert both["child"]["labels"][ANTHROPIC] == f"{ANTHROPIC} {NOT_FILE}"
+    both = _run_parent(box, {}, mode, GEMINI, "parent-chosen-p13c-invented")
+    assert both["parent"]["labels"][GEMINI] == f"{GEMINI} {FROM_FILE}"
+    assert both["child"]["values"][GEMINI] == "parent-chosen-p13c-invented"
+    assert both["child"]["labels"][GEMINI] == f"{GEMINI} {NOT_FILE}"
 
 
 # ---------------------------------------------------------------------------
@@ -400,8 +391,8 @@ def test_a_value_equal_to_the_files_reads_env_file(
 ) -> None:
     # Set before load to the file's own value: equal, so (.env file). The doc says
     # so explicitly ("A shell value that equals the file's value reads (.env file)").
-    cfg = _fresh_config(monkeypatch, tmp_path, {ANTHROPIC: FILE_ANTHROPIC})
-    assert cfg.credential_origin(ANTHROPIC) == f"{ANTHROPIC} {FROM_FILE}"
+    cfg = _fresh_config(monkeypatch, tmp_path, {GEMINI: FILE_GEMINI})
+    assert cfg.credential_origin(GEMINI) == f"{GEMINI} {FROM_FILE}"
 
 
 def test_a_value_filled_from_the_file_reads_env_file(
@@ -422,40 +413,43 @@ def test_a_value_that_differs_from_the_files_reads_not_env(
 def test_a_name_the_file_does_not_hold_reads_not_env(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    # Our .env has no Foundry line.
-    cfg = _fresh_config(monkeypatch, tmp_path, {FOUNDRY: "shell-foundry-p13c-invented"})
-    assert cfg.credential_origin(FOUNDRY) == f"{FOUNDRY} {NOT_FILE}"
+    # Our .env has no GEMINI line.
+    cfg = _fresh_config(
+        monkeypatch, tmp_path, {GEMINI: "shell-gemini-p13c-invented"},
+        env_text=f"{OTHER}={FILE_OTHER}\n",
+    )
+    assert cfg.credential_origin(GEMINI) == f"{GEMINI} {NOT_FILE}"
 
 
 def test_an_unknown_name_stops_and_names_it(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    # DEEPSEEK_API_KEY is a real neighbour in the repo's .env that no code reads;
+    # ANTHROPIC_API_KEY is an unknown name (not in CREDENTIAL_NAMES);
     # set here to an invented value so the stop is on the name, not on absence.
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-p13c-invented")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-p13c-invented")
     cfg = _fresh_config(monkeypatch, tmp_path, {})
-    with pytest.raises(ValueError, match="DEEPSEEK_API_KEY"):
-        cfg.credential_origin("DEEPSEEK_API_KEY")
+    with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
+        cfg.credential_origin("ANTHROPIC_API_KEY")
 
 
 @pytest.mark.parametrize("blank", ["", "   "])
 def test_a_blank_value_stops_and_names_it(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, blank: str,
 ) -> None:
-    cfg = _fresh_config(monkeypatch, tmp_path, {ANTHROPIC: blank})
-    assert os.environ[ANTHROPIC] == blank  # set, so not filled (the off switch)
-    with pytest.raises(ValueError, match=ANTHROPIC):
-        cfg.credential_origin(ANTHROPIC)
+    cfg = _fresh_config(monkeypatch, tmp_path, {GEMINI: blank})
+    assert os.environ[GEMINI] == blank  # set, so not filled (the off switch)
+    with pytest.raises(ValueError, match=GEMINI):
+        cfg.credential_origin(GEMINI)
 
 
 def test_an_unset_name_stops_and_names_it(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    # Foundry: not preset, not in our .env.
-    cfg = _fresh_config(monkeypatch, tmp_path, {})
-    assert FOUNDRY not in os.environ
-    with pytest.raises(ValueError, match=FOUNDRY):
-        cfg.credential_origin(FOUNDRY)
+    # GEMINI: not preset, not in our .env.
+    cfg = _fresh_config(monkeypatch, tmp_path, {}, env_text=f"{OTHER}={FILE_OTHER}\n")
+    assert GEMINI not in os.environ
+    with pytest.raises(ValueError, match=GEMINI):
+        cfg.credential_origin(GEMINI)
 
 
 def test_a_name_with_no_value_in_the_file_is_neither_filled_nor_labelled(
@@ -464,9 +458,9 @@ def test_a_name_with_no_value_in_the_file_is_neither_filled_nor_labelled(
     # A bare `GEMINI_API_KEY` line (no `=`) reads as None: not filled, not kept
     # (config.py docstring, matching load_dotenv). So it is unset, and stops.
     cfg = _fresh_config(
-        monkeypatch, tmp_path, {}, env_text=f"{ANTHROPIC}={FILE_ANTHROPIC}\n{GEMINI}\n",
+        monkeypatch, tmp_path, {}, env_text=f"{OTHER}={FILE_OTHER}\n{GEMINI}\n",
     )
     assert GEMINI not in os.environ
     with pytest.raises(ValueError, match=GEMINI):
         cfg.credential_origin(GEMINI)
-    assert cfg.credential_origin(ANTHROPIC) == f"{ANTHROPIC} {FROM_FILE}"
+    assert os.environ[OTHER] == FILE_OTHER

@@ -217,9 +217,10 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
         "ANTHROPIC_FOUNDRY_BASE_URL",
         "ANTHROPIC_FOUNDRY_RESOURCE",
         "ANTHROPIC_FOUNDRY_API_KEY",
+        "ANTHROPIC_API_KEY",
     ):
         monkeypatch.delenv(var, raising=False)
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "placeholder-no-call-is-made")
+    monkeypatch.setenv("GEMINI_API_KEY", "placeholder-no-call-is-made")
 
     def _closed_boundary(*args: object, **kwargs: object) -> None:
         raise AssertionError(

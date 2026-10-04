@@ -848,10 +848,14 @@ def page_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """The statements page with every boundary closed, as test_statements_ui.py does:
     the extraction is replaced per test, and no price or model call is possible."""
     monkeypatch.setattr(routes_valuation, "_extraction_cache", {}, raising=False)
-    for var in ("ANTHROPIC_FOUNDRY_BASE_URL", "ANTHROPIC_FOUNDRY_RESOURCE",
-                "ANTHROPIC_FOUNDRY_API_KEY"):
+    for var in (
+        "ANTHROPIC_FOUNDRY_BASE_URL",
+        "ANTHROPIC_FOUNDRY_RESOURCE",
+        "ANTHROPIC_FOUNDRY_API_KEY",
+        "ANTHROPIC_API_KEY",
+    ):
         monkeypatch.delenv(var, raising=False)
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "placeholder-no-call-is-made")
+    monkeypatch.setenv("GEMINI_API_KEY", "placeholder-no-call-is-made")
 
     def _closed(*args: object, **kwargs: object) -> None:
         raise AssertionError("boundary reached")
