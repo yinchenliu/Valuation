@@ -493,6 +493,26 @@ async def assumptions_page(
     })
 
 
+def _checkbox_checked(field: str, value: str) -> bool:
+    """Read an HTML checkbox from a submitted form.
+
+    A checked checkbox sends "on" and an unchecked one sends nothing, which the
+    form field receives as "". Those two values are the only ones a browser
+    sends, so any other value did not come from the checkbox. Rule 3: it stops
+    and names the field and the value rather than being read as checked or as
+    unchecked.
+    """
+    if value == "on":
+        return True
+    if value == "":
+        return False
+    raise ValueError(
+        f"form field {field} is {value!r}. A checkbox sends 'on' when it is "
+        f"checked and nothing when it is not, so this value cannot be read as "
+        f"either. It is not treated as checked or as unchecked."
+    )
+
+
 @router.post("/valuation", response_class=HTMLResponse)
 async def run_valuation(
     request: Request,
@@ -532,6 +552,10 @@ async def run_valuation(
     equity_risk_premium: str = Form(""),
     beta_override: str = Form(""),
     cost_of_debt_override: str = Form(""),
+    # The "Confirm zero debt" checkbox (backlog item 38b (a)). A checked HTML
+    # checkbox sends "on"; an unchecked one sends nothing, which arrives as "".
+    # Read by `_checkbox_checked`, which stops on any other value.
+    confirm_zero_debt: str = Form(""),
     beta_lookback_years: int = Form(5),
     return_frequency: str = Form("monthly"),
 ):
@@ -600,6 +624,7 @@ async def run_valuation(
             equity_risk_premium=float(equity_risk_premium) / 100 if equity_risk_premium.strip() else None,
             beta_override=float(beta_override) if beta_override.strip() else None,
             cost_of_debt_override=float(cost_of_debt_override) / 100 if cost_of_debt_override.strip() else None,
+            zero_debt_confirmed=_checkbox_checked("confirm_zero_debt", confirm_zero_debt),
             beta_lookback_years=beta_lookback_years,
             return_frequency=return_frequency,
         )
@@ -635,6 +660,7 @@ async def run_valuation(
             market_cap=market_cap,
             cost_of_debt_override=overrides.cost_of_debt_override,
             tax_rate_override=assumptions["tax_rate"],
+            zero_debt_confirmed=overrides.zero_debt_confirmed,
         )
 
         # 5. Project FCFFs

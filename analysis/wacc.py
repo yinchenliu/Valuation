@@ -133,10 +133,54 @@ def _require_valid_debt(balance_sheet: BalanceSheet) -> float:
     return total_debt
 
 
+# Where a user confirms a zero debt balance. Text, not a number: it is printed
+# in every label and stop that concerns the confirmation, so the reader is told
+# which input to change (backlog item 38b (a), the user's decision of
+# 2026-10-04, option 1).
+_ZERO_DEBT_CONFIRMATION_PLACES = (
+    '--confirm-zero-debt on the CLI, or the "Confirm zero debt" checkbox on '
+    "the assumptions page; ProjectionAssumptions.zero_debt_confirmed"
+)
+
+_SUPPLIED_COST_OF_DEBT = (
+    "supplied by the caller (--cost-of-debt / "
+    "ProjectionAssumptions.cost_of_debt_override). Not derived from the filing."
+)
+
+
+def _require_no_confirmation_against_debt(
+    balance_sheet: BalanceSheet, total_debt: float
+) -> None:
+    """Stop when the user confirmed a debt balance of 0 and the balance sheet
+    reports one above 0.
+
+    Rule 3, backlog item 38b (a). The confirmation and the balance sheet are
+    two inputs that state different debt balances for the same year. One of
+    them is wrong, and this function cannot tell which: a balance read from the
+    wrong column and a confirmation ticked by mistake are the same two numbers.
+    So neither is used, and the message names both.
+    """
+    if total_debt != 0:
+        raise ValueError(
+            f"balance_sheet.total_debt is {total_debt:,.2f} (year "
+            f"{balance_sheet.year}; short_term_debt "
+            f"{balance_sheet.short_term_debt:,.2f} + current_portion_lt_debt "
+            f"{balance_sheet.current_portion_lt_debt:,.2f} + long_term_debt "
+            f"{balance_sheet.long_term_debt:,.2f}), but the user confirmed a "
+            f"debt balance of 0 ({_ZERO_DEBT_CONFIRMATION_PLACES}). The two "
+            f"inputs contradict each other and this function cannot tell which "
+            f"one is wrong, so neither is used: the cost of debt and the capital "
+            f"weights are not computed. Remove the confirmation if the debt "
+            f"balance is right, or correct the extraction if the confirmation is."
+        )
+
+
 def cost_of_debt_with_source(
     income_statement: IncomeStatement,
     balance_sheet: BalanceSheet | None,
     override: float | None = None,
+    *,
+    zero_debt_confirmed: bool = False,
 ) -> tuple[float, str]:
     """Pre-tax cost of debt, together with a sentence saying where it came from.
 
@@ -149,13 +193,33 @@ def cost_of_debt_with_source(
     filing's own interest expense. This function is the single place that knows
     which branch fired, so it is the place that says so.
 
-    Rule 3, backlog item 22. A fifth path returns nothing at all: a zero debt
-    balance standing beside a reported interest expense is a missing balance
-    sheet, not a debt-free company, and it raises rather than valuing the firm
-    as unlevered. See the comment on that branch.
+    Rule 3, backlog item 22. A zero debt balance standing beside a reported
+    interest expense usually means the balance sheet did not extract, and it
+    raises rather than valuing the firm as unlevered. See the comment on that
+    branch.
 
-    `calculate_cost_of_debt` below is the unchanged float-returning form, kept
-    so that every existing caller and assertion keeps working. It delegates
+    Backlog item 38b (a), the user's decision of 2026-10-04 (option 1). A
+    company that repaid all its debt during the year shows the same pattern,
+    and there it is real. `zero_debt_confirmed` is the user's statement that the
+    zero is real: with it, item 22's case continues with a debt weight of 0 and
+    the label says the user confirmed it. A supplied `override` no longer gets
+    past item 22's stop. It used to, and it worked only as an unstated "the
+    zero is real", because with a debt weight of 0 the rate reaches nothing.
+
+    With total debt 0 (after the checks below):
+
+    | interest | confirmed | override | result |
+    |---|---|---|---|
+    | not 0 | no  | any   | stop (item 22) |
+    | not 0 | yes | none  | 0.0, labelled as the user's confirmation |
+    | not 0 | yes | given | the override, labelled as not reaching the WACC |
+    | 0     | any | none  | 0.0, debt-free; the label adds a confirmation |
+    | 0     | any | given | the override, labelled as not reaching the WACC |
+
+    With total debt above 0, a confirmation stops (the two inputs contradict
+    each other), and without one the result is as before this unit.
+
+    `calculate_cost_of_debt` below is the float-returning form. It delegates
     here rather than repeating the branches, so the label cannot drift from the
     number it describes.
 
@@ -164,36 +228,38 @@ def cost_of_debt_with_source(
         branch, the inputs it used, and whether it is a measurement.
 
     Raises:
-        ValueError: when the balance sheet reports no debt while the income
-            statement reports interest expense, naming both figures and the
-            fields they came from. Not run when `override` is supplied (backlog
-            item 38b (a), open: the user decides how a zero debt balance is
-            confirmed).
         ValueError: when `balance_sheet` is None, naming it (item 38b (b)).
         ValueError: when a debt line or `total_debt` is not finite or a debt
             line is below 0, naming it and its value (item 69). These run
-            whether or not `override` is supplied: a supplied rate does not
-            make a bad debt balance usable for the weights.
+            first, whether or not `override` is supplied: a supplied rate does
+            not make a bad debt balance usable for the weights.
+        ValueError: when `zero_debt_confirmed` is True and the balance sheet
+            reports total debt above 0, naming `balance_sheet.total_debt`, its
+            lines and its year (item 38b (a)).
+        ValueError: when the interest expense is not finite and is compared
+            with 0 (total debt 0, or no override), naming
+            `income_statement.interest_expense`.
+        ValueError: when the balance sheet reports no debt while the income
+            statement reports interest expense, and the user did not confirm
+            the zero, naming both figures and the fields they came from. This
+            runs whether or not `override` is supplied (item 38b (a)).
     """
     balance_sheet = _require_balance_sheet(balance_sheet, income_statement)
-    _require_valid_debt(balance_sheet)
+    total_debt = _require_valid_debt(balance_sheet)
 
-    if override is not None:
-        return override, (
-            "supplied by the caller (--cost-of-debt / "
-            "ProjectionAssumptions.cost_of_debt_override). Not derived from "
-            "the filing."
-        )
-
-    total_debt = balance_sheet.total_debt
-    # Review F4, round 2 of `P13f`. Checked before item 22's `interest != 0`
-    # below, because `nan != 0` is True: a NaN interest expense would otherwise
-    # be printed in that stop as if the income statement had reported it.
-    _require_finite(income_statement.interest_expense, "income_statement.interest_expense")
-    interest = abs(income_statement.interest_expense)
+    if zero_debt_confirmed:
+        _require_no_confirmation_against_debt(balance_sheet, total_debt)
 
     if total_debt == 0:
-        # Backlog item 22, closed here. A zero debt balance used to return 0.0
+        # Review F4, round 2 of `P13f`, now on every path that compares the
+        # interest expense with 0, including the one with an override (item
+        # 38b (a)). `nan != 0` is True: a NaN interest expense would otherwise
+        # be printed in item 22's stop as if the income statement had reported
+        # it, or be confirmed as a real figure.
+        _require_finite(income_statement.interest_expense, "income_statement.interest_expense")
+        interest = abs(income_statement.interest_expense)
+
+        # Backlog item 22. A zero debt balance used to return 0.0
         # unconditionally, and that single zero carried two incompatible
         # meanings: "this company carries no debt" and "the balance sheet did
         # not extract". They are the same bytes and nothing downstream could
@@ -201,40 +267,92 @@ def cost_of_debt_with_source(
         #
         # The income statement tells them apart. A company that paid interest
         # had debt to pay it on, so a reported interest expense beside a zero
-        # debt balance is not a debt-free company — it is a balance sheet that
-        # did not come through. That is a missing input, and rule 3 says the
-        # run stops and names the field rather than valuing the company as
-        # though it were unlevered.
+        # debt balance is usually a balance sheet that did not come through.
+        # That is a missing input, and rule 3 says the run stops and names the
+        # field rather than valuing the company as though it were unlevered.
         #
         # The consequence of NOT stopping is not confined to this rate. With
         # total_debt == 0 the debt weight in `calculate_wacc` is also 0, so the
         # whole debt term drops out of WACC: the firm is discounted at its cost
-        # of equity, the discount rate is overstated, and the share price is
-        # understated, on a clean run, with nothing in the output saying so.
+        # of equity, on a clean run, with nothing in the output saying so.
+        #
+        # The exception is a company that repaid all its debt during the year:
+        # it paid interest and closes the year with no debt. Only the user can
+        # say that, so only `zero_debt_confirmed` gets past this stop. A
+        # supplied cost of debt does not (item 38b (a)).
         if interest != 0:
-            raise ValueError(
-                f"the balance sheet reports total debt of 0 while the income "
+            if not zero_debt_confirmed:
+                raise ValueError(
+                    f"the balance sheet reports total debt of 0 while the "
+                    f"income statement reports interest expense of "
+                    f"{income_statement.interest_expense:,.2f} for "
+                    f"{income_statement.year}. A company that pays interest has "
+                    f"debt, so the debt balance "
+                    f"(BalanceSheet.short_term_debt + "
+                    f"BalanceSheet.current_portion_lt_debt + "
+                    f"BalanceSheet.long_term_debt, year "
+                    f"{balance_sheet.year}) did not extract. The cost of debt "
+                    f"is not substituted and the WACC is not computed from a "
+                    f"zero debt weight. If the debt balance was not read, "
+                    f"re-extract the filing or correct the extraction. If the "
+                    f"company repaid all its debt, so the closing balance "
+                    f"really is 0, confirm the zero with "
+                    f"{_ZERO_DEBT_CONFIRMATION_PLACES}. A supplied cost of "
+                    f"debt does not get past this stop: with a debt weight of "
+                    f"0 it would reach nothing."
+                )
+            confirmed = (
+                f"the user confirmed total debt of 0 "
+                f"({_ZERO_DEBT_CONFIRMATION_PLACES}) although the income "
                 f"statement reports interest expense of "
                 f"{income_statement.interest_expense:,.2f} for "
-                f"{income_statement.year}. A company that pays interest has "
-                f"debt, so the debt balance "
-                f"(BalanceSheet.short_term_debt + "
-                f"BalanceSheet.current_portion_lt_debt + "
-                f"BalanceSheet.long_term_debt, year "
-                f"{balance_sheet.year}) did not extract. The cost of debt is "
-                f"not substituted and the WACC is not computed from a zero "
-                f"debt weight: supply the debt balance, or supply a cost of "
-                f"debt explicitly with --cost-of-debt if the zero is correct."
+                f"{income_statement.year}. The balance sheet for "
+                f"{balance_sheet.year} reports total debt of 0, so the debt "
+                f"weight D / (E + D) is 0 and the WACC is the cost of equity."
             )
-        # Zero debt AND zero interest: a genuinely debt-free company. 0.0 is a
-        # real measurement here, and it is labelled as one.
+            if override is not None:
+                return override, (
+                    f"{_SUPPLIED_COST_OF_DEBT} Not used: {confirmed} With a "
+                    f"debt weight of 0, this rate does not reach the WACC."
+                )
+            return 0.0, (
+                f"confirmed zero debt, not measured: {confirmed} No cost of "
+                f"debt is measured; 0.0 is shown because no rate reaches the "
+                f"WACC."
+            )
+
+        # Zero debt AND zero interest: a genuinely debt-free company.
+        confirmation = ""
+        if zero_debt_confirmed:
+            confirmation = (
+                f" The user also confirmed the zero "
+                f"({_ZERO_DEBT_CONFIRMATION_PLACES})."
+            )
+        if override is not None:
+            # Rule 6. The rate is the caller's, but with no debt it is
+            # multiplied by a weight of 0. Without this clause the label let a
+            # reader think the supplied rate had moved the WACC.
+            return override, (
+                f"{_SUPPLIED_COST_OF_DEBT} Not used: the balance sheet for "
+                f"{balance_sheet.year} reports total debt of 0, so the debt "
+                f"weight D / (E + D) is 0 and this rate does not reach the "
+                f"WACC, which is the cost of equity.{confirmation}"
+            )
+        # 0.0 is a real measurement here, and it is labelled as one.
         return 0.0, (
             "no debt reported: total debt on the balance sheet is 0 and the "
             f"income statement reports no interest expense for "
             f"{income_statement.year}, so this company is debt-free and there "
             "is no rate to measure. The debt term drops out of the WACC, which "
-            "is therefore the cost of equity."
+            f"is therefore the cost of equity.{confirmation}"
         )
+
+    if override is not None:
+        return override, _SUPPLIED_COST_OF_DEBT
+
+    # Review F4, round 2 of `P13f`. Checked before `interest == 0` below.
+    _require_finite(income_statement.interest_expense, "income_statement.interest_expense")
+    interest = abs(income_statement.interest_expense)
 
     if interest == 0:
         return config.DEFAULT_COST_OF_DEBT, (
@@ -257,6 +375,8 @@ def calculate_cost_of_debt(
     income_statement: IncomeStatement,
     balance_sheet: BalanceSheet,
     override: float | None = None,
+    *,
+    zero_debt_confirmed: bool = False,
 ) -> float:
     """Estimate pre-tax cost of debt from financials.
 
@@ -268,8 +388,14 @@ def calculate_cost_of_debt(
     The rate only. `cost_of_debt_with_source` returns the same number together
     with the label rule 6 requires; this wrapper exists so that callers which
     need no label keep their signature and their meaning unchanged.
+    `zero_debt_confirmed` is passed through unchanged (backlog item 38b (a)).
     """
-    rate, _source = cost_of_debt_with_source(income_statement, balance_sheet, override)
+    rate, _source = cost_of_debt_with_source(
+        income_statement,
+        balance_sheet,
+        override,
+        zero_debt_confirmed=zero_debt_confirmed,
+    )
     return rate
 
 
@@ -280,6 +406,8 @@ def calculate_wacc(
     market_cap: float,
     cost_of_debt_override: float | None = None,
     tax_rate_override: float | None = None,
+    *,
+    zero_debt_confirmed: bool = False,
 ) -> WACCResult:
     """Calculate WACC.
 
@@ -290,14 +418,23 @@ def calculate_wacc(
             with a ValueError naming `balance_sheet` (backlog item 38b (b)).
         market_cap: Current market capitalization (shares * price).
         cost_of_debt_override: If provided, use instead of deriving from financials.
+            It does not get past item 22's stop (total debt 0 beside interest
+            expense); only `zero_debt_confirmed` does.
         tax_rate_override: If provided, use instead of effective tax rate from I/S.
+        zero_debt_confirmed: The user's confirmation that a total debt of 0 is
+            real (`--confirm-zero-debt`, or the "Confirm zero debt" checkbox).
+            False confirms nothing. See `cost_of_debt_with_source` for its
+            table (backlog item 38b (a)).
     """
     cost_of_equity = capm_result.cost_of_equity
     _require_finite(cost_of_equity, "capm_result.cost_of_equity")
 
     balance_sheet = _require_balance_sheet(balance_sheet, income_statement)
     cost_of_debt, cost_of_debt_source = cost_of_debt_with_source(
-        income_statement, balance_sheet, cost_of_debt_override
+        income_statement,
+        balance_sheet,
+        cost_of_debt_override,
+        zero_debt_confirmed=zero_debt_confirmed,
     )
     _require_finite(cost_of_debt, "cost_of_debt")
 

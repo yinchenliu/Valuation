@@ -152,6 +152,14 @@ def parse_args() -> argparse.Namespace:
     g.add_argument("--equity-risk-premium", type=float, default=None)
     g.add_argument("--beta", type=float, default=None)
     g.add_argument("--cost-of-debt", type=float, default=None)
+    g.add_argument(
+        "--confirm-zero-debt", action="store_true",
+        help="Confirm that a total debt of 0 is real. Use it only when the "
+             "company repaid all its debt during the year, so the balance "
+             "sheet shows 0 while the income statement shows interest "
+             "expense. The company is then valued with no debt. Without it "
+             "that pattern stops the run; --cost-of-debt does not get past it",
+    )
     g.add_argument("--lookback-years", type=int, default=5)
     g.add_argument("--frequency", default="monthly", choices=["daily", "monthly"])
 
@@ -207,6 +215,7 @@ def build_overrides(args: argparse.Namespace) -> ProjectionAssumptions:
         risk_free_rate=args.risk_free_rate,
         equity_risk_premium=args.equity_risk_premium,
         cost_of_debt_override=args.cost_of_debt,
+        zero_debt_confirmed=args.confirm_zero_debt,
         beta_override=args.beta,
         beta_lookback_years=args.lookback_years,
         return_frequency=args.frequency,
@@ -1049,6 +1058,7 @@ def main() -> None:
         market_cap=market_cap,
         cost_of_debt_override=overrides.cost_of_debt_override,
         tax_rate_override=assumptions["tax_rate"],
+        zero_debt_confirmed=overrides.zero_debt_confirmed,
     )
     print_wacc(wacc_result, market_cap, total_debt)
 

@@ -419,6 +419,17 @@ class ProjectionAssumptions:
     risk_free_rate: float | None = None
     equity_risk_premium: float | None = None  # None = historical S&P 500 return - risk-free rate
     cost_of_debt_override: float | None = None
+    # The user's confirmation that a total debt of 0 on the balance sheet is
+    # real although the income statement reports interest expense: the company
+    # repaid all its debt during the year. Set by `--confirm-zero-debt` on the
+    # CLI (`cli.py:build_overrides`) and by the "Confirm zero debt" checkbox on
+    # the assumptions page (`api/routes_valuation.py:run_valuation`). It is the
+    # only way past item 22's stop in `analysis/wacc.py`; a cost of debt
+    # override is not (backlog item 38b (a), the user's decision of
+    # 2026-10-04). A bool, not a money figure: False is "the user confirmed
+    # nothing", so this default does not guess an input. It stops, in
+    # `analysis/wacc.py`, when the balance sheet reports debt above 0.
+    zero_debt_confirmed: bool = False
     beta_override: float | None = None
 
     # Price data
