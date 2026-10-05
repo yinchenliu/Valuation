@@ -196,3 +196,37 @@ and transport. Ruff 4, mypy 8 in 3 files (down from 9), census 65, guard 48/48.
   gate with the empty-key prefix.
 
 The reviewer re-checks F1 and F2 only. The other criteria stand as measured above.
+
+## Handoff
+
+### Commits
+- `2b0b265`: `P15a-two-routes: Gemini API on route A, Claude Code session on route B`
+- `75b31aa`: `P15a tester: repair fixtures for Gemini route A and GEMINI_API_KEY, lock two-routes behaviors`
+- `e42b312`: `P15a-two-routes rework: isolate test environment keys in conftest.py, restore Python prerequisite`
+
+### Verdicts
+- Programmer: `complete` (round 1 & round 2), entries: `.agent/journal/2026-10-04T1626-programmer-p15a-two-routes.md`, `.agent/journal/2026-10-04T1945-programmer-p15a-two-routes-r2.md`
+- Code reviewer: `approved` (round 1 & round 2), entries: `.agent/journal/2026-10-04T1644-code_reviewer-p15a-two-routes.md`, `.agent/journal/2026-10-04T1951-code_reviewer-p15a-two-routes-r2.md`
+- Tester: `pass` (round 1 & round 2), entries: `.agent/journal/2026-10-04T1645-tester-p15a-two-routes.md`, `.agent/journal/2026-10-04T1956-tester-p15a-two-routes-r2.md`
+
+### Gates
+- Test gate (with empty keys): 1032 passed (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q --ignore-glob="*_rule3_red.py"`)
+- Test gate (without empty keys): 1032 passed (`.venv/bin/python -m pytest -q --ignore-glob="*_rule3_red.py"`)
+- Full suite: 2 failed (the known two), 1032 passed (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q`)
+- Lint: 4 errors, all `BLE001` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m ruff check .`)
+- Types: 8 errors in 3 files (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports`)
+- Rule 3 census: 65 (`grep -rnE "if [^)]+ else 0(\.0)?\b|\bor +0(\.0)?\b|\.get\([^,]+, *0(\.0)?\)|: *float *= *0\.0" '--include=*.py' models analysis api ingestion | wc -l`)
+- Web root route: HTTP 200 (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -c "from starlette.testclient import TestClient; from app import app; print(TestClient(app).get('/').status_code)"`)
+- Guard check: 48/48 correct (`.venv/bin/python .claude/check_guard.py`)
+- Walmart Route B check: exit 0; 89 of 89 printed lines found; 4 of 4 Pass 2 items confirmed; `Reasoning: as the Claude Code session ran; not set by this code` printed (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m ingestion.session_extraction check extractions/WMT.json`)
+- Walmart end-to-end: stages 1 to 10 match `21125ed`; PV of terminal value 214,819M; implied price $28.02; downside -73.1% (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python cli.py --session-file extractions/WMT.json`)
+
+### Findings and notes
+- F1 (tester): resolved. Autouse fixture `isolate_environment_keys` in `tests/conftest.py` sets `ANTHROPIC_API_KEY=""` and `GEMINI_API_KEY=""` for all tests. Gate passes identically (1032 passed) with and without empty-key prefix.
+- F2 (programmer): resolved. Restored `- Python 3.10+` under Prerequisites in `README.md`.
+- F3 (process): resolved. Step 8 executed in full with empty keys.
+- Criterion 12 (real Gemini API call on Walmart): not run because it is a paid API call; left for overall lead / user verification.
+
+### Questions for the overall lead
+None.
+
