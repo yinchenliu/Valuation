@@ -335,6 +335,12 @@ of printed lines**:
   in the balance sheet, each the printed row. `gross_profit` may be `[]`: Walmart prints
   none. `operating_income` may be `[]` too. `net_income` may not: it is also the cash
   flow's starting figure, as before.
+- **Note and MD&A figures (rule 1 option B, user decision of 2026-10-03).** When the
+  statement does not print a field's row by itself, the figure may be taken from a note or
+  from MD&A, as one printed line, with its label and its page as printed there, copied in
+  the unit printed there and never converted. The prompt keeps the `interest_expense` line
+  for gross interest on debt from footnotes when only net interest is on the income
+  statement.
 
 ### The printed unit statements, and the conversion to millions
 
@@ -416,6 +422,26 @@ retries it with the other failed checks and, after the last retry, raises `Value
 naming the field, the text and the page; route B's loader lists it among its problems
 and stops, and `check` exits 2. The reason: the scale converts every figure, a wrong
 one moves every figure by a factor of 1,000, and nothing downstream can detect it.
+
+**Row unit scale check B1 (user decision of 2026-10-04, `P14b-note-figures`).**
+Python checks every Pass 1 printed row of every line field (`_row_scale_failures`):
+the row's page, or the page before it, must print a parenthesised unit statement
+(`_PARENTHESISED_GROUP` on whitespace-normalised text, holding `thousands`, `millions`
+or `billions`) that states the filing's scale for that row's kind (`diluted_shares` ->
+share count, all other fields -> money figures; read via `printed_scale(group, kind)`).
+A group whose reading stops is not a candidate for that kind. The row passes when one
+candidate's scale word equals the expected scale word read by `_filing_units`.
+A page beyond the PDF or with no text layer is not confirmed.
+The check writes one failure per page and kind, naming the page, the kind, the expected
+scale, the statements found (or "no unit statement on page N or N - 1"), and each row that
+cites that page (field, year, label). It prints a summary line:
+`Row unit scales looked up on their cited pages: X checked, Y pages, Z pages not confirmed.`
+**Every failure stops, as a unit statement failure does:** route A retries it and, after
+the last retry, raises `ValueError` with the unit statement failures; route B's loader stops
+on it (`unit_statement_page_failures`) and `check` exits 2.
+**The stated limit:** a page that prints statements of two scales (L3Harris 10-K
+2026-01-02, page 62) passes a row of either scale. A figure printed in MD&A prose ("$1.2
+billion") has no parenthesised statement, so a row that cites it stops.
 
 **The conversion, once per filing.** `convert_filing_to_millions(financials,
 non_recurring, units)` converts every money figure of the filing's statements with the

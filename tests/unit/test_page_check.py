@@ -707,11 +707,12 @@ def test_check_exits_1_when_the_only_problem_is_a_line_not_found(
     assert re.search(r"4,?124", named[0]), named[0]
 
 
-def test_check_exits_1_on_a_page_with_no_text_layer(
+def test_check_exits_2_on_a_page_with_no_text_layer(
     tmp_path: Path, capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # The cash flow rows cite page 3, which prints nothing: five lines that cannot
-    # be confirmed, a failed check each, so exit 1 and never "Clean".
+    # Under Check B1 (P14b), a page with no text layer cannot confirm the scale
+    # of figures citing it, so the loader stops (exit 2), rather than keeping
+    # the unconfirmed figures as in P12a.
     pdf = write_text_pdf(tmp_path / "TST_10-K_2024.pdf", [
         ["(in millions)", *(f"{label} {v}" for label, v in _INCOME.values())],
         [f"{label} {v}" for label, v in _BALANCE.values()],
@@ -721,11 +722,11 @@ def test_check_exits_1_on_a_page_with_no_text_layer(
     data["filings"][0]["pass1"] = attack_answer(honest=True)
     data["filings"][0]["pass2"] = {"non_recurring_items": []}
     path = write_session(tmp_path, data)
-    assert cmd_check(path) == 1
+    assert cmd_check(path) == 2
     out = capsys.readouterr().out
     assert "Clean" not in out
-    unconfirmed = [line for line in out.splitlines() if "cannot be confirmed" in line]
-    assert len(unconfirmed) == 5, out
+    assert "STOPPED" in out
+    assert "page 3 has no text layer" in out
 
 
 # ===========================================================================

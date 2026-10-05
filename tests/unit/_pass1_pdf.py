@@ -115,6 +115,25 @@ def pass1_pages(*answers: object) -> dict[int, list[str]]:
                     lines = pages.setdefault(page, [])
                     if printed not in lines:
                         lines.append(printed)
+        unit_obj = answer.get("units")
+        if isinstance(unit_obj, Mapping):
+            printed = unit_obj.get("printed")
+            if isinstance(printed, str):
+                for entry in answer.get("historical_years", []):
+                    if isinstance(entry, Mapping):
+                        for field in (
+                            "depreciation_amortization", "cfo", "capex", "sbc",
+                            "change_in_working_capital",
+                        ):
+                            for row in entry.get(field, []):
+                                if (
+                                    isinstance(row, Mapping)
+                                    and isinstance(row.get("page"), int)
+                                    and row["page"] >= 1
+                                ):
+                                    lines = pages.setdefault(row["page"], [])
+                                    if printed not in lines:
+                                        lines.insert(0, printed)
         nri_items = answer.get("non_recurring_items", [])
         if isinstance(nri_items, list):
             for item in nri_items:

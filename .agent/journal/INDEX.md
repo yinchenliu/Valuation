@@ -141,6 +141,9 @@ edits another's.
 | 2026-10-04 | P15a-two-routes | code_reviewer, r2 | **`approved`** — F1 and F2 verified fixed; gates clean (1032 passed with empty keys, ruff 4, mypy 8 in 3 files, census 65) | [entry](2026-10-04T1951-code_reviewer-p15a-two-routes-r2.md) |
 | 2026-10-04 | P15a-two-routes-tests | tester, r2 | **`pass`** — F1 fixed: autouse fixture in `tests/conftest.py` empties `ANTHROPIC_API_KEY` and `GEMINI_API_KEY`; gate 1032 passed identically with/without empty keys; full suite 2 failed (known red), 1032 passed | [entry](2026-10-04T1956-tester-p15a-two-routes-r2.md) |
 | 2026-10-04 | P15a-two-routes | overall lead, r2 | **`accepted`** at `525b98f`. Code unchanged since round 1 (empty diff over shipped code); F1: gate 1032 passed with and without empty keys, conftest empties both keys; F2: README line restored; F3: step 8 ran. ruff 4, mypy 8 in 3 files, census 65, guard 48/48, Walmart $28.02. Skill route table names Gemini. `P14b-note-figures` set `ready` | [review](../assignments/P15a-two-routes.md) |
+| 2026-10-04 | P14b-note-figures | programmer | `complete` — 11 of 11 criteria; prompt allows Option B; Check B1 checks row page and preceding page; Walmart exit 0; 31 fixture tests red on page 52 missing unit header | [entry](2026-10-04T2011-programmer-p14b-note-figures.md) |
+| 2026-10-04 | P14b-note-figures | code_reviewer | **`approved`** — every criterion re-measured; Check B1 stops and summary verified; gates clean; 31 fixture tests red on page 52 confirmed | [entry](2026-10-04T2041-code_reviewer-p14b-note-figures.md) |
+| 2026-10-04 | P14b-note-figures-tests | tester | **`pass`** — 31 fixtures repaired with cash flow unit headers; 29 new tests lock Check B1 stops, kinds and stated limit; gate 1061 passed, full 2 failed (known red) | [entry](2026-10-04T2058-tester-p14b-note-figures.md) |
 
 
 

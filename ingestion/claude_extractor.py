@@ -307,6 +307,10 @@ _FINANCIALS_SYSTEM_PROMPT = textwrap.dedent(f"""\
       and converts.
     - "units" and "share_units" are statements the filing prints, copied word for
       word with their page. Never write a unit the filing does not print.
+    - When the statement does not print a field's row by itself, the figure may
+      be taken from a note or from MD&A, as one printed line, with its label and
+      its page as printed there, copied in the unit printed there and never
+      converted.
     - All values must be POSITIVE (signs implied by field name).
     - If a line item is not reported, use an empty list [].
     - Do NOT invent or estimate numbers. Only extract what is explicitly stated.
@@ -1545,6 +1549,140 @@ def _unit_statement_failures(data: dict[str, Any], pdf_bytes: bytes) -> list[_Ch
     return failures
 
 
+def _row_scale_failures(data: dict[str, Any], pdf_bytes: bytes) -> list[_CheckFailure]:
+    """Check that each Pass 1 printed row sits under a unit statement of the filing's scale.
+
+    Check B1 (user decision of 2026-10-04, rule 1 option B). For each printed row of
+    every line field in historical_years and latest_balance_sheet (when not {}):
+    - the kind is "share count" for diluted_shares, and "money figures" for every other field;
+    - the expected scale is the word _filing_units(data) reads for that kind;
+    - the candidates are the parenthesised groups (_PARENTHESISED_GROUP, on whitespace-normalised
+      text) of the row's page and of the page before it, that hold thousands, millions or
+      billions; each is read with printed_scale(group, kind), and a group whose reading stops
+      is not a candidate for that kind;
+    - the row passes when one candidate's word equals the expected word;
+    - a page beyond the PDF, or with no text layer, is not confirmed.
+
+    Produces one failure per page and kind, naming the page, the kind, the expected scale,
+    the statements found (or "no unit statement on page N or N - 1"), and each row that
+    cites the page (field, year, label). Print one summary line:
+      Row unit scales looked up on their cited pages: rows checked, pages, pages not confirmed.
+    """
+    units = _filing_units(data)
+    expected_scale: dict[UnitOf, str] = {
+        "money figures": units.money.scale.word,
+        "share count": units.shares.scale.word,
+    }
+
+    rows_by_page_kind: dict[tuple[int, UnitOf], list[dict[str, Any]]] = {}
+    all_cited_pages: set[int] = set()
+    total_rows = 0
+
+    for entry in data.get("historical_years", []):
+        year = entry["year"]
+        for field in PASS1_YEAR_LINE_FIELDS:
+            if field in entry:
+                kind: UnitOf = "share count" if field == "diluted_shares" else "money figures"
+                for line in entry[field]:
+                    total_rows += 1
+                    page = line["page"]
+                    all_cited_pages.add(page)
+                    rows_by_page_kind.setdefault((page, kind), []).append({
+                        "field": field,
+                        "year": year,
+                        "label": line["label"],
+                    })
+
+    balance = data.get("latest_balance_sheet", {})
+    if balance:
+        year = balance["year"]
+        for field in PASS1_BALANCE_SHEET_LINE_FIELDS:
+            if field in balance:
+                kind = "money figures"
+                for line in balance[field]:
+                    total_rows += 1
+                    page = line["page"]
+                    all_cited_pages.add(page)
+                    rows_by_page_kind.setdefault((page, kind), []).append({
+                        "field": field,
+                        "year": year,
+                        "label": line["label"],
+                    })
+
+    if total_rows == 0:
+        print("  Row unit scales looked up on their cited pages: 0 checked, 0 pages, 0 pages not confirmed.")
+        return []
+
+    pages_to_read = all_cited_pages | {p - 1 for p in all_cited_pages if p > 1}
+    page_count, page_texts = _read_cited_pages(pdf_bytes, pages_to_read)
+
+    failures: list[_CheckFailure] = []
+    unconfirmed_pages: set[int] = set()
+    _SCALE_WORDS = ("thousands", "millions", "billions")
+
+    for (page, kind) in sorted(rows_by_page_kind.keys(), key=lambda k: (k[0], k[1])):
+        rows = rows_by_page_kind[(page, kind)]
+        expected = expected_scale[kind]
+        rows_str = "; ".join(f"'{r['label']}' ({r['field']}, year {r['year']})" for r in rows)
+
+        if page > page_count:
+            statement_desc = f"page {page} is beyond the last page of the filing ({page_count} pages)"
+            failures.append(_CheckFailure(
+                message=f"page {page} ({kind}): expected {expected}, {statement_desc}. Rows citing page {page}: {rows_str}.",
+                retry_message=f"page {page} ({kind}): expected {expected}, {statement_desc}. Rows citing page {page}: {rows_str}.",
+            ))
+            unconfirmed_pages.add(page)
+            continue
+
+        text = page_texts.get(page)
+        if text is None or not text.strip():
+            statement_desc = f"page {page} has no text layer"
+            failures.append(_CheckFailure(
+                message=f"page {page} ({kind}): expected {expected}, {statement_desc}. Rows citing page {page}: {rows_str}.",
+                retry_message=f"page {page} ({kind}): expected {expected}, {statement_desc}. Rows citing page {page}: {rows_str}.",
+            ))
+            unconfirmed_pages.add(page)
+            continue
+
+        scale_groups: list[str] = []
+        pages_to_check = (page, page - 1) if page > 1 else (page,)
+        for p in pages_to_check:
+            p_text = page_texts.get(p)
+            if p_text and p_text.strip():
+                norm = _whitespace_normalised(p_text)
+                for g in _PARENTHESISED_GROUP.findall(norm):
+                    if any(w in g.casefold() for w in _SCALE_WORDS) and g not in scale_groups:
+                        scale_groups.append(g)
+
+        candidate_words: list[str] = []
+        for g in scale_groups:
+            try:
+                cand_scale = printed_scale(g, kind)
+                candidate_words.append(cand_scale.word)
+            except ValueError:
+                pass
+
+        if expected in candidate_words:
+            continue
+
+        unconfirmed_pages.add(page)
+        if scale_groups:
+            statement_desc = f"found {', '.join(scale_groups)}"
+        else:
+            prev_page = page - 1
+            statement_desc = f"no unit statement on page {page} or {prev_page}"
+
+        msg = (
+            f"page {page} ({kind}): expected {expected}, {statement_desc}. "
+            f"Rows citing page {page}: {rows_str}."
+        )
+        failures.append(_CheckFailure(message=msg, retry_message=msg))
+
+    print(f"  Row unit scales looked up on their cited pages: {total_rows} checked, "
+          f"{len(all_cited_pages)} pages, {len(unconfirmed_pages)} pages not confirmed.")
+    return failures
+
+
 def _pass2_item_failures(
     items: list[NonRecurringItem], pdf_bytes: bytes,
 ) -> list[_CheckFailure]:
@@ -2347,7 +2485,7 @@ def _run_financials_pass(
         # a failed check like any other, and retried. A PDF pdfplumber cannot open
         # stops here.
         data = json.loads(json_str)
-        unit_failures = _unit_statement_failures(data, pdf_bytes)
+        unit_failures = _unit_statement_failures(data, pdf_bytes) + _row_scale_failures(data, pdf_bytes)
         val_errors = val_errors + unit_failures + _printed_line_failures(data, pdf_bytes)
         if not val_errors:
             return financials, _filing_units(data)
@@ -2773,10 +2911,11 @@ def filing_units(json_str: str) -> FilingUnits:
 
 
 def unit_statement_page_failures(json_str: str, pdf_bytes: bytes) -> list[str]:
-    """One message per printed unit statement not found on the page it cites.
+    """One message per printed unit statement or row scale check not confirmed on its page.
 
     Route B's unit check, the same lookup route A runs in `_run_financials_pass`.
-    The loader stops on any: a wrong scale moves every figure by 1,000.
+    The loader stops on any: a wrong scale moves every figure by 1,000. Returns
+    failures from both _unit_statement_failures and _row_scale_failures.
 
     Raises:
         json.JSONDecodeError: the text is not JSON.
@@ -2787,7 +2926,10 @@ def unit_statement_page_failures(json_str: str, pdf_bytes: bytes) -> list[str]:
     problems = pass1_problems(data)
     if problems:
         raise Pass1ShapeError(problems)
-    return [failure.message for failure in _unit_statement_failures(data, pdf_bytes)]
+    return [
+        failure.message
+        for failure in _unit_statement_failures(data, pdf_bytes) + _row_scale_failures(data, pdf_bytes)
+    ]
 
 
 def pass2_page_failures(json_str: str, pdf_bytes: bytes) -> list[str]:

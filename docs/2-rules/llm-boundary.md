@@ -102,6 +102,20 @@ every figure as printed and never convert one. Before `P14a`, `units` was a free
 string no code read, so a filing printed in thousands reached the valuation as
 millions.
 
+**Option B is in force for Pass 1 (user decision of 2026-10-03, check B1 of 2026-10-04).**
+When the statement does not print a field's row by itself, the figure may be taken from a
+note or from MD&A, as one printed line with its label and page as printed there, copied in
+the unit printed there and never converted (the prompt keeps the `interest_expense` line
+for gross interest from footnotes).
+**How its unit is checked (Check B1):** Python checks every Pass 1 printed row
+(`_row_scale_failures`). The row's page or the page before it must print a parenthesised
+unit statement confirming the filing's scale for that row's kind (`diluted_shares` ->
+share count, all other fields -> money figures; `printed_scale`). If not, the run stops:
+route A after retries raises `ValueError`, route B's loader stops and `check` exits 2.
+**The stated limit:** a page that prints statements of two scales (L3Harris 10-K
+2026-01-02, page 62) passes a row of either scale. A figure printed in MD&A prose ("$1.2
+billion") has no parenthesised statement, so a row that cites it stops.
+
 Pass 2 receives the Pass 1 income statement summary as context. That is an **anchor**,
 not a calculation input: it exists so the model cites items that reconcile to figures we
 already hold, rather than inventing a line the statement does not have. It shows the
