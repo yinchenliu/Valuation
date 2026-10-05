@@ -36,7 +36,6 @@ import io
 import json
 import pickle
 import re
-import socket
 from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Any
@@ -67,15 +66,9 @@ WMT_SESSION_PATH = REPO_ROOT / "extractions" / "WMT.json"
 NEW_MARKER = "p14d-finance-leases-v1"
 
 
-@pytest.fixture(autouse=True)
-def _no_socket(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Ensure no test makes network calls."""
-    def _refused(*args: object, **kwargs: object) -> None:
-        raise AssertionError(f"a unit test attempted a network connection: {args!r}")
-
-    monkeypatch.setattr(socket.socket, "connect", _refused)
-    monkeypatch.setattr(socket.socket, "connect_ex", _refused)
-    monkeypatch.setattr(socket, "create_connection", _refused)
+# `_no_socket` lives in `tests/conftest.py` — one definition, not four copies.
+# This mark gives every test in this file the same refusal the local copy gave.
+pytestmark = pytest.mark.usefixtures("_no_socket")
 
 
 def _one_line(text: str) -> str:

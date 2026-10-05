@@ -15,13 +15,12 @@ hand arithmetic, written beside them. No expected value was read from a run.
 
 **No network, no key, no PDF.** `parse_args` and `build_overrides` read
 `sys.argv` and nothing else; `sys.argv` is patched. The `_no_socket` fixture
-refuses every connection, so a test that reached out would fail rather than
-wait. No file named on the patched command line is opened.
+(`tests/conftest.py`) refuses every connection that leaves the machine, so a
+test that reached out would fail rather than wait. No file named on the patched
+command line is opened.
 """
 
 from __future__ import annotations
-
-import socket
 
 import pytest
 
@@ -31,15 +30,9 @@ from analysis.wacc import calculate_wacc
 from models.financial_statements import BalanceSheet, IncomeStatement
 from models.valuation import CAPMResult
 
-
-@pytest.fixture(autouse=True)
-def _no_socket(monkeypatch: pytest.MonkeyPatch) -> None:
-    def _refused(*args: object, **kwargs: object) -> None:
-        raise AssertionError(f"a unit test opened a network connection: {args!r}")
-
-    monkeypatch.setattr(socket.socket, "connect", _refused)
-    monkeypatch.setattr(socket.socket, "connect_ex", _refused)
-    monkeypatch.setattr(socket, "create_connection", _refused)
+# `_no_socket` lives in `tests/conftest.py` — one definition, not four copies.
+# This mark gives every test in this file the same refusal the local copy gave.
+pytestmark = pytest.mark.usefixtures("_no_socket")
 
 
 # Two command lines that parse without reading any file: the session-file form

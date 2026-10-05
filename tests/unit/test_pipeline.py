@@ -19,7 +19,8 @@ What this file locks, each from an expected value that exists before the code ru
 
 **No test here asserts a fallback.** No test reaches the network or a model: every
 `fetch_price_data` is a stub on `pipeline`, `yfinance.Ticker` is replaced with a
-function that records the call and raises, and `socket` connects are refused.
+function that records the call and raises, and every `socket` connect that
+leaves the machine is refused.
 Nothing reads `extractions/` or `10K_filings/`; the session file and its PDF are
 written under `tmp_path` by `tests/unit/_session_route_helpers.py`.
 """
@@ -28,7 +29,6 @@ from __future__ import annotations
 
 import math
 import runpy
-import socket
 from pathlib import Path
 from typing import Any
 
@@ -71,14 +71,9 @@ YEAR = 2024
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(autouse=True)
-def _no_socket(monkeypatch: pytest.MonkeyPatch) -> None:
-    def _refused(*args: object, **kwargs: object) -> None:
-        raise AssertionError(f"a unit test tried to open a socket: {args!r}")
-
-    monkeypatch.setattr(socket.socket, "connect", _refused)
-    monkeypatch.setattr(socket.socket, "connect_ex", _refused)
-    monkeypatch.setattr(socket, "create_connection", _refused)
+# `_no_socket` lives in `tests/conftest.py` — one definition, not four copies.
+# This mark gives every test in this file the same refusal the local copy gave.
+pytestmark = pytest.mark.usefixtures("_no_socket")
 
 
 @pytest.fixture

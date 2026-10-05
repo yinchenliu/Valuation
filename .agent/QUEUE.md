@@ -33,7 +33,7 @@ Claude subagents, and reports to the user only.
 
 | # | Unit | Assignment | State | Backlog items | Notes |
 |---|---|---|---|---|---|
-| 0 | `P1b-windows-gate` | [P1b-windows-gate.md](assignments/P1b-windows-gate.md) | `ready` | — | the build moved to the Windows machine, where 14 tests fail for two reasons that no product defect causes: a `_no_socket` fixture that breaks the Windows asyncio self-pipe (13), and an argparse message that differs between Python 3.11 and 3.14 (1). A tester unit, `tests/` only. **Runs in parallel with `P3b-pipeline-stops`: disjoint files** |
+| 0 | `P1b-windows-gate` | [P1b-windows-gate.md](assignments/P1b-windows-gate.md) | `accepted` | 93 | the build moved to the Windows machine, where 14 tests fail for two reasons that no product defect causes: a `_no_socket` fixture that breaks the Windows asyncio self-pipe (13), and an argparse message that differs between Python 3.11 and 3.14 (1). A tester unit, `tests/` only. **Runs in parallel with `P3b-pipeline-stops`: disjoint files** |
 | 1 | `P14b-pass2-units` | [P14b-pass2-units.md](assignments/P14b-pass2-units.md) | `accepted` | 77 | the user's decision "fix 77a", 2026-10-04. Session format v4 |
 | 2 | `P14b-reasoning` | [P14b-reasoning.md](assignments/P14b-reasoning.md) | `accepted` | 81 | rule 1 option 0: route A sends adaptive thinking at a named effort, streamed, with room to finish; the setting is shown. No format change |
 | 3 | `P15a-two-routes` | [P15a-two-routes.md](assignments/P15a-two-routes.md) | `accepted` | — | the user's decisions of 2026-10-04 ("1a, 2a"): route A through the Gemini API only, the default provider; Claude only through a Claude Code session (route B); no Foundry, no Anthropic API, no DeepSeek. Start it |

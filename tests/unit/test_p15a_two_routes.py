@@ -32,6 +32,7 @@ No paid API calls or network requests are made.
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -219,7 +220,20 @@ def test_call_llm_stops_when_given_non_gemini_resolution() -> None:
 
 
 def test_cli_refuses_dash_p_claude() -> None:
-    """The CLI refuses -p claude with exit code 2 and invalid choice error."""
+    """The CLI refuses -p claude with exit code 2 and invalid choice error.
+
+    Three facts, all three still asserted: the exit code is argparse's usage
+    error code 2, the message names the rejected value, and the list of
+    remaining choices is exactly `gemini`.
+
+    The third assertion is a regex because argparse changed the wording of the
+    choice list between the Python versions this repository runs on. Python
+    3.11.6 prints `(choose from 'gemini')`; Python 3.14.4 prints
+    `(choose from gemini)`, with no quotation marks. Only the quoting differs,
+    so the optional quote is the only thing the pattern tolerates. The closing
+    parenthesis is part of the pattern, so a second accepted provider appearing
+    in the list would still turn this test red.
+    """
     result = subprocess.run(
         [sys.executable, "cli.py", "-p", "claude", "10K_filings/Walmart"],
         cwd=REPO_ROOT,
@@ -229,7 +243,7 @@ def test_cli_refuses_dash_p_claude() -> None:
     )
     assert result.returncode == 2
     assert "invalid choice: 'claude'" in result.stderr
-    assert "choose from 'gemini'" in result.stderr
+    assert re.search(r"choose from '?gemini'?\)", result.stderr), result.stderr
 
 
 def test_cli_help_documents_gemini_default_and_session_file() -> None:

@@ -1047,22 +1047,113 @@ def test_post_valuation_stops_and_names_a_missing_required_field(
 # the real function, so the page is the real page.
 #
 # No network: the `client` fixture closes the three boundaries and the
-# `_no_socket` fixture below refuses any socket connection, so a test that
-# reached the network would fail rather than wait.
+# `_no_socket` fixture (`tests/conftest.py`) refuses every socket connection
+# that leaves the machine, so a test that reached the network would fail rather
+# than wait.
 # ===========================================================================
 
 
-@pytest.fixture
-def _no_socket(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Refuse every outbound connection for the length of one test."""
+# ===========================================================================
+# The `_no_socket` contract
+#
+# `_no_socket` now lives in `tests/conftest.py` (P1b-windows-gate), in one
+# definition rather than four copies, and it allows the loopback address while
+# refusing every other address. The two tests below hold both halves of that
+# contract in place.
+#
+# They exist because the failure they guard against is silent: a later change
+# that turns the fixture into a no-op would pass every other test in this
+# suite, and the only check that a unit test does not reach the network would
+# be gone with nothing red to say so.
+#
+# Expected values: neither test asserts a figure. The first asserts the
+# behaviour the fixture is defined to have for an address that leaves the
+# machine (`AssertionError`, from the fixture's own `raise`); the second
+# asserts that a connection to an address that cannot leave the machine
+# completes. Both expectations come from the fixture's contract as written in
+# `tests/conftest.py` and in `.agent/assignments/P1b-windows-gate.md`, step 2,
+# not from any run.
+# ===========================================================================
+
+
+def test_no_socket_refuses_an_address_that_leaves_the_machine(_no_socket: None) -> None:
+    """An outbound connection raises `AssertionError`, naming the address.
+
+    `example.com:80` is not loopback, so the fixture must refuse it. Nothing is
+    resolved and nothing is sent: the refusal happens on the host string,
+    before the real `connect` is reached.
+    """
     import socket
 
-    def _refused(*args: object, **kwargs: object) -> None:
-        raise AssertionError(f"a unit test opened a network connection: {args!r}")
+    with socket.socket() as sock, pytest.raises(AssertionError) as exc_info:
+        sock.connect(("example.com", 80))
 
-    monkeypatch.setattr(socket.socket, "connect", _refused)
-    monkeypatch.setattr(socket.socket, "connect_ex", _refused)
-    monkeypatch.setattr(socket, "create_connection", _refused)
+    assert "example.com" in str(exc_info.value)
+
+    with pytest.raises(AssertionError, match="example.com"):
+        socket.create_connection(("example.com", 80))
+
+    with socket.socket() as sock, pytest.raises(AssertionError, match="example.com"):
+        sock.connect_ex(("example.com", 80))
+
+
+def test_no_socket_refuses_an_address_it_cannot_read(_no_socket: None) -> None:
+    """Anything that is not one of the three loopback hosts is refused.
+
+    The fixture decides on the host string alone. An address shape it does not
+    recognise — a path rather than a `(host, port)` pair, a host given as bytes,
+    a host that is not text at all — is not one of the three allowed hosts, so
+    it must be refused rather than passed through. The rule is "allow three
+    names, refuse everything else", not "refuse what looks like a hostname".
+    """
+    import socket
+
+    # A path, not a (host, port) pair.
+    with socket.socket() as sock, pytest.raises(AssertionError):
+        sock.connect("/tmp/p1b-no-such-socket")
+
+    # A host given as bytes.
+    with socket.socket() as sock, pytest.raises(AssertionError, match="example.com"):
+        sock.connect((b"example.com", 80))
+
+    # A host that is not text at all.
+    with socket.socket() as sock, pytest.raises(AssertionError):
+        sock.connect((1234, 80))
+
+
+def test_no_socket_allows_the_loopback_address(_no_socket: None) -> None:
+    """A connection to 127.0.0.1 completes.
+
+    This is the allowance that P1b-windows-gate added, and the reason for it:
+    on Windows `asyncio.ProactorEventLoop` builds its self-pipe by connecting a
+    socket to `127.0.0.1`, so a blanket refusal made every `TestClient` request
+    return 500. A revert of the allowance turns this test red.
+
+    The listener is created inside the test and bound to port 0, so the
+    connection cannot leave this machine and no port is assumed.
+
+    All three patched entry points are exercised, because all three carry the
+    allowance and a revert could drop it from any one of them.
+    """
+    import socket
+
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(8)
+        address = listener.getsockname()
+
+        with socket.socket() as client_sock:
+            client_sock.settimeout(5.0)
+            client_sock.connect(address)  # must not raise
+            assert client_sock.getpeername()[0] == "127.0.0.1"
+
+        with socket.socket() as ex_sock:
+            ex_sock.settimeout(5.0)
+            # `connect_ex` returns an error number, and 0 means "connected".
+            assert ex_sock.connect_ex(address) == 0
+
+        with socket.create_connection(address, timeout=5.0) as made_sock:
+            assert made_sock.getpeername()[0] == "127.0.0.1"
 
 
 def _repaid_debt_financials() -> FinancialStatements:

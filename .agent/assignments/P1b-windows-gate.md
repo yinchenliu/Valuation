@@ -158,3 +158,41 @@ tests/unit/test_routes.py::test_post_valuation_with_the_box_unchecked_stops_at_i
 - **Item 16** — nine scripts carry a `sys.path.insert` to a path that does not exist.
 
 None of the three is in the six files above. Leave all three alone.
+
+---
+
+## Overall lead review — `accepted`
+
+Re-measured by the overall lead on the Windows machine, with
+`ANTHROPIC_API_KEY= GEMINI_API_KEY=` and `.venv/Scripts/python.exe`, after both this
+unit and `P3b-pipeline-stops`' programmer had written to the tree:
+
+| # | Criterion | My measurement |
+|---|---|---|
+| 1 | gate | **1107 passed, 5 skipped, 0 failed** in 131.96 s |
+| 2 | full suite | **2 failed**, 1107 passed, 5 skipped. The two are `test_projector_rule3_red.py` and `test_routes_session_rule3_red.py`, the two red on purpose |
+| 3 | one definition | `grep -rn "def _no_socket" tests/` → 1, at `tests/conftest.py:83` |
+| 4, 5 | the fixture refuses and allows | `pytest -q tests/unit/test_routes.py -k no_socket` → **3 passed** |
+| 6 | the argparse test | inside the green gate above |
+| 7 | nothing outside `tests/` | `git diff --stat -- tests/` names the six files of the scope and no other. The five modified source files are `P3b-pipeline-stops`' programmer's |
+| 8 | a no-op fixture is caught | the tester's own run, recorded in its entry. The test exists and passes |
+
+**Three facts I checked myself, beyond the criteria.**
+
+1. The fixture allows `127.0.0.1`, `::1` and `localhost` and refuses every other address,
+   including an address it cannot read: `_host_of` returns a `repr` for an unrecognised
+   address shape, which is in no allowed set, so the refusal is the default.
+2. The three modules that held an autouse copy now carry
+   `pytestmark = pytest.mark.usefixtures("_no_socket")`. The tester proved the marks apply
+   with `pytest --setup-show`, 11/11, 17/17 and 25/25.
+3. The argparse assertion is now `re.search(r"choose from '?gemini'?\)", ...)`. The
+   trailing `)` keeps it proving that the choice list holds `gemini` and nothing else, so
+   the test is not weakened.
+
+**One new backlog item from this unit, recorded as item 93:** two more copies of the
+no-network rule survive under other names, `tests/unit/test_claude_extractor.py:637`
+(`_NetworkReached`) and `tests/unit/test_p14b_note_figures.py:645` (`RuntimeError`). Both
+refuse the loopback address and carry the same Windows defect. Neither fails today,
+because neither module builds an event loop.
+
+Accepted. The gate is green on the Windows machine for the first time.
