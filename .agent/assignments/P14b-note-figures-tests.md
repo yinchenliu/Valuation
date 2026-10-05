@@ -56,3 +56,11 @@ Never make paid API calls or real network calls in tests. All stubs/mocks in mem
 | 5 | lint | 4 errors (BLE001 pre-existing), 0 in `tests/` | `.venv/bin/python -m ruff check .` |
 | 6 | mypy | 8 errors in 3 files, 0 in `tests/` | `.venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` |
 | 7 | two counts | accuracy and coverage reported | tester log entry |
+
+## Round 2 amendment (build lead)
+
+Address F1 and F5 from the overall lead review of `P14b-note-figures`:
+1. **F1 (Rule 3 key locking):** Update test helper dictionaries in `tests/unit/test_p14b_note_figures.py` (e.g. `_pass1_dict`, `_historical_year`, `_balance_sheet`) to include all standard line fields so direct `[]` indexing succeeds on valid inputs. Lock `KeyError` for missing keys: `historical_years`, line field in entry, `latest_balance_sheet`, and line field in balance sheet.
+2. **F5 (Page 1 message):** Update `test_row_on_page_1_checks_page_1_only` in `tests/unit/test_p14b_note_figures.py` to assert `"no unit statement on page 1"` instead of `"page 1 or 0"`.
+3. **Gates:** Ensure test gate passes with 0 failed, and full suite produces exactly the 2 known deliberately red tests (`test_projector_rule3_red.py` and `test_routes_session_rule3_red.py`).
+

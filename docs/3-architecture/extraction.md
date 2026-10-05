@@ -439,7 +439,12 @@ cites that page (field, year, label). It prints a summary line:
 **Every failure stops, as a unit statement failure does:** route A retries it and, after
 the last retry, raises `ValueError` with the unit statement failures; route B's loader stops
 on it (`unit_statement_page_failures`) and `check` exits 2.
-**The stated limit:** a page that prints statements of two scales (L3Harris 10-K
+**The stated limit:** Check B1 confirms that a parenthesised statement of the filing's
+scale is printed on the row's page or the page before, but does not confirm that this
+statement governs the row's table. A row from a note table whose unit is not in parentheses
+("in thousands" as a column heading) passes when the page or the page before prints
+"(In millions)" for another table; that figure is then 1,000 times too large, and nothing
+reports it. Similarly, a page that prints statements of two scales (L3Harris 10-K
 2026-01-02, page 62) passes a row of either scale. A figure printed in MD&A prose ("$1.2
 billion") has no parenthesised statement, so a row that cites it stops.
 
@@ -650,8 +655,8 @@ noncontrolling interest memos included. `_read_cited_pages` opens the PDF once w
 |---|---|
 | found | nothing to report |
 | not found | a failed check: no text line on that page holds both the label and the figure |
-| the page is beyond the PDF's last page | a failed check naming the page and the page count |
-| the page has no text layer (`extract_text()` gives `None` or only whitespace) | a failed check: the line **cannot be confirmed**. Never a pass: a line not looked at is not confirmed (rule 3) |
+| the page is beyond the PDF's last page | a failed check naming the page and the page count; the row also fails Check B1, and B1 stops the run |
+| the page has no text layer (`extract_text()` gives `None` or only whitespace) | a failed check: the line **cannot be confirmed**. Never a pass: a line not looked at is not confirmed (rule 3); the row also fails Check B1, and B1 stops the run |
 | `pdfplumber` cannot open the PDF | **the run stops**: `ValueError` naming the PDF by sha256 and size; route B's loader prefixes the filing's `where` (session file, filing index, PDF file name), since route A holds only the bytes. `pdfplumber` raises `pdfplumber.utils.exceptions.PdfminerException` (and `MalformedPDFException` for a malformed page); only those two are caught, never a broad `Exception` |
 
 Each failure is a `_CheckFailure`. `message` names where (`year 2026` or `balance sheet
@@ -665,7 +670,9 @@ attempt, on the PDF bytes it already sends to the model. Route B, in
 `printed_line_page_failures(json_str, pdf_bytes) -> list[str]`, on the bytes of
 `plan.pdf_path`, whose sha256 the loader has just checked. Its failures join
 `validation_errors` with the same `where` prefix; `check` exits 1 when failed checks are
-the only problems, and its "Clean" line says every printed line was found on its page.
+the only problems (unless a line cited a page beyond the PDF or with no text layer,
+which also fails B1 and causes `check` to exit 2), and its "Clean" line says every
+printed line was found on its page.
 One walk serves both routes. The CLI prints route B's failures; **no failed reading
 check reaches the web page today**, for either route (backlog item 62). A CLI pickle cache
 hit skips extraction, and so skips this check, as it skips the arithmetic one.

@@ -112,7 +112,12 @@ for gross interest from footnotes).
 unit statement confirming the filing's scale for that row's kind (`diluted_shares` ->
 share count, all other fields -> money figures; `printed_scale`). If not, the run stops:
 route A after retries raises `ValueError`, route B's loader stops and `check` exits 2.
-**The stated limit:** a page that prints statements of two scales (L3Harris 10-K
+**The stated limit:** Check B1 confirms that a parenthesised statement of the filing's
+scale is printed on the row's page or the page before, but does not confirm that this
+statement governs the row's table. A row from a note table whose unit is not in parentheses
+("in thousands" as a column heading) passes when the page or the page before prints
+"(In millions)" for another table; that figure is then 1,000 times too large, and nothing
+reports it. Similarly, a page that prints statements of two scales (L3Harris 10-K
 2026-01-02, page 62) passes a row of either scale. A figure printed in MD&A prose ("$1.2
 billion") has no parenthesised statement, so a row that cites it stops.
 
@@ -165,9 +170,10 @@ balance sheet check doesn't pass, just fail it and show it").
 item 59). Both routes open the filing's PDF with `pdfplumber` and look, on the cited
 page, for one text line holding the line's label and its figure
 (`claude_extractor.py:printed_line_on_page`); a label may wrap onto the next text line,
-but a label printed whole on a neighbouring row never takes this row's figure. A line
-not found, a page beyond the PDF, or a page with no text layer is a failed check,
-retried, shown and kept exactly as an arithmetic failure is; a page that was not looked at never reads as confirmed (rule 3).
+but a label printed whole on a neighbouring row never takes this row's figure. A line not found is a failed check, retried, shown and kept exactly as an arithmetic
+failure is. A row on a page beyond the PDF or on a page with no text layer also fails Check
+B1 (a scale on a page not looked at cannot be confirmed, rule 3), and B1 stops the run in
+both routes.
 A PDF `pdfplumber` cannot open stops the run. So a row the filing never printed, written
 to close a gap, is now caught, **within three limits**: the check confirms a row is
 printed with that figure, not that the figure sits in the right year's column; a label

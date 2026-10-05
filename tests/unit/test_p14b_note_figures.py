@@ -43,6 +43,8 @@ import pytest
 
 import ingestion.claude_extractor as ce
 from ingestion.claude_extractor import (
+    PASS1_BALANCE_SHEET_LINE_FIELDS,
+    PASS1_YEAR_LINE_FIELDS,
     ProviderResolution,
     _row_scale_failures,
     unit_statement_page_failures,
@@ -72,6 +74,30 @@ _REAL_OKTA_PDF = Path("10K_filings/Okta/Okta Inc._10-K_2026-01-31_English.pdf")
 _REAL_LHX_PDF = Path("10K_filings/LHX/L3Harris Technologies Inc._10-K_2026-01-02_English.pdf")
 
 
+def _historical_year(
+    year: int = 2024,
+    **overrides: Any,
+) -> dict[str, Any]:
+    """Build a complete historical year dict with all standard line fields."""
+    entry: dict[str, Any] = {"year": year}
+    for field in PASS1_YEAR_LINE_FIELDS:
+        entry[field] = []
+    entry.update(overrides)
+    return entry
+
+
+def _balance_sheet(
+    year: int = 2024,
+    **overrides: Any,
+) -> dict[str, Any]:
+    """Build a complete latest_balance_sheet dict with all standard line fields."""
+    bs: dict[str, Any] = {"year": year}
+    for field in PASS1_BALANCE_SHEET_LINE_FIELDS:
+        bs[field] = []
+    bs.update(overrides)
+    return bs
+
+
 def _pass1_dict(
     *,
     units_printed: str = "(in millions)",
@@ -83,10 +109,10 @@ def _pass1_dict(
 ) -> dict[str, Any]:
     """Build a minimal Pass 1 dictionary."""
     if historical_years is None:
-        historical_years = [{
-            "year": 2024,
-            "revenue": [{"label": "Total revenues", "value": 1000.0, "page": 1}],
-        }]
+        historical_years = [_historical_year(
+            year=2024,
+            revenue=[{"label": "Total revenues", "value": 1000.0, "page": 1}],
+        )]
     return {
         "ticker": _TICKER,
         "company_name": _COMPANY,
@@ -140,10 +166,10 @@ def test_row_scale_confirmed_on_row_page(tmp_path: Path) -> None:
     data = _pass1_dict(
         units_printed="(in millions)",
         units_page=1,
-        historical_years=[{
-            "year": 2024,
-            "revenue": [{"label": "Total revenues", "value": 1000.0, "page": 1}],
-        }],
+        historical_years=[_historical_year(
+            year=2024,
+            revenue=[{"label": "Total revenues", "value": 1000.0, "page": 1}],
+        )],
     )
     failures = _row_scale_failures(data, pdf.read_bytes())
     assert failures == []
@@ -167,10 +193,10 @@ def test_row_scale_confirmed_on_preceding_page(tmp_path: Path) -> None:
     data = _pass1_dict(
         units_printed="(in millions)",
         units_page=1,
-        historical_years=[{
-            "year": 2024,
-            "revenue": [{"label": "Total revenues", "value": 1000.0, "page": 2}],
-        }],
+        historical_years=[_historical_year(
+            year=2024,
+            revenue=[{"label": "Total revenues", "value": 1000.0, "page": 2}],
+        )],
     )
     failures = _row_scale_failures(data, pdf.read_bytes())
     assert failures == []
@@ -182,7 +208,7 @@ def test_row_on_page_1_checks_page_1_only(tmp_path: Path) -> None:
     Expected value derivation:
       Row is on page 1. Page 1 text has no unit statement.
       pages_to_check is (1,). Page 0 is not checked.
-      Expected: millions. Statement desc: 'no unit statement on page 1 or 0'.
+      Expected: millions. Statement desc: 'no unit statement on page 1'.
       1 failure naming page 1, money figures, expected millions.
     """
     pdf = write_text_pdf(tmp_path / "f.pdf", [
@@ -191,15 +217,15 @@ def test_row_on_page_1_checks_page_1_only(tmp_path: Path) -> None:
     data = _pass1_dict(
         units_printed="(in millions)",
         units_page=1,
-        historical_years=[{
-            "year": 2024,
-            "revenue": [{"label": "Total revenues", "value": 1000.0, "page": 1}],
-        }],
+        historical_years=[_historical_year(
+            year=2024,
+            revenue=[{"label": "Total revenues", "value": 1000.0, "page": 1}],
+        )],
     )
     failures = _row_scale_failures(data, pdf.read_bytes())
     assert len(failures) == 1
     msg = failures[0].message
-    assert "page 1 (money figures): expected millions, no unit statement on page 1 or 0" in msg
+    assert "page 1 (money figures): expected millions, no unit statement on page 1" in msg
     assert "'Total revenues' (revenue, year 2024)" in msg
 
 
@@ -225,10 +251,10 @@ def test_no_unit_statement_on_page_or_preceding_fails_with_named_details(tmp_pat
     data = _pass1_dict(
         units_printed="(in millions)",
         units_page=1,
-        historical_years=[{
-            "year": 2024,
-            "revenue": [{"label": "Total revenues", "value": 1000.0, "page": 3}],
-        }],
+        historical_years=[_historical_year(
+            year=2024,
+            revenue=[{"label": "Total revenues", "value": 1000.0, "page": 3}],
+        )],
     )
     failures = _row_scale_failures(data, pdf.read_bytes())
     assert len(failures) == 1
@@ -261,15 +287,15 @@ def test_multiple_rows_on_same_page_grouped_into_single_failure(tmp_path: Path) 
         units_printed="(in millions)",
         units_page=1,
         historical_years=[
-            {
-                "year": 2024,
-                "revenue": [{"label": "Total revenues", "value": 1000.0, "page": 3}],
-                "cost_of_revenue": [{"label": "Cost of sales", "value": 400.0, "page": 3}],
-            },
-            {
-                "year": 2023,
-                "cfo": [{"label": "Cash from ops", "value": 300.0, "page": 3}],
-            },
+            _historical_year(
+                year=2024,
+                revenue=[{"label": "Total revenues", "value": 1000.0, "page": 3}],
+                cost_of_revenue=[{"label": "Cost of sales", "value": 400.0, "page": 3}],
+            ),
+            _historical_year(
+                year=2023,
+                cfo=[{"label": "Cash from ops", "value": 300.0, "page": 3}],
+            ),
         ],
     )
     failures = _row_scale_failures(data, pdf.read_bytes())
@@ -305,10 +331,10 @@ def test_mismatched_unit_statement_fails_naming_expected_and_found(tmp_path: Pat
     data = _pass1_dict(
         units_printed="(in millions)",
         units_page=1,
-        historical_years=[{
-            "year": 2024,
-            "revenue": [{"label": "Total revenues", "value": 1000000.0, "page": 2}],
-        }],
+        historical_years=[_historical_year(
+            year=2024,
+            revenue=[{"label": "Total revenues", "value": 1000000.0, "page": 2}],
+        )],
     )
     failures = _row_scale_failures(data, pdf.read_bytes())
     assert len(failures) == 1
@@ -347,11 +373,11 @@ def test_distinct_kinds_verified_independently_on_two_scale_statement(tmp_path: 
         units_page=1,
         share_units_printed=stmt,
         share_units_page=1,
-        historical_years=[{
-            "year": 2024,
-            "revenue": [{"label": "Revenue", "value": 5000.0, "page": 1}],
-            "diluted_shares": [{"label": "Diluted shares", "value": 120000.0, "page": 1}],
-        }],
+        historical_years=[_historical_year(
+            year=2024,
+            revenue=[{"label": "Revenue", "value": 5000.0, "page": 1}],
+            diluted_shares=[{"label": "Diluted shares", "value": 120000.0, "page": 1}],
+        )],
     )
     failures = _row_scale_failures(data, pdf.read_bytes())
     assert failures == []
@@ -379,11 +405,11 @@ def test_distinct_kinds_one_passes_and_one_fails(tmp_path: Path) -> None:
         units_page=1,
         share_units_printed="(in millions)",
         share_units_page=1,
-        historical_years=[{
-            "year": 2024,
-            "revenue": [{"label": "Revenue", "value": 5000.0, "page": 1}],
-            "diluted_shares": [{"label": "Diluted shares", "value": 120000.0, "page": 1}],
-        }],
+        historical_years=[_historical_year(
+            year=2024,
+            revenue=[{"label": "Revenue", "value": 5000.0, "page": 1}],
+            diluted_shares=[{"label": "Diluted shares", "value": 120000.0, "page": 1}],
+        )],
     )
     failures = _row_scale_failures(data, pdf.read_bytes())
     assert len(failures) == 1
@@ -410,10 +436,10 @@ def test_multi_scale_limit_page_with_multiple_statements_passes_either_scale(tmp
     data_millions = _pass1_dict(
         units_printed="(In millions)",
         units_page=1,
-        historical_years=[{
-            "year": 2024,
-            "revenue": [{"label": "Row A", "value": 100.0, "page": 1}],
-        }],
+        historical_years=[_historical_year(
+            year=2024,
+            revenue=[{"label": "Row A", "value": 100.0, "page": 1}],
+        )],
     )
     assert _row_scale_failures(data_millions, pdf.read_bytes()) == []
 
@@ -421,10 +447,10 @@ def test_multi_scale_limit_page_with_multiple_statements_passes_either_scale(tmp
     data_thousands = _pass1_dict(
         units_printed="(In thousands)",
         units_page=1,
-        historical_years=[{
-            "year": 2024,
-            "revenue": [{"label": "Row A", "value": 100.0, "page": 1}],
-        }],
+        historical_years=[_historical_year(
+            year=2024,
+            revenue=[{"label": "Row A", "value": 100.0, "page": 1}],
+        )],
     )
     assert _row_scale_failures(data_thousands, pdf.read_bytes()) == []
 
@@ -443,10 +469,10 @@ def test_mda_unparenthesised_prose_cannot_confirm_scale_and_stops(tmp_path: Path
     data = _pass1_dict(
         units_printed="(in millions)",
         units_page=1,
-        historical_years=[{
-            "year": 2024,
-            "revenue": [{"label": "Revenues", "value": 1200.0, "page": 2}],
-        }],
+        historical_years=[_historical_year(
+            year=2024,
+            revenue=[{"label": "Revenues", "value": 1200.0, "page": 2}],
+        )],
     )
     failures = _row_scale_failures(data, pdf.read_bytes())
     assert len(failures) == 1
@@ -472,10 +498,10 @@ def test_page_beyond_pdf_page_count_stops(tmp_path: Path) -> None:
     data = _pass1_dict(
         units_printed="(in millions)",
         units_page=1,
-        historical_years=[{
-            "year": 2024,
-            "revenue": [{"label": "Total revenues", "value": 100.0, "page": 5}],
-        }],
+        historical_years=[_historical_year(
+            year=2024,
+            revenue=[{"label": "Total revenues", "value": 100.0, "page": 5}],
+        )],
     )
     failures = _row_scale_failures(data, pdf.read_bytes())
     assert len(failures) == 1
@@ -499,10 +525,10 @@ def test_page_with_no_text_layer_stops(tmp_path: Path) -> None:
     data = _pass1_dict(
         units_printed="(in millions)",
         units_page=1,
-        historical_years=[{
-            "year": 2024,
-            "revenue": [{"label": "Total revenues", "value": 100.0, "page": 2}],
-        }],
+        historical_years=[_historical_year(
+            year=2024,
+            revenue=[{"label": "Total revenues", "value": 100.0, "page": 2}],
+        )],
     )
     failures = _row_scale_failures(data, pdf.read_bytes())
     assert len(failures) == 1
@@ -532,10 +558,10 @@ def test_balance_sheet_rows_checked_for_scale(tmp_path: Path) -> None:
         units_printed="(in millions)",
         units_page=1,
         historical_years=[],
-        latest_balance_sheet={
-            "year": 2024,
-            "cash": [{"label": "Cash and equivalents", "value": 500.0, "page": 3}],
-        },
+        latest_balance_sheet=_balance_sheet(
+            year=2024,
+            cash=[{"label": "Cash and equivalents", "value": 500.0, "page": 3}],
+        ),
     )
     failures = _row_scale_failures(data, pdf.read_bytes())
     assert len(failures) == 1
@@ -587,12 +613,12 @@ def test_summary_line_counts(tmp_path: Path, capsys: pytest.CaptureFixture[str])
     data = _pass1_dict(
         units_printed="(in millions)",
         units_page=1,
-        historical_years=[{
-            "year": 2024,
-            "revenue": [{"label": "Rev", "value": 10.0, "page": 1}],
-            "cfo": [{"label": "CFO", "value": 20.0, "page": 2}],
-            "capex": [{"label": "Capex", "value": 5.0, "page": 2}],
-        }],
+        historical_years=[_historical_year(
+            year=2024,
+            revenue=[{"label": "Rev", "value": 10.0, "page": 1}],
+            cfo=[{"label": "CFO", "value": 20.0, "page": 2}],
+            capex=[{"label": "Capex", "value": 5.0, "page": 2}],
+        )],
     )
     _row_scale_failures(data, pdf.read_bytes())
     out = capsys.readouterr().out
@@ -613,7 +639,7 @@ def test_route_a_retry_exhaustion_raises_value_error_on_unconfirmed_scale(
       Each call returns well-formed Pass 1 JSON where revenue cites page 3 (no unit statement on page 3 or 2).
       After 2 retries, unit_failures contains the Check B1 failure.
       Route A raises ValueError naming:
-        'Pass 1: after 2 retries, 1 printed unit statement(s) are still not confirmed on the page they cite, so the scale of the figures is not known and the run stops:'
+        'Pass 1: after 2 retries, 1 row scale failure(s) are still not confirmed, so the scale of the figures is not known and the run stops:'
         and lists 'page 3 (money figures): expected millions, no unit statement on page 3 or 2'.
     """
     # Prevent all network socket calls
@@ -652,7 +678,7 @@ def test_route_a_retry_exhaustion_raises_value_error_on_unconfirmed_scale(
     # 1 initial call + 2 retries = 3 calls
     assert len(calls) == 3
     err_msg = str(excinfo.value)
-    assert "Pass 1: after 2 retries, 1 printed unit statement(s) are still not confirmed" in err_msg
+    assert "Pass 1: after 2 retries, 1 row scale failure(s) are still not confirmed" in err_msg
     assert "page 3 (money figures): expected millions" in err_msg
     assert "'revenue' (revenue, year 2024)" in err_msg
 
@@ -748,9 +774,62 @@ def test_rule_3_missing_share_units_key_stops_and_names_field(tmp_path: Path) ->
 def test_rule_3_missing_year_key_stops_and_names_field(tmp_path: Path) -> None:
     """Missing 'year' key in historical_years entry raises KeyError('year')."""
     pdf = write_text_pdf(tmp_path / "f.pdf", [["(in millions)"]])
-    data = _pass1_dict(historical_years=[{
-        "revenue": [{"label": "Rev", "value": 100.0, "page": 1}],
-    }])
+    entry = _historical_year(2024, revenue=[{"label": "Rev", "value": 100.0, "page": 1}])
+    del entry["year"]
+    data = _pass1_dict(historical_years=[entry])
+    with pytest.raises(KeyError) as excinfo:
+        _row_scale_failures(data, pdf.read_bytes())
+    assert "year" in str(excinfo.value)
+
+
+def test_rule_3_missing_historical_years_key_stops_and_names_field(tmp_path: Path) -> None:
+    """Missing 'historical_years' key in data causes _row_scale_failures to raise KeyError('historical_years')."""
+    pdf = write_text_pdf(tmp_path / "f.pdf", [["(in millions)"]])
+    data = _pass1_dict()
+    del data["historical_years"]
+    with pytest.raises(KeyError) as excinfo:
+        _row_scale_failures(data, pdf.read_bytes())
+    assert "historical_years" in str(excinfo.value)
+
+
+def test_rule_3_missing_line_field_in_historical_year_stops_and_names_field(tmp_path: Path) -> None:
+    """Missing standard line field (e.g. 'revenue') in historical_years entry raises KeyError('revenue')."""
+    pdf = write_text_pdf(tmp_path / "f.pdf", [["(in millions)"]])
+    year_entry = _historical_year(2024)
+    del year_entry["revenue"]
+    data = _pass1_dict(historical_years=[year_entry])
+    with pytest.raises(KeyError) as excinfo:
+        _row_scale_failures(data, pdf.read_bytes())
+    assert "revenue" in str(excinfo.value)
+
+
+def test_rule_3_missing_latest_balance_sheet_key_stops_and_names_field(tmp_path: Path) -> None:
+    """Missing 'latest_balance_sheet' key in data causes _row_scale_failures to raise KeyError('latest_balance_sheet')."""
+    pdf = write_text_pdf(tmp_path / "f.pdf", [["(in millions)"]])
+    data = _pass1_dict()
+    del data["latest_balance_sheet"]
+    with pytest.raises(KeyError) as excinfo:
+        _row_scale_failures(data, pdf.read_bytes())
+    assert "latest_balance_sheet" in str(excinfo.value)
+
+
+def test_rule_3_missing_line_field_in_balance_sheet_stops_and_names_field(tmp_path: Path) -> None:
+    """Missing standard line field (e.g. 'cash') in non-empty latest_balance_sheet raises KeyError('cash')."""
+    pdf = write_text_pdf(tmp_path / "f.pdf", [["(in millions)"]])
+    bs_entry = _balance_sheet(2024)
+    del bs_entry["cash"]
+    data = _pass1_dict(historical_years=[], latest_balance_sheet=bs_entry)
+    with pytest.raises(KeyError) as excinfo:
+        _row_scale_failures(data, pdf.read_bytes())
+    assert "cash" in str(excinfo.value)
+
+
+def test_rule_3_missing_year_in_balance_sheet_stops_and_names_field(tmp_path: Path) -> None:
+    """Missing 'year' in non-empty latest_balance_sheet raises KeyError('year')."""
+    pdf = write_text_pdf(tmp_path / "f.pdf", [["(in millions)"]])
+    bs_entry = _balance_sheet(2024)
+    del bs_entry["year"]
+    data = _pass1_dict(historical_years=[], latest_balance_sheet=bs_entry)
     with pytest.raises(KeyError) as excinfo:
         _row_scale_failures(data, pdf.read_bytes())
     assert "year" in str(excinfo.value)
@@ -759,10 +838,10 @@ def test_rule_3_missing_year_key_stops_and_names_field(tmp_path: Path) -> None:
 def test_rule_3_missing_line_label_key_stops_and_names_field(tmp_path: Path) -> None:
     """Missing 'label' in row dict raises KeyError('label')."""
     pdf = write_text_pdf(tmp_path / "f.pdf", [["(in millions)"]])
-    data = _pass1_dict(historical_years=[{
-        "year": 2024,
-        "revenue": [{"value": 100.0, "page": 1}],
-    }])
+    data = _pass1_dict(historical_years=[_historical_year(
+        year=2024,
+        revenue=[{"value": 100.0, "page": 1}],
+    )])
     with pytest.raises(KeyError) as excinfo:
         _row_scale_failures(data, pdf.read_bytes())
     assert "label" in str(excinfo.value)
@@ -771,10 +850,10 @@ def test_rule_3_missing_line_label_key_stops_and_names_field(tmp_path: Path) -> 
 def test_rule_3_missing_line_page_key_stops_and_names_field(tmp_path: Path) -> None:
     """Missing 'page' in row dict raises KeyError('page')."""
     pdf = write_text_pdf(tmp_path / "f.pdf", [["(in millions)"]])
-    data = _pass1_dict(historical_years=[{
-        "year": 2024,
-        "revenue": [{"label": "Rev", "value": 100.0}],
-    }])
+    data = _pass1_dict(historical_years=[_historical_year(
+        year=2024,
+        revenue=[{"label": "Rev", "value": 100.0}],
+    )])
     with pytest.raises(KeyError) as excinfo:
         _row_scale_failures(data, pdf.read_bytes())
     assert "page" in str(excinfo.value)
@@ -809,10 +888,10 @@ def test_real_walmart_filing_scale_confirmation() -> None:
         units_page=21,
         share_units_printed="(Amounts in millions, except per share data)",
         share_units_page=21,
-        historical_years=[{
-            "year": 2026,
-            "revenue": [{"label": "Total revenues", "value": 680984.0, "page": 21}],
-        }],
+        historical_years=[_historical_year(
+            year=2026,
+            revenue=[{"label": "Total revenues", "value": 680984.0, "page": 21}],
+        )],
     )
     assert _row_scale_failures(data_clean, pdf_bytes) == []
 
@@ -822,10 +901,10 @@ def test_real_walmart_filing_scale_confirmation() -> None:
         units_page=21,
         share_units_printed="(Amounts in millions, except per share data)",
         share_units_page=21,
-        historical_years=[{
-            "year": 2026,
-            "revenue": [{"label": "Total revenues", "value": 680984.0, "page": 2}],
-        }],
+        historical_years=[_historical_year(
+            year=2026,
+            revenue=[{"label": "Total revenues", "value": 680984.0, "page": 2}],
+        )],
     )
     failures = _row_scale_failures(data_bad, pdf_bytes)
     assert len(failures) == 1
@@ -844,10 +923,10 @@ def test_real_chipotle_filing_scale_mismatch() -> None:
     data = _pass1_dict(
         units_printed="(in millions)",
         units_page=29,
-        historical_years=[{
-            "year": 2025,
-            "revenue": [{"label": "Revenue", "value": 11250.0, "page": 29}],
-        }],
+        historical_years=[_historical_year(
+            year=2025,
+            revenue=[{"label": "Revenue", "value": 11250.0, "page": 29}],
+        )],
     )
     failures = _row_scale_failures(data, pdf_bytes)
     assert len(failures) == 1
@@ -873,11 +952,11 @@ def test_real_okta_filing_two_scales() -> None:
         units_page=58,
         share_units_printed=stmt,
         share_units_page=58,
-        historical_years=[{
-            "year": 2026,
-            "revenue": [{"label": "Total revenue", "value": 2611.0, "page": 58}],
-            "diluted_shares": [{"label": "Diluted shares", "value": 172000.0, "page": 58}],
-        }],
+        historical_years=[_historical_year(
+            year=2026,
+            revenue=[{"label": "Total revenue", "value": 2611.0, "page": 58}],
+            diluted_shares=[{"label": "Diluted shares", "value": 172000.0, "page": 58}],
+        )],
     )
     assert _row_scale_failures(data_clean, pdf_bytes) == []
 
@@ -887,11 +966,11 @@ def test_real_okta_filing_two_scales() -> None:
         units_page=58,
         share_units_printed="(in millions)",
         share_units_page=58,
-        historical_years=[{
-            "year": 2026,
-            "revenue": [{"label": "Total revenue", "value": 2611.0, "page": 58}],
-            "diluted_shares": [{"label": "Diluted shares", "value": 172000.0, "page": 58}],
-        }],
+        historical_years=[_historical_year(
+            year=2026,
+            revenue=[{"label": "Total revenue", "value": 2611.0, "page": 58}],
+            diluted_shares=[{"label": "Diluted shares", "value": 172000.0, "page": 58}],
+        )],
     )
     failures = _row_scale_failures(data_wrong_shares, pdf_bytes)
     assert len(failures) == 1
@@ -914,10 +993,10 @@ def test_real_lhx_filing_multi_scale_limit() -> None:
     data_millions = _pass1_dict(
         units_printed="(In millions)",
         units_page=62,
-        historical_years=[{
-            "year": 2025,
-            "revenue": [{"label": "Revenue line", "value": 21000.0, "page": 62}],
-        }],
+        historical_years=[_historical_year(
+            year=2025,
+            revenue=[{"label": "Revenue line", "value": 21000.0, "page": 62}],
+        )],
     )
     assert _row_scale_failures(data_millions, pdf_bytes) == []
 
@@ -925,10 +1004,10 @@ def test_real_lhx_filing_multi_scale_limit() -> None:
     data_thousands = _pass1_dict(
         units_printed="(In thousands)",
         units_page=62,
-        historical_years=[{
-            "year": 2025,
-            "revenue": [{"label": "Revenue line", "value": 21000000.0, "page": 62}],
-        }],
+        historical_years=[_historical_year(
+            year=2025,
+            revenue=[{"label": "Revenue line", "value": 21000000.0, "page": 62}],
+        )],
     )
     assert _row_scale_failures(data_thousands, pdf_bytes) == []
 
@@ -955,10 +1034,10 @@ def test_candidate_raising_value_error_is_discarded_for_kind(tmp_path: Path) -> 
         units_page=1,
         share_units_printed="(in millions)",
         share_units_page=1,
-        historical_years=[{
-            "year": 2024,
-            "diluted_shares": [{"label": "Diluted shares", "value": 50.0, "page": 1}],
-        }],
+        historical_years=[_historical_year(
+            year=2024,
+            diluted_shares=[{"label": "Diluted shares", "value": 50.0, "page": 1}],
+        )],
     )
     failures = _row_scale_failures(data, pdf.read_bytes())
     assert len(failures) == 1

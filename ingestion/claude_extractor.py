@@ -1552,8 +1552,10 @@ def _unit_statement_failures(data: dict[str, Any], pdf_bytes: bytes) -> list[_Ch
 def _row_scale_failures(data: dict[str, Any], pdf_bytes: bytes) -> list[_CheckFailure]:
     """Check that each Pass 1 printed row sits under a unit statement of the filing's scale.
 
-    Check B1 (user decision of 2026-10-04, rule 1 option B). For each printed row of
-    every line field in historical_years and latest_balance_sheet (when not {}):
+    Check B1 (user decision of 2026-10-04, rule 1 option B). `data` is the parsed
+    answer after `pass1_problems` has passed, so every key is read with `[]`.
+    For each printed row of every line field in historical_years and latest_balance_sheet
+    (when not {}):
     - the kind is "share count" for diluted_shares, and "money figures" for every other field;
     - the expected scale is the word _filing_units(data) reads for that kind;
     - the candidates are the parenthesised groups (_PARENTHESISED_GROUP, on whitespace-normalised
@@ -1564,8 +1566,8 @@ def _row_scale_failures(data: dict[str, Any], pdf_bytes: bytes) -> list[_CheckFa
     - a page beyond the PDF, or with no text layer, is not confirmed.
 
     Produces one failure per page and kind, naming the page, the kind, the expected scale,
-    the statements found (or "no unit statement on page N or N - 1"), and each row that
-    cites the page (field, year, label). Print one summary line:
+    the statements found (or "no unit statement on page N or N - 1", or "no unit statement on page 1"),
+    and each row that cites the page (field, year, label). Print one summary line:
       Row unit scales looked up on their cited pages: rows checked, pages, pages not confirmed.
     """
     units = _filing_units(data)
@@ -1578,36 +1580,34 @@ def _row_scale_failures(data: dict[str, Any], pdf_bytes: bytes) -> list[_CheckFa
     all_cited_pages: set[int] = set()
     total_rows = 0
 
-    for entry in data.get("historical_years", []):
+    for entry in data["historical_years"]:
         year = entry["year"]
         for field in PASS1_YEAR_LINE_FIELDS:
-            if field in entry:
-                kind: UnitOf = "share count" if field == "diluted_shares" else "money figures"
-                for line in entry[field]:
-                    total_rows += 1
-                    page = line["page"]
-                    all_cited_pages.add(page)
-                    rows_by_page_kind.setdefault((page, kind), []).append({
-                        "field": field,
-                        "year": year,
-                        "label": line["label"],
-                    })
+            kind: UnitOf = "share count" if field == "diluted_shares" else "money figures"
+            for line in entry[field]:
+                total_rows += 1
+                page = line["page"]
+                all_cited_pages.add(page)
+                rows_by_page_kind.setdefault((page, kind), []).append({
+                    "field": field,
+                    "year": year,
+                    "label": line["label"],
+                })
 
-    balance = data.get("latest_balance_sheet", {})
+    balance = data["latest_balance_sheet"]
     if balance:
         year = balance["year"]
         for field in PASS1_BALANCE_SHEET_LINE_FIELDS:
-            if field in balance:
-                kind = "money figures"
-                for line in balance[field]:
-                    total_rows += 1
-                    page = line["page"]
-                    all_cited_pages.add(page)
-                    rows_by_page_kind.setdefault((page, kind), []).append({
-                        "field": field,
-                        "year": year,
-                        "label": line["label"],
-                    })
+            kind = "money figures"
+            for line in balance[field]:
+                total_rows += 1
+                page = line["page"]
+                all_cited_pages.add(page)
+                rows_by_page_kind.setdefault((page, kind), []).append({
+                    "field": field,
+                    "year": year,
+                    "label": line["label"],
+                })
 
     if total_rows == 0:
         print("  Row unit scales looked up on their cited pages: 0 checked, 0 pages, 0 pages not confirmed.")
@@ -1634,7 +1634,7 @@ def _row_scale_failures(data: dict[str, Any], pdf_bytes: bytes) -> list[_CheckFa
             unconfirmed_pages.add(page)
             continue
 
-        text = page_texts.get(page)
+        text = page_texts[page]
         if text is None or not text.strip():
             statement_desc = f"page {page} has no text layer"
             failures.append(_CheckFailure(
@@ -1647,7 +1647,7 @@ def _row_scale_failures(data: dict[str, Any], pdf_bytes: bytes) -> list[_CheckFa
         scale_groups: list[str] = []
         pages_to_check = (page, page - 1) if page > 1 else (page,)
         for p in pages_to_check:
-            p_text = page_texts.get(p)
+            p_text = page_texts[p]
             if p_text and p_text.strip():
                 norm = _whitespace_normalised(p_text)
                 for g in _PARENTHESISED_GROUP.findall(norm):
@@ -1668,6 +1668,8 @@ def _row_scale_failures(data: dict[str, Any], pdf_bytes: bytes) -> list[_CheckFa
         unconfirmed_pages.add(page)
         if scale_groups:
             statement_desc = f"found {', '.join(scale_groups)}"
+        elif page == 1:
+            statement_desc = "no unit statement on page 1"
         else:
             prev_page = page - 1
             statement_desc = f"no unit statement on page {page} or {prev_page}"
@@ -2387,9 +2389,9 @@ def _run_financials_pass(
     to millions (`convert_filing_to_millions`, in `extract_financials`).
 
     Raises:
-        ValueError: a unit statement is still not found on the page it cites after
-            the last retry (P14a), naming the field, the text and the page; or the
-            PDF cannot be opened by pdfplumber.
+        ValueError: a unit statement or a printed row's unit scale is still not
+            confirmed after the last retry (P14a, P14b), naming the field or page;
+            or the PDF cannot be opened by pdfplumber.
         json.JSONDecodeError, Pass1ShapeError: the answer still cannot be parsed
             after the last retry.
     """
@@ -2485,19 +2487,27 @@ def _run_financials_pass(
         # a failed check like any other, and retried. A PDF pdfplumber cannot open
         # stops here.
         data = json.loads(json_str)
-        unit_failures = _unit_statement_failures(data, pdf_bytes) + _row_scale_failures(data, pdf_bytes)
+        stmt_failures = _unit_statement_failures(data, pdf_bytes)
+        row_scale_failures = _row_scale_failures(data, pdf_bytes)
+        unit_failures = stmt_failures + row_scale_failures
         val_errors = val_errors + unit_failures + _printed_line_failures(data, pdf_bytes)
         if not val_errors:
             return financials, _filing_units(data)
 
         if attempt >= MAX_RETRIES:
-            # A unit statement still not found stops: its scale converts every
-            # figure, and a wrong one cannot be detected downstream.
+            # A unit statement still not found or row scale failure stops: its
+            # scale converts every figure, and a wrong one cannot be detected
+            # downstream.
             if unit_failures:
+                counts: list[str] = []
+                if stmt_failures:
+                    counts.append(f"{len(stmt_failures)} printed unit statement(s)")
+                if row_scale_failures:
+                    counts.append(f"{len(row_scale_failures)} row scale failure(s)")
+                kinds_str = " and ".join(counts)
                 raise ValueError(
                     f"Pass 1: after {MAX_RETRIES} retries, "
-                    f"{len(unit_failures)} printed unit statement(s) are still not "
-                    "confirmed on the page they cite, so the scale of the figures is "
+                    f"{kinds_str} are still not confirmed, so the scale of the figures is "
                     "not known and the run stops:\n"
                     + "\n".join(f"  - {failure.message}" for failure in unit_failures),
                 )
@@ -2527,7 +2537,8 @@ def _run_financials_pass(
             "again from the filing, and correct a "
             "line only where it does not match the row printed in the filing. Do "
             "NOT change any value to make a check pass. If every line matches the "
-            "filing, return it unchanged; the failure will be shown as it is. "
+            "filing, return it unchanged; other failed checks will be shown as "
+            "they are, but a unit statement or row scale failure stops the run. "
             "Return ONLY the JSON.\n\n"
             + json_str
         )
