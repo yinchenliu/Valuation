@@ -310,10 +310,16 @@ because both sit in the Pass 1 parse.
 | `P14b-reasoning` | 0: route A sends adaptive thinking at an effort named in `config.py`, streamed, with room to finish; the setting is shown. Also item 81 | 81 |
 | `P14b-note-figures` | B: a Pass 1 figure from a note or MD&A. **The user's decision of 2026-10-04: check B1** — each printed row's page, or the page before, must print a unit statement of the filing's scale for its kind, or the run stops. No new model field | — |
 | `P14b-row-reasons` | A: a reason for each printed row, shown on both pages. A format change; Walmart is extracted again | — |
+| `P14d-finance-leases` | the schema says finance lease obligations are debt and operating lease obligations are not (the user's decision "83a", 2026-10-04) | 83 |
 | `P14c-layout-facts` | C: a cited layout fact, checked on its page; the D&A decision moves out of the parser into `analysis/` and reads that fact | 10 |
 
 All three touch `ingestion/claude_extractor.py` and the session file format, so they run
 in sequence, after wave 2's `P13g`.
+
+**The order changed on 2026-10-04, on the user's direction:** "focus on fixing the defects
+first before refine route A". Route B is the main route and route A an option. So after
+`P14b-note-figures`: `P14d-finance-leases`, Phase 3, `P14c-layout-facts`; then
+`P15b-gemini-flash`; then `P14b-row-reasons`. `.agent/QUEUE.md` holds the order.
 
 **`P14b` is split in three, on 2026-10-04,** so each unit fits one build run. Options A
 and C both need the model to write new text for each filing. So Walmart is extracted

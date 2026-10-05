@@ -306,7 +306,10 @@ Built 2026-09-20 on Windows. **Development moved to a macOS machine by 2026-09-2
   (gains) and losses" in each year, Gemini a $37 million FTC settlement and a $0.3 billion JD.com
   loss. **Result: $28.04 against route B's $28.02, but that agreement is partly chance:** net debt
   34,035 against 40,796, WACC 7.74% against 7.68%, enterprise value 265,512M against 272,116M.
-  The two effects of the debt difference almost cancel. First measurement for backlog item 36. Since `P13c`, a shell value wins over
+  The two effects of the debt difference almost cancel. First measurement for backlog item 36.
+  **The user's reading of it, 2026-10-04:** non-recurring items are a judgment each model
+  makes differently, so an exact match of the result means nothing; the run's use is to show
+  whether route A has a significant defect. Route A works; route B is the main route. Since `P13c`, a shell value wins over
   `.env` (backlog item 46, closed).
   `pdftoppm` is absent and Homebrew 4.4.6 cannot install it on macOS 27.0, so a session
   reads PDFs through `session_extraction text`.
@@ -422,7 +425,7 @@ the headline. Re-ranked at `622262b`.
 | 79 | Route A's unit stop does not name the PDF | **new, the `P14a` programmer.** The same shape as item 73 |
 | 80 | The arithmetic check table and route B's failed-check messages are in printed units, with no label | **new, the `P14a` programmer.** For a filing in thousands, `printed=11,313,853` shows beside statements in $M |
 | 82 | The CLI cache key stores the model as "(provider default)" | **new, latent.** A change of default would label old figures with the new model. Assigned to `P15b-gemini-flash` |
-| 83 | Finance lease obligations: debt or not? The schema does not say | **new, silent; waits for the user.** Walmart: Claude counted 6,761M of finance leases as debt, Gemini did not; net debt differs by that much |
+| 83 | Finance lease obligations: debt or not? The schema does not say | **new, silent. The user decided "83a" (they are debt); assigned to `P14d-finance-leases`.** Walmart: Claude counted 6,761M of finance leases as debt, Gemini did not; net debt differs by that much |
 | 47 | The income statement shown has no interest income row | **new, display.** EBT does not add up from the rows shown |
 | 52 | A cache hit ignores `files` sent with `session_file` | **new, found by the `P9b` review.** Hand-built requests only |
 | 51 | The arithmetic check's `WARN` branch is dead | **new, found by `P9c`** |
