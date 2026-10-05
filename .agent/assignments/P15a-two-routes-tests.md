@@ -61,3 +61,13 @@ Never make paid API calls or real network calls in tests. All stubs/mocks in mem
 | 5 | lint | 4 errors (BLE001 pre-existing), 0 in `tests/` | `.venv/bin/python -m ruff check .` |
 | 6 | mypy | 8 errors in 3 files, 0 in `tests/` | `.venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` |
 | 7 | two counts | accuracy and coverage reported | tester log entry |
+
+## Round 2 amendment (build lead)
+
+Address F1 from the overall lead review of `P15a-two-routes`:
+1. Add one autouse fixture in `tests/conftest.py` that sets `ANTHROPIC_API_KEY` and `GEMINI_API_KEY` to `""` for every test (using `monkeypatch`), so no test can read a key from `.env`. A test that needs a key sets a placeholder itself.
+2. Confirm the test gate and full suite pass identically with and without the empty-key prefix:
+   - `ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q --ignore-glob="*_rule3_red.py"` gives 1032 passed, 0 failed.
+   - `.venv/bin/python -m pytest -q --ignore-glob="*_rule3_red.py"` gives 1032 passed, 0 failed.
+   - Full suite gives exactly 2 failed (the 2 known red), 1032 passed under both invocations.
+

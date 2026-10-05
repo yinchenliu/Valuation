@@ -15,6 +15,7 @@ The LLM is strictly an extraction layer — it reads numbers from PDFs. All proj
 
 ### Prerequisites
 
+- Python 3.10+
 - A Google Gemini API key (route A extraction) or a Claude Code session file (route B extraction)
 
 ### Installation
