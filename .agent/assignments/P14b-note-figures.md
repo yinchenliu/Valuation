@@ -148,3 +148,33 @@ Run every command with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`. **Make no paid API 
 ## Backlog items this unit is NOT fixing
 
 Items 1, 10, 51, 53, 61, 63, 64, 73, 74, 78, 79, 80 in `claude_extractor.py`.
+
+## Handoff
+
+### Commits
+- `ea8ee64`: `P14b-note-figures: Pass 1 note/MD&A figures (Option B) and row unit scale check (Check B1)`
+
+### Verdicts
+- Programmer: `complete` (round 1), entry: `.agent/journal/2026-10-04T2011-programmer-p14b-note-figures.md`
+- Code reviewer: `approved` (round 1), entry: `.agent/journal/2026-10-04T2041-code_reviewer-p14b-note-figures.md`
+- Tester: `pass` (round 1), entry: `.agent/journal/2026-10-04T2058-tester-p14b-note-figures.md`
+
+### Gates
+- Test gate (with empty keys): 1061 passed (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q --ignore-glob="*_rule3_red.py"`)
+- Full suite: 2 failed (the known two), 1061 passed (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q`)
+- Lint: 4 errors, all `BLE001` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m ruff check .`)
+- Types: 8 errors in 3 files (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports`)
+- Rule 3 census: 65 (`grep -rnE "if [^)]+ else 0(\.0)?\b|\bor +0(\.0)?\b|\.get\([^,]+, *0(\.0)?\)|: *float *= *0\.0" '--include=*.py' models analysis api ingestion | wc -l`)
+- Web root route: HTTP 200 (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -c "from starlette.testclient import TestClient; from app import app; print(TestClient(app).get('/').status_code)"`)
+- Guard check: 48/48 correct (`.venv/bin/python .claude/check_guard.py`)
+- Walmart Route B check: exit 0; 89 of 89 printed lines found; 4 of 4 Pass 2 items confirmed; `Row unit scales looked up on their cited pages: 89 checked, 4 pages, 0 pages not confirmed.` printed (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m ingestion.session_extraction check extractions/WMT.json`)
+- Walmart end-to-end: stages 1 to 10 match baseline; PV of terminal value 214,819M; implied price $28.02; downside -73.1% (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python cli.py --session-file extractions/WMT.json`)
+
+### Findings and notes
+- Criterion 10 scan: across all 16 filings, all primary statement pages (and the page after each) have confirmed readable scales on the page or the page before (0 false stops for statement pages). Note/MD&A occurrences without scale statements match the table in the programmer journal entry.
+- Test suite: 31 synthetic fixture failures repaired by adding unit statement headers to cash flow pages in `_pass1_pdf.py`; 29 new tests added in `tests/unit/test_p14b_note_figures.py` locking Check B1 behaviors.
+- Stated limit: Check B1 confirms rows against parenthesised statements; unparenthesised figures in prose (e.g. MD&A "$1.2 billion") cannot confirm scale and stop.
+
+### Questions for the overall lead
+None.
+
