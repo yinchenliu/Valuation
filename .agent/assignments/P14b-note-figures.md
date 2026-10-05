@@ -355,3 +355,54 @@ runs step 8 in full.
 ### Questions for the overall lead
 None.
 
+
+## Overall lead review, round 2
+
+**Verdict: `accepted`**, 2026-10-04, by the overall lead, on `ac4af5a`.
+
+**Scope.** `4a8d9ac` touches `ingestion/claude_extractor.py`, the two docs files in scope,
+`tests/unit/test_p14b_note_figures.py`, the three round 2 journal entries, the journal
+index and the tests assignment. Nothing outside the build team's roles.
+
+**The findings, each re-checked.**
+
+- **F1, fixed.** `_row_scale_failures` reads `data["historical_years"]`, `entry[field]`,
+  `data["latest_balance_sheet"]`, `balance[field]` and `page_texts[...]`. Both routes run
+  `pass1_problems` first (route A's parser, route B's `unit_statement_page_failures`),
+  and it requires every line field, so `[]` matches the shape. A scratch call on the real
+  Chipotle 2025 PDF raises `KeyError` for each of: no `historical_years`, no `revenue` in a
+  year, no `latest_balance_sheet`, no `cash` in the balance sheet. The tester locks these
+  four and six more; each test asserts the key name.
+- **F2, fixed.** The round 2 programmer entry holds the script, one row per filing and
+  the 71 pages. Its counts equal the overall lead's: 320 checked, 249 with a scale, 71
+  without. The reviewer re-ran the script. The pasted script ends in a comment where the
+  print line was; the counts match, so no change.
+- **F3, fixed.** Both docs say that a row on a page beyond the PDF or with no text layer
+  also fails B1, and B1 stops the run.
+- **F4, fixed.** Criterion 7 now prints "1 row scale failure(s) are still not
+  confirmed". The docstring, the comment above the stop and the retry sentence name both
+  kinds.
+- **F5, fixed.** A row on page 1 of Chipotle 2025 gives "no unit statement on page 1".
+- **F6, fixed.** Both docs state the wider limit before the two named limits.
+
+**The done-criteria, re-run** with `ANTHROPIC_API_KEY= GEMINI_API_KEY=` on macOS.
+
+| # | Result |
+|---|---|
+| 2 | `check extractions/WMT.json`: exit 0, `89 checked, 4 pages, 0 pages not confirmed` |
+| 3 | 2026 "Total revenues" moved from page 21 to page 2: exit 2, `page 2 (money figures): expected millions, no unit statement on page 2 or 1`, the row named |
+| 4 | Chipotle 2025, page 29, `units` millions: 1 failure, found `(in thousands, except per share data)` |
+| 5 | Okta 2026, page 58: 0 failures; with `share_units` millions, 1 failure for the share count |
+| 6 | L3Harris 2026-01-02, page 62: 0 failures with `units` millions and with `units` thousands |
+| 7 | stubbed `_call_llm`, real Walmart PDF, sockets blocked: `ValueError` after 3 model calls, 0 network attempts |
+| 8 | `cli.py --session-file` at HEAD against a worktree at `525b98f`: the new summary line and the elapsed seconds only; $28.02 |
+| 9 | ruff 4 (all `BLE001`), mypy 8 in 3 files, census 65, `GET /` 200, guard 48/48 |
+| 11 | gate 1066 passed with and without the empty-key prefix; full suite 2 failed (the two red on purpose), 1066 passed |
+
+**Notes, not findings.** Three passages name the unit statement stop and not B1: the
+comment above route A's retry loop (`claude_extractor.py:2416-2426`), the first sentence
+of the check retry prompt ("looked for each line and each unit statement"), and `check`'s
+"Clean" line. They change no behaviour. The overall lead records them as backlog item 85.
+The wider limit (F6) is recorded as item 84, a latent silent path. The overall lead
+corrected one docs sentence that still said route A raises "with the unit statement
+failures".

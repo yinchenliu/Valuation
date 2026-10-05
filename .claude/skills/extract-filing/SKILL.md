@@ -85,8 +85,11 @@ still asks for "fiscal year 2024". Read the column whose date ends that fiscal y
    SE text extractions/TICKER.json --filing N --pages 21-23
    ```
    Read the income statement, the cash flow statement and, if the plan asks for it, the
-   balance sheet. Read a note only when the prompt sends you there, for example for
-   gross interest expense.
+   balance sheet. When the statement does not print a field's row by itself, the
+   prompt lets you take the figure from a note or from MD&A (rule 1 option B,
+   `P14b-note-figures`): one printed line, with its label and its page as printed
+   there, copied in the unit printed there and never converted. Gross interest expense
+   from the debt note is the usual case.
 
    **Use the text layer first.** It costs fewer tokens than page images, and it works on
    both machines. The Read tool renders a PDF page only where `pdftoppm` is installed,
@@ -139,6 +142,20 @@ still asks for "fiscal year 2024". Read the column whose date ends that fiscal y
      figure on one line of that page's text layer. Copy the label from the `text`
      output, not from memory, and record the PDF page that `text` printed it under. A
      shortened label is still found; a reworded one is not.
+   - **`check` also reads the unit of every row** (check B1, `P14b-note-figures`). The
+     row's page, or the page before it, must print a parenthesised unit statement of
+     the filing's scale for that row: the `share_units` scale for `diluted_shares`,
+     the `units` scale for every other field. If not, `check` stops (exit 2) and names
+     the page and the rows. A figure printed only in MD&A prose ("$1.2 billion") has no
+     such statement, so it stops. A note table in another scale stops too. Never
+     convert the figure and never move its page to pass. Tell the user.
+   - **B1 cannot see a unit that is not in parentheses.** A note table headed "in
+     thousands" as a column heading passes when the page also prints "(In millions)"
+     for another table, and its figure is then 1,000 times too large (backlog item
+     84). Before you copy a row from a note, read the unit that its own table prints.
+     If that unit is not the filing's scale, copy the row as printed, as the prompt
+     says. Then stop before step 5, and tell the user the field, the page and the
+     two units. Python cannot see this case, so the user decides.
    - **Never add, subtract or net rows yourself.** Python sums each list.
    - `[]` means the filing prints no such row. Never omit a key.
    - Every row belongs to exactly one field. A row that matches no named field goes

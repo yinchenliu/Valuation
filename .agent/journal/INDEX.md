@@ -148,6 +148,7 @@ edits another's.
 | 2026-10-04 | P14b-note-figures | programmer, r2 | `complete` — F1-F6 answered: direct `[]` indexing in `_row_scale_failures`; 16 filings scanned (320 pages, 71 NONE); Route A message & prompt updated; docs updated | [entry](2026-10-04T2130-programmer-p14b-note-figures.md) |
 | 2026-10-04 | P14b-note-figures | code_reviewer, r2 | **`approved`** — F1-F6 verified fixed; rule 3 indexing verified; 320 pages scanned (249 OK, 71 NONE); gates clean | [entry](2026-10-04T2144-code_reviewer-p14b-note-figures.md) |
 | 2026-10-04 | P14b-note-figures-tests | tester, r2 | **`pass`** — F1 and F5 locked; helper dicts complete; KeyError stops locked; page 1 message locked; gate 1066 passed, full 2 failed (known red) | [entry](2026-10-04T2155-tester-p14b-note-figures.md) |
+| 2026-10-04 | P14b-note-figures | overall lead, r2 | **`accepted`** at `ac4af5a`. F1-F6 re-checked and fixed: scratch calls raise `KeyError` for 4 absent keys (Chipotle 2025); criterion 10 counts match (320/249/71); page 1 wording; route A message names the kind. Criteria 2-9 and 11 re-run: Walmart exit 0, 89 checked; page 2 copy exit 2; Chipotle/Okta/L3Harris as stated; route A stub 3 calls, 0 network; Walmart diff vs `525b98f` = the summary line only, $28.02; gate 1066 both ways, full 2 failed, ruff 4, mypy 8 in 3 files, census 65, guard 48/48. Notes: items 84 (B1 cannot see an unparenthesised table unit) and 85 (three texts do not name B1) added. Skill taught option B and B1. `P14d-finance-leases` set `ready` | [review](../assignments/P14b-note-figures.md) |
 
 
 

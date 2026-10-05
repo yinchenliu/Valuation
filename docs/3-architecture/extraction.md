@@ -433,11 +433,13 @@ A group whose reading stops is not a candidate for that kind. The row passes whe
 candidate's scale word equals the expected scale word read by `_filing_units`.
 A page beyond the PDF or with no text layer is not confirmed.
 The check writes one failure per page and kind, naming the page, the kind, the expected
-scale, the statements found (or "no unit statement on page N or N - 1"), and each row that
-cites that page (field, year, label). It prints a summary line:
+scale, the statements found (or "no unit statement on page N or N - 1", and "no unit
+statement on page 1" for page 1), and each row that cites that page (field, year, label).
+It prints a summary line:
 `Row unit scales looked up on their cited pages: X checked, Y pages, Z pages not confirmed.`
 **Every failure stops, as a unit statement failure does:** route A retries it and, after
-the last retry, raises `ValueError` with the unit statement failures; route B's loader stops
+the last retry, raises `ValueError` that counts and lists the unit statement failures and
+the row scale failures, each kind named; route B's loader stops
 on it (`unit_statement_page_failures`) and `check` exits 2.
 **The stated limit:** Check B1 confirms that a parenthesised statement of the filing's
 scale is printed on the row's page or the page before, but does not confirm that this

@@ -36,7 +36,12 @@ Measured by the overall lead at `545d13b`.
 | net debt | `docs/3-architecture/valuation-math.md:180` | `net_debt = total_debt − cash_and_equivalents − short_term_investments` |
 | Walmart, route B | `cli.py --session-file extractions/WMT.json`, keys empty | net debt 40,796; implied price $28.02 |
 
-Re-take the gate numbers at the `P14b-note-figures` commit.
+The gates at the `P14b-note-figures` commit, `ac4af5a`, measured by the overall lead with
+`ANTHROPIC_API_KEY= GEMINI_API_KEY=` on macOS: gate 1066 passed (with and without the
+prefix); full suite 2 failed (the two red on purpose), 1066 passed; ruff 4, all `BLE001`;
+mypy 8 errors in 3 files; census 65; `GET /` 200; guard 48/48. `check
+extractions/WMT.json` now also prints the check B1 line: `Row unit scales looked up on
+their cited pages: 89 checked, 4 pages, 0 pages not confirmed.`
 
 ## What to do
 
@@ -111,5 +116,5 @@ Run every command with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`. **Make no paid API 
 
 ## Backlog items this unit is NOT fixing
 
-Items 1, 10, 51, 53, 61, 63, 64, 73, 74, 78, 79, 80 in `claude_extractor.py`; items 72
-and 82 in `cli.py`.
+Items 1, 10, 51, 53, 61, 63, 64, 73, 74, 78, 79, 80, 84, 85 in `claude_extractor.py`;
+items 72 and 82 in `cli.py`.

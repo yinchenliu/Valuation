@@ -4,9 +4,9 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `525b98f` (`P15a-two-routes` committed by the build team), 2026-10-04, by the overall lead**, in the working tree, on branch `main`, **on the macOS machine**
+**Measured at `ac4af5a` (`P14b-note-figures` committed by the build team), 2026-10-04, by the overall lead**, in the working tree, on branch `main`, **on the macOS machine**
 (`.venv/bin/python`, Python 3.11.6). Every figure before `cde33cb` was measured on the
-Windows machine. **Forty-seven work units accepted by `69436d9`, six more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
+Windows machine. **Forty-seven work units accepted by `69436d9`, eight more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes`, `P14b-note-figures` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; **five** times a reviewer or a
 programmer overturned a claim — twice against a programmer, **three times against the
 orchestrator**. The journal is [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
@@ -23,10 +23,10 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `525b98f` (macOS) |
+| Gate | Command | Result at `ac4af5a` (macOS) |
 |---|---|---|
-| Tests | `.venv/bin/python -m pytest -q` | **1034 tests. 1032 pass, 2 fail**: the 2 red on purpose |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **1032 passed, 0 failed**, with or without the empty-key prefix: `tests/conftest.py` empties both API keys for every test |
+| Tests | `.venv/bin/python -m pytest -q` | **1068 tests. 1066 pass, 2 fail**: the 2 red on purpose |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **1066 passed, 0 failed**, with or without the empty-key prefix: `tests/conftest.py` empties both API keys for every test |
 | Lint | `.venv/bin/python -m ruff check .` | **4 errors**, every one `BLE001`. `P13g` removed the one in `_run_nri_pass` |
 | Types | `.venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **8 errors in 3 files**, 20 files checked. `P15a` removed the Anthropic client code and one error with it |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
@@ -516,6 +516,8 @@ the branch.
 **`P14b-reasoning` is accepted at `158f25d`.** Every provider resolution carries a `reasoning_label`, shown by the CLI and on both pages (route B: "as the Claude Code session ran; not set by this code"); item 81 is closed. Its streamed Claude call with adaptive thinking at `config.EXTRACTION_EFFORT` passed every stub check, but the user has no Anthropic key, so no real call measured it, and `P15a-two-routes` deletes it on the user's decision "1a". `P15a-two-routes` is `ready`.
 
 **`P15a-two-routes` is accepted at `525b98f`, after one rework round.** Two extraction routes only: route A through the Gemini API, the default provider (`-p claude` stops and names route B); route B, a Claude Code session file. Foundry, Entra, the Anthropic API path, `anthropic` and `azure-identity` are gone. Round 1 found that 21 tests passed only because `.env` held the user's real Gemini key; `tests/conftest.py` now empties both keys for every test. A stubbed Gemini run on the real Walmart PDF gives statements and items equal to route B's. `P14b-note-figures` is `ready`.
+
+**`P14b-note-figures` is accepted at `ac4af5a`, after one rework round.** Rule 1 option B is in force: the Pass 1 prompt lets a figure come from a note or MD&A, one printed line with its page, copied in the unit printed there. Check B1 (`_row_scale_failures`) reads every Pass 1 row's page and the page before it for a parenthesised unit statement of the filing's scale for that row's kind, and stops both routes when none is found (route A after its retries, `check` exit 2). Walmart: 89 rows checked on 4 pages, 0 not confirmed; stages 1 to 10 identical to `525b98f` but for the new summary line, $28.02. A scan of the 16 filings' statement title pages and the page after each (320 pages) found a money scale on every primary statement page. Round 1 found rule 3 fallbacks in the check (an absent key gave 0 failures) and a criterion 10 table that named filings not in the repository; round 2 fixed both. Its limits are items 84 (a statement on the page need not govern the row's table) and 85 (three texts do not name B1). The `extract-filing` skill teaches option B and B1. `P14d-finance-leases` is `ready`.
 
 **Phase 13 (silent defects first, the user's decision of 2026-10-03) is complete at `98b908e`.** Wave 1: `P13a` (`47b8b09`) closes items 25 and 38, `P13b` (`aa6f80d`) closes items 15, 32, 39 and 42, each reviewed and tested. `P13c` (`5b03600`) closes item 46 after three review rounds, and `P13c-tests` locks the key order and both labels without reading the real `.env`. Wave 1 is done. **Wave 2 is done at `bce6fae`**: `P13d` item 65, `P13e` items 66 and 67, `P13f` item 69 and 38b part (b), `P13g` item 50, each reviewed and tested. **Wave 3, on the user's option 1 of 2026-10-04:** `P13h` (`bc30be4`) closes item 38b part (a) with `--confirm-zero-debt` and a "Confirm zero debt" checkbox; `P13h-tests` (`98b908e`) locked all 53 cases.
 
