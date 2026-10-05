@@ -94,6 +94,11 @@ Backlog item 7. **Before any behaviour fix**, so each is made once.
 **This phase must not change a number.** If one moves, the two paths disagreed before,
 and that disagreement is the finding.
 
+**Split in two on 2026-10-05**, by the overall lead. `P3a-one-pipeline` (item 7) moves
+the sequence into `pipeline.py` and changes no number; criterion 3 above is measured
+with a test client, not by hand. `P3b-pipeline-stops` then makes items 49 and 72, and
+the yfinance share count fallback, stop in one place. `.agent/QUEUE.md` holds the state.
+
 ## Phase 4 — the three highest-cost silent defects
 
 Backlog items 2, 3, 6. Each small, each now testable.
