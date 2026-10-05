@@ -330,6 +330,12 @@ of printed lines**:
   and equity (a redeemable noncontrolling interest) belongs to
   `other_non_current_liabilities`. The two noncontrolling interest memos copy a row
   that already belongs to another field, and are in no total.
+- **Finance lease obligations are debt; operating lease obligations are not**
+  (user decision of 2026-10-04, "83a", backlog item 83). The Pass 1 schema and prompt
+  instruct both routes: finance lease obligations due within one year belong to
+  `short_term_debt`, and long-term finance lease obligations belong to `long_term_debt`.
+  Operating lease obligations are not debt: current obligations go to
+  `other_current_liabilities` and long-term liabilities to `other_non_current_liabilities`.
 - **Check fields**, read only to check the reading: `gross_profit`, `operating_income`
   and `net_income` in each year, and `total_assets` and `total_liabilities_and_equity`
   in the balance sheet, each the printed row. `gross_profit` may be `[]`: Walmart prints

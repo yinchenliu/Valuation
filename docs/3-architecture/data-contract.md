@@ -209,6 +209,19 @@ Every money field of `IncomeStatement`, `BalanceSheet` and `CashFlowStatement`, 
 `NonRecurringItem.amount`, is in millions after the conversion; `diluted_shares_outstanding`
 is in millions of shares. `parse_pass1` alone returns the figures as printed.
 
+## `BalanceSheet` debt fields — finance leases included, operating leases excluded
+
+`short_term_debt` and `long_term_debt` are stored fields that together form `total_debt`:
+
+- **`short_term_debt`** holds the current portion of long-term debt, short-term borrowings,
+  notes payable, commercial paper rows, and the **finance lease obligations due within one year**.
+  Operating lease obligations are excluded and mapped to `other_current_liabilities`.
+- **`long_term_debt`** holds long-term debt beyond one year and **long-term finance lease obligations**.
+  Operating lease obligations are excluded and mapped to `other_non_current_liabilities`.
+
+Approved on the user's decision of 2026-10-04 ("83a", backlog item 83): finance lease
+obligations are debt; operating lease obligations are not.
+
 ## `ProjectionAssumptions` — `None` is meaningful
 
 Every override field is `T | None`, and **`None` means "derive from history"**. That is

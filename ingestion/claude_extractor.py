@@ -190,9 +190,9 @@ _FINANCIALS_BALANCE_SHEET_SCHEMA: dict[str, str] = {
     "other_non_current_assets": "lines — CATCH-ALL: every non-current asset row not listed above. Includes non-marketable securities, deferred income taxes (asset), operating lease ROU assets, equity method investments, etc.",
     "accounts_payable": "lines",
     "accrued_liabilities": "lines — accrued expenses / compensation",
-    "other_current_liabilities": "lines — CATCH-ALL: every current liability row not listed above. Includes deferred revenue, accrued revenue share, etc.",
-    "short_term_debt": "lines — the current portion of LT debt, notes payable and commercial paper rows, each as its own line",
-    "long_term_debt": "lines — long-term debt beyond 1 year",
+    "other_current_liabilities": "lines — CATCH-ALL: every current liability row not listed above. Includes operating lease obligations due within one year, deferred revenue, accrued revenue share, etc.",
+    "short_term_debt": "lines — the current portion of long-term debt, short-term borrowings, notes payable and commercial paper rows, and the finance lease obligations due within one year, each as its own line. Not operating lease obligations.",
+    "long_term_debt": "lines — long-term debt beyond one year and the long-term finance lease obligations, each as its own line. Not operating lease obligations.",
     "other_non_current_liabilities": "lines — CATCH-ALL: every non-current liability row not listed above, and any row printed between liabilities and equity (e.g. redeemable noncontrolling interest, mezzanine). Includes operating lease liabilities, pension, deferred tax liabilities, etc.",
     "total_equity": "lines — total stockholders equity",
     "noncontrolling_interest_nonredeemable": "lines — MEMO: the noncontrolling interest row printed INSIDE equity on the latest balance sheet (e.g. 'Nonredeemable noncontrolling interest'). [] if the filing prints none. It is already inside total_equity; never add it to any total.",
@@ -338,6 +338,11 @@ _FINANCIALS_SYSTEM_PROMPT = textwrap.dedent(f"""\
       change any line to make the check pass: a gap means a row was misread,
       missed or listed twice, and it is reported as it is.
     - "other_" catch-all fields must capture ALL unmapped rows.
+    - finance lease obligations are debt (current portion due within one year
+      in "short_term_debt", long-term finance lease obligations in
+      "long_term_debt"); operating lease obligations are not debt and go to the
+      catch-all fields ("other_current_liabilities" and
+      "other_non_current_liabilities").
     - "noncontrolling_interest_nonredeemable" and "noncontrolling_interest_redeemable"
       are memos, each copied from its own printed row ([] if the filing prints none).
       Keep them in their own fields. Each is already inside another line; never

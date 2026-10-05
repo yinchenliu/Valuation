@@ -17,7 +17,7 @@ Verifies:
      and statement item in thousands (5,200 under (in thousands) -> 5.2 $M).
 4. Session format v4 and CLI cache:
    - Refusal of session-extraction-v3 with remedy naming v3, v4, page, units, extract-filing.
-   - Refusal of old cache markers in cli._load_cache naming p14b-pass2-units-v1.
+   - Refusal of old cache markers in cli._load_cache naming p14d-finance-leases-v1.
 
 All expected values derived by hand arithmetic or closed-form identity.
 No network calls. Test PDFs written as bytes to tmp_path.
@@ -793,7 +793,7 @@ def test_session_extraction_v3_refused_with_remedy(tmp_path: Path) -> None:
 
 def test_cli_cache_refuses_old_marker(tmp_path: Path) -> None:
     """cli._load_cache refuses cache files written under older markers
-    (such as p14a-units-in-millions-v1) and names the expected marker p14b-pass2-units-v1.
+    (such as p14a-units-in-millions-v1, p14b-pass2-units-v1) and names the expected marker p14d-finance-leases-v1.
     """
     # Create fake extraction key
     key = cli.ExtractionKey(
@@ -805,22 +805,23 @@ def test_cli_cache_refuses_old_marker(tmp_path: Path) -> None:
     fin = _dummy_financials()
     items: list[NonRecurringItem] = []
 
-    # Old cache format marker
-    old_payload = ("p14a-units-in-millions-v1", key, fin, items)
-    cache_path = tmp_path / ".cache_wmt_extraction_inputs.pkl"
-    with open(cache_path, "wb") as f:
-        pickle.dump(old_payload, f)
+    # Old cache format markers
+    for old_marker in ("p14a-units-in-millions-v1", "p14b-pass2-units-v1"):
+        old_payload = (old_marker, key, fin, items)
+        cache_path = tmp_path / f".cache_wmt_extraction_inputs_{old_marker}.pkl"
+        with open(cache_path, "wb") as f:
+            pickle.dump(old_payload, f)
 
-    with pytest.raises(ValueError) as excinfo:
-        cli._load_cache(cache_path)
+        with pytest.raises(ValueError) as excinfo:
+            cli._load_cache(cache_path)
 
-    msg = str(excinfo.value)
-    assert "p14b-pass2-units-v1" in msg
-    assert "expected format marker" in msg
+        msg = str(excinfo.value)
+        assert "p14d-finance-leases-v1" in msg
+        assert "expected format marker" in msg
 
 
 def test_cli_cache_accepts_v1_marker(tmp_path: Path) -> None:
-    """cli._load_cache accepts cache files written with CACHE_FORMAT p14b-pass2-units-v1."""
+    """cli._load_cache accepts cache files written with CACHE_FORMAT p14d-finance-leases-v1."""
     key = cli.ExtractionKey(
         ticker="WMT",
         provider="anthropic",

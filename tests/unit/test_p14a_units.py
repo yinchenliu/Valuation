@@ -642,16 +642,16 @@ def test_session_extraction_v2_refused_with_remedy(tmp_path: Path) -> None:
 
 
 def test_old_cli_cache_marker_p11a_refused(tmp_path: Path) -> None:
-    """Step 7: Cache format before P14a (p11a-printed-lines-v1) is refused by _load_cache."""
-    cache_path = tmp_path / "old_cache.pkl"
+    """Step 7: Cache formats before P14d (p11a-printed-lines-v1, p14b-pass2-units-v1) are refused by _load_cache."""
     dummy_key = cli.ExtractionKey(ticker="TST", provider="claude", model="test-model", inputs=())
     dummy_fin = FinancialStatements(ticker="TST")
-    # Write cache with previous marker p11a-printed-lines-v1
-    cache_path.write_bytes(pickle.dumps(("p11a-printed-lines-v1", dummy_key, dummy_fin, [])))
+    for old_marker in ("p11a-printed-lines-v1", "p14b-pass2-units-v1"):
+        cache_path = tmp_path / f"old_cache_{old_marker}.pkl"
+        cache_path.write_bytes(pickle.dumps((old_marker, dummy_key, dummy_fin, [])))
 
-    with pytest.raises(ValueError) as excinfo:
-        cli._load_cache(cache_path)
+        with pytest.raises(ValueError) as excinfo:
+            cli._load_cache(cache_path)
 
-    message = str(excinfo.value)
-    assert "not a cache entry written by this CLI" in message
-    assert repr("p14b-pass2-units-v1") in message
+        message = str(excinfo.value)
+        assert "not a cache entry written by this CLI" in message
+        assert repr("p14d-finance-leases-v1") in message

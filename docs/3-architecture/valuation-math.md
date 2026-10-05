@@ -180,6 +180,12 @@ visible is not auditable.
 net_debt = total_debt − cash_and_equivalents − short_term_investments
 ```
 
+`total_debt` (`short_term_debt + long_term_debt`) includes finance lease obligations
+(both current and long-term) and excludes operating lease obligations, on the user's
+decision of 2026-10-04 ("83a", backlog item 83). Operating lease obligations are
+operating liabilities and are excluded from financial debt (mapped to other
+current/non-current liabilities).
+
 Short-term investments count as liquid. They are marketable securities that can service
 debt or be returned to shareholders, and excluding them **understates** the company's
 liquidity and so **understates** equity value. This follows standard equity-bridge

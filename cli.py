@@ -237,7 +237,7 @@ def build_overrides(args: argparse.Namespace) -> ProjectionAssumptions:
 # A cache written before that holds figures never converted (a filing in thousands
 # reads 1,000 times too large) and balance sheets with no printed unit, so it is
 # refused by the same marker check.
-CACHE_FORMAT = "p14b-pass2-units-v1"
+CACHE_FORMAT = "p14d-finance-leases-v1"
 
 
 @dataclass(frozen=True)
