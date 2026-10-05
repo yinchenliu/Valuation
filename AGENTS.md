@@ -9,6 +9,11 @@ Build a DCF valuation platform that reads 10-K/10-Q filings. **What** to build a
 **why** is in [docs/INDEX.md](docs/INDEX.md). **How far it has got** is in
 [STATUS.md](STATUS.md). This file governs **who does the work and how they hand off.**
 
+**Two teams build this repository** (section "Two teams" below). **If you are the main
+agent in Antigravity, you are the build lead:** follow "The build lead's procedure" in
+that section. **If you are the main session in Claude Code, you are the overall lead:**
+the `main-agent` skill holds your part. A subagent does only the role its prompt names.
+
 ---
 
 ## The rules bind everyone
@@ -93,6 +98,35 @@ must check `git status` after each run, and reject a run that wrote outside its 
   `ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q`. Never a bare
   `python` ([docs/0-start.md](docs/0-start.md)).
 - **A handoff states measurements, never plans.** Each number has the command beside it.
+- **Measure every gate with the empty-key prefix.** Without it, `.env` fills the real
+  keys, and a test that reads one passes on this machine only (`P15a-two-routes`, F1).
+
+#### The build lead's procedure
+
+Read [docs/0-start.md](docs/0-start.md), [docs/2-rules/rules.md](docs/2-rules/rules.md),
+this file and [.agent/QUEUE.md](.agent/QUEUE.md). Then:
+
+1. Find the one unit in state `ready` or `rework`. If there is none, stop and tell the
+   user that the queue waits for the overall lead.
+2. Set it to `building`. Read its assignment. If the state was `rework`, read
+   `## Overall lead review` first and answer every finding by number.
+3. Dispatch the programmer with a pointer and nothing more: "You are the programmer.
+   Read `.claude/agents/programmer.md` and follow it. Skip its section 'Claude Code
+   harness notes'. Your assignment is `.agent/assignments/<id>.md`. Write your journal
+   entry from `.agent/TEMPLATE-log-entry.md`."
+4. When a subagent returns: read its entry, run `git status`, reject the run if it wrote
+   outside its role, and append one line to `.agent/journal/INDEX.md`.
+5. Dispatch the code reviewer the same way, with `.claude/agents/code-reviewer.md` and
+   `.agent/TEMPLATE-review-entry.md`.
+6. On `changes_requested`, send the programmer back to answer every finding by number.
+   Stop at round 3, set the unit `blocked`, and say why.
+7. On `approved`, write `.agent/assignments/<id>-tests.md` from
+   `.agent/TEMPLATE-assignment.md`, and dispatch the tester with
+   `.claude/agents/tester.md`.
+8. **When the tester passes, always do all of this:** run the gates in
+   [docs/8-build/environment.md](docs/8-build/environment.md) with the empty-key prefix,
+   commit the unit, write `## Handoff` at the end of the assignment, set the unit
+   `for acceptance`, and stop. Tell the user: "<id> is ready for the overall lead."
 
 ---
 

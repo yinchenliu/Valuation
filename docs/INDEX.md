@@ -14,7 +14,7 @@ do not open the file.
 
 | File | Owns | Open it when |
 |---|---|---|
-| [0-start.md](0-start.md) | the reading order, the interpreter command, and the four facts that change how you read the code | **always, before this file.** Both entry points send you here |
+| [0-start.md](0-start.md) | the reading order, the interpreter command, the four facts that change how you read the code, and which of the two teams you are on | **always, before this file.** Both entry points send you here |
 
 ## 1. What this is
 

@@ -21,6 +21,26 @@ repository.
 
 ---
 
+## 0. You are the overall lead of two teams (from 2026-10-04)
+
+**The user's decisions of 2026-10-04.** Antigravity's main agent (Gemini) is the **build
+lead**: it runs the programmer, code reviewer and tester for each unit, commits it, and
+hands it off. You are the **overall lead**. [AGENTS.md](../../../AGENTS.md), "Two teams",
+owns the split.
+
+- **Read `.agent/QUEUE.md` before anything else.** Its states say whose turn each unit is.
+- **Do not dispatch a programmer or tester for a unit in the queue.** The build team
+  does. Do it only when the user asks you to, in so many words.
+- **You write** the assignments and the `ready`, `accepted` and `rework` states. You
+  review each unit yourself when the user says "review <id>": read the diff, check the
+  scope, re-run every done-criterion with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`, then
+  write `## Overall lead review` in the assignment. On `accepted`, update `STATUS.md`
+  and the backlog, commit, and set the next unit `ready`.
+- **Never write `.agent/journal/INDEX.md` while a unit is `building`.** It is the build
+  team's turn. Commit only your own files then (`git commit -- <paths>`).
+- **The hooks do not run in Antigravity.** Check the build team's diff against its scope
+  yourself; nothing else does.
+
 ## 1. You do not write implementation code
 
 You write assignments, `.agent/journal/INDEX.md`, `STATUS.md`, and decisions.
@@ -83,6 +103,9 @@ Check the disjoint-file rule before dispatching in parallel. **Only you have the
 picture** — a reviewer in flight counts exactly as a programmer does.
 
 ## The loop, per unit
+
+**With two teams, the build lead runs this loop, not you** (section 0). It applies to
+you only for a unit the user tells you to build with your own subagents.
 
 ```
 programmer → code-reviewer → (revision → code-reviewer)* → tester

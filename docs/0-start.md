@@ -17,8 +17,20 @@ Python does everything after that.
 | [2-rules/rules.md](2-rules/rules.md) | **always, first.** Six rules. They override every other instruction, including this file |
 | [INDEX.md](INDEX.md) | **always, second.** The map. Its "Open it when" column tells you which document to open — and which to leave shut |
 | [../STATUS.md](../STATUS.md) | before claiming anything about the build. Measured, never planned |
-| [../AGENTS.md](../AGENTS.md) | you are dispatching, reviewing or logging a work unit |
+| [../AGENTS.md](../AGENTS.md) | **you are a main session** (Claude Code or Antigravity), or you are dispatching, reviewing or logging a work unit |
 | [9-reference/refactor-backlog.md](9-reference/refactor-backlog.md) | before reporting a defect as new |
+
+## Two teams build this repository
+
+**Since 2026-10-04, on the user's decision.** [../AGENTS.md](../AGENTS.md), "Two teams",
+owns this. The user carries messages between the two tools, and
+[../.agent/QUEUE.md](../.agent/QUEUE.md) says whose turn each unit is.
+
+| You are | Your role | Start with |
+|---|---|---|
+| the main session in **Claude Code** | the **overall lead**: plans, writes assignments, reviews and accepts each unit, keeps `STATUS.md`. It does not dispatch a programmer or tester for a unit in the queue | `.agent/QUEUE.md`, then the `main-agent` skill |
+| the main agent in **Antigravity** | the **build lead**: builds the one `ready` or `rework` unit with its programmer, reviewer and tester, commits it, and hands it off | `.agent/QUEUE.md`, then "The build lead's procedure" in `AGENTS.md` |
+| a subagent | the role your prompt names | your role card in `.claude/agents/`, then your assignment |
 
 ## The one command you need
 
@@ -58,7 +70,9 @@ is stale — report it.
 [INDEX.md](INDEX.md) forbids a file from repeating another, because a fact with two
 homes goes stale in one of them. **This file is the one exception, and it is narrow.**
 An agent meets these four facts here, before it has read the file that owns them, and
-too late is the only way to meet them. Each repeat above names its owner.
+too late is the only way to meet them. Each repeat above names its owner. The two-team
+table is a repeat of the same kind: a main session that misses it does the other team's
+job.
 
 **Change the owner first. Then change this card.** A card that disagrees with its owner
 is worse than no card.
