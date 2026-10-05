@@ -60,6 +60,7 @@ import pytest
 from starlette.testclient import TestClient
 
 import app as app_module
+import pipeline
 from api import routes_upload, routes_valuation
 from ingestion.claude_extractor import ProviderResolution
 from ingestion.price_fetcher import PriceData
@@ -299,7 +300,7 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path) -> TestClient:
 
     monkeypatch.setattr(routes_valuation, "extract_financials", _closed_boundary)
     monkeypatch.setattr(routes_valuation, "extract_multi_year", _closed_boundary)
-    monkeypatch.setattr(routes_valuation, "fetch_price_data", _closed_boundary)
+    monkeypatch.setattr(pipeline, "fetch_price_data", _closed_boundary)
 
     return TestClient(app_module.app, raise_server_exceptions=False)
 
@@ -747,7 +748,7 @@ def test_post_valuation_renders_the_completed_valuation(
         "extract_financials",
         lambda *a, **k: (_one_year_financials(), []),
     )
-    monkeypatch.setattr(routes_valuation, "fetch_price_data", lambda *a, **k: _price_data())
+    monkeypatch.setattr(pipeline, "fetch_price_data", lambda *a, **k: _price_data())
 
     body = _run_valuation(client)
 
@@ -823,7 +824,7 @@ def test_post_valuation_shows_and_subtracts_the_noncontrolling_interests(
     sheet.noncontrolling_interest_nonredeemable = 40.0
     sheet.noncontrolling_interest_redeemable = 10.0
     monkeypatch.setattr(routes_valuation, "extract_financials", lambda *a, **k: (base, []))
-    monkeypatch.setattr(routes_valuation, "fetch_price_data", lambda *a, **k: _price_data())
+    monkeypatch.setattr(pipeline, "fetch_price_data", lambda *a, **k: _price_data())
 
     body = _run_valuation(client)
 
@@ -854,7 +855,7 @@ def test_post_valuation_names_who_read_the_filing(
         "extract_financials",
         lambda *a, **k: (_one_year_financials(), []),
     )
-    monkeypatch.setattr(routes_valuation, "fetch_price_data", lambda *a, **k: _price_data())
+    monkeypatch.setattr(pipeline, "fetch_price_data", lambda *a, **k: _price_data())
 
     body = _run_valuation(client)
 
@@ -880,7 +881,7 @@ def test_post_valuation_distinguishes_the_two_transports(
         "extract_financials",
         lambda *a, **k: (_one_year_financials(), []),
     )
-    monkeypatch.setattr(routes_valuation, "fetch_price_data", lambda *a, **k: _price_data())
+    monkeypatch.setattr(pipeline, "fetch_price_data", lambda *a, **k: _price_data())
 
     # 1. Route A: extracted via Gemini API
     body_a = _run_valuation(client)
@@ -935,7 +936,7 @@ def test_reasoning_row_rendered_on_assumptions_and_valuation_pages_for_both_rout
         "extract_financials",
         lambda *a, **k: (_one_year_financials(), []),
     )
-    monkeypatch.setattr(routes_valuation, "fetch_price_data", lambda *a, **k: _price_data())
+    monkeypatch.setattr(pipeline, "fetch_price_data", lambda *a, **k: _price_data())
 
     # 1. Route A (Gemini)
     assumptions_a = client.get("/assumptions", params={"ticker": "TESTCO", "files": "2024:dummy.pdf"})
@@ -1001,7 +1002,7 @@ def test_post_valuation_reports_a_failure_on_a_rendered_page(
         "extract_financials",
         lambda *a, **k: (_one_year_financials(), []),
     )
-    monkeypatch.setattr(routes_valuation, "fetch_price_data", failing_fetch)
+    monkeypatch.setattr(pipeline, "fetch_price_data", failing_fetch)
 
     response = client.post("/valuation", data=VALUATION_FORM)
 
@@ -1095,16 +1096,16 @@ def wacc_calls(client: TestClient, monkeypatch: pytest.MonkeyPatch, _no_socket: 
     monkeypatch.setattr(
         routes_valuation, "extract_financials", lambda *a, **k: (_repaid_debt_financials(), [])
     )
-    monkeypatch.setattr(routes_valuation, "fetch_price_data", lambda *a, **k: _price_data())
+    monkeypatch.setattr(pipeline, "fetch_price_data", lambda *a, **k: _price_data())
 
     calls: list = []
-    real = routes_valuation.calculate_wacc
+    real = pipeline.calculate_wacc
 
     def spy(*args: object, **kwargs: object):
         calls.append(kwargs.get("zero_debt_confirmed", _NOT_PASSED))
         return real(*args, **kwargs)
 
-    monkeypatch.setattr(routes_valuation, "calculate_wacc", spy)
+    monkeypatch.setattr(pipeline, "calculate_wacc", spy)
     return calls
 
 

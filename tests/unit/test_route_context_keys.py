@@ -30,6 +30,7 @@ import pytest
 from starlette.testclient import TestClient
 
 import app as app_module
+import pipeline
 from api import routes_valuation
 from ingestion.price_fetcher import PriceData
 from models.financial_statements import (
@@ -230,7 +231,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
     monkeypatch.setattr(routes_valuation, "extract_financials", _closed_boundary)
     monkeypatch.setattr(routes_valuation, "extract_multi_year", _closed_boundary)
-    monkeypatch.setattr(routes_valuation, "fetch_price_data", _closed_boundary)
+    monkeypatch.setattr(pipeline, "fetch_price_data", _closed_boundary)
 
     return TestClient(app_module.app, raise_server_exceptions=False)
 
@@ -386,7 +387,7 @@ def test_post_valuation_success_sets_all_six_keys(
         monkeypatch, [_high_confidence_item(), _low_confidence_item()]
     )
     monkeypatch.setattr(
-        routes_valuation, "fetch_price_data", lambda *a, **k: _price_data()
+        pipeline, "fetch_price_data", lambda *a, **k: _price_data()
     )
 
     response = client.post("/valuation", data=VALUATION_FORM)
@@ -472,7 +473,7 @@ def test_the_cached_extraction_carries_all_four_fields_to_the_result_page(
     monkeypatch.setattr(routes_valuation, "extract_financials", _closed)
     monkeypatch.setattr(routes_valuation, "extract_multi_year", _closed)
     monkeypatch.setattr(
-        routes_valuation, "fetch_price_data", lambda *a, **k: _price_data()
+        pipeline, "fetch_price_data", lambda *a, **k: _price_data()
     )
 
     response = client.post("/valuation", data=VALUATION_FORM)

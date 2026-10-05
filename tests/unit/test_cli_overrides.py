@@ -26,6 +26,7 @@ import socket
 import pytest
 
 import cli
+import pipeline
 from analysis.wacc import calculate_wacc
 from models.financial_statements import BalanceSheet, IncomeStatement
 from models.valuation import CAPMResult
@@ -203,8 +204,8 @@ def _run_main_to_stage_8(monkeypatch: pytest.MonkeyPatch, extra: list[str]) -> l
     monkeypatch.setattr(cli, "_extract_from_session_file",
                         lambda args: (financials, [], "hand-built", "hand-built"))
     monkeypatch.setattr(cli, "_extract_via_api", _closed)
-    monkeypatch.setattr(cli, "fetch_price_data", lambda *a, **k: price)
-    monkeypatch.setattr(cli, "calculate_wacc", spy)
+    monkeypatch.setattr(pipeline, "fetch_price_data", lambda *a, **k: price)
+    monkeypatch.setattr(pipeline, "calculate_wacc", spy)
     monkeypatch.setattr(
         "sys.argv",
         ["cli.py", "--session-file", "p13h-never-opened.json", "--beta", "1.0",

@@ -40,6 +40,7 @@ from starlette.testclient import TestClient
 import app as app_module
 import config  # noqa: F401 -- imported FIRST so its one .env fill has run before we edit the env
 import ingestion.claude_extractor as ce
+import pipeline
 from api import routes_upload, routes_valuation
 from ingestion.claude_extractor import (
     FilingPlan,
@@ -186,8 +187,9 @@ def write_session(directory: Path, data: dict[str, Any], name: str = "session.js
 # Every projection input is an explicit override, and beta, the ERP and the
 # risk-free rate are supplied, so neither the regression nor the historical market
 # return is reached (the same reasoning as `tests/unit/test_routes.py::_price_data`).
-# Diluted shares in 2024 are 48 * 2 = 96, not 0, so the yfinance share-count
-# fallback at `api/routes_valuation.py:625-628` is not reached either.
+# Diluted shares in 2024 are 48 * 2 = 96, not 0, so the share count stop in
+# `pipeline.value_company` is not reached either (the yfinance fallback that
+# stood here before `P3a-one-pipeline` is deleted).
 VALUATION_FORM: dict[str, str] = {
     "ticker": TICKER,
     "company_name": COMPANY,
@@ -253,7 +255,7 @@ def open_closed_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> TestC
     for var in _CREDENTIAL_VARS:
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setattr(ce, "_call_llm", _refuse("_call_llm"))
-    monkeypatch.setattr(routes_valuation, "fetch_price_data", _refuse("fetch_price_data"))
+    monkeypatch.setattr(pipeline, "fetch_price_data", _refuse("fetch_price_data"))
     import yfinance
     monkeypatch.setattr(yfinance, "Ticker", _refuse("yfinance.Ticker"))
     return TestClient(app_module.app, raise_server_exceptions=False)
@@ -274,7 +276,7 @@ def install_price_stub(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, int, 
         calls.append((ticker, lookback_years, frequency))
         return price_data()
 
-    monkeypatch.setattr(routes_valuation, "fetch_price_data", fake)
+    monkeypatch.setattr(pipeline, "fetch_price_data", fake)
     return calls
 
 

@@ -58,6 +58,7 @@ from starlette.testclient import TestClient
 import app as app_module
 import cli
 import ingestion.claude_extractor as ce
+import pipeline
 from api import routes_valuation
 from ingestion.claude_extractor import (
     Pass1ShapeError,
@@ -862,7 +863,7 @@ def page_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
     monkeypatch.setattr(routes_valuation, "extract_financials", _closed)
     monkeypatch.setattr(routes_valuation, "extract_multi_year", _closed)
-    monkeypatch.setattr(routes_valuation, "fetch_price_data", _closed)
+    monkeypatch.setattr(pipeline, "fetch_price_data", _closed)
     return TestClient(app_module.app, raise_server_exceptions=False)
 
 

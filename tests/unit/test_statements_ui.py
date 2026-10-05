@@ -28,6 +28,7 @@ import pytest
 from starlette.testclient import TestClient
 
 import app as app_module
+import pipeline
 from analysis.projector import derive_assumptions
 from api import routes_valuation
 from ingestion.price_fetcher import PriceData
@@ -285,7 +286,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
     monkeypatch.setattr(routes_valuation, "extract_financials", _closed_boundary)
     monkeypatch.setattr(routes_valuation, "extract_multi_year", _closed_boundary)
-    monkeypatch.setattr(routes_valuation, "fetch_price_data", _closed_boundary)
+    monkeypatch.setattr(pipeline, "fetch_price_data", _closed_boundary)
 
     return TestClient(app_module.app, raise_server_exceptions=False)
 
@@ -488,7 +489,7 @@ def test_post_valuation_renders_seven_blocks_closed_details_and_order(
     """
     fs, nri = _hand_built_two_year_stub()
     monkeypatch.setattr(routes_valuation, "_extract_from_files", lambda *a, **k: (fs, nri))
-    monkeypatch.setattr(routes_valuation, "fetch_price_data", lambda *a, **k: _dummy_price_data())
+    monkeypatch.setattr(pipeline, "fetch_price_data", lambda *a, **k: _dummy_price_data())
 
     resp = client.post("/valuation", data=VALUATION_FORM_DATA)
     assert resp.status_code == 200
@@ -694,7 +695,7 @@ def test_substituted_ratio_badges_and_provenance(
         balance_sheets=fs.balance_sheets,
     )
     monkeypatch.setattr(routes_valuation, "_extract_from_files", lambda *a, **k: (fs_no_cf, []))
-    monkeypatch.setattr(routes_valuation, "fetch_price_data", lambda *a, **k: _dummy_price_data())
+    monkeypatch.setattr(pipeline, "fetch_price_data", lambda *a, **k: _dummy_price_data())
 
     # Check GET /assumptions
     resp_get = client.get("/assumptions?ticker=TESTCO&company_name=Test+Company+Inc&files=2023:t23.pdf,2024:t24.pdf")
@@ -922,7 +923,7 @@ def test_implied_share_price_unchanged_on_baseline_stub(
     }
 
     monkeypatch.setattr(routes_valuation, "_extract_from_files", lambda *a, **k: (baseline_fs, []))
-    monkeypatch.setattr(routes_valuation, "fetch_price_data", lambda *a, **k: _dummy_price_data())
+    monkeypatch.setattr(pipeline, "fetch_price_data", lambda *a, **k: _dummy_price_data())
 
     resp = client.post("/valuation", data=baseline_form)
     assert resp.status_code == 200
