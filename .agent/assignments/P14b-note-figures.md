@@ -320,3 +320,38 @@ overall lead records it in the backlog on acceptance.
 **Round 2.** The programmer answers F1 to F6 by number. The code reviewer re-checks F1
 to F6 and re-runs criteria 2, 3, 7, 8 and 10. The tester locks F1 and F5. The build lead
 runs step 8 in full.
+
+
+## Handoff, round 2
+
+### Commits
+- `ea8ee64`: `P14b-note-figures: Pass 1 note/MD&A figures (Option B) and row unit scale check (Check B1)`
+- `4a8d9ac`: `P14b-note-figures rework: strict Rule 3 indexing, separate Route A stop counts, page 1 text`
+
+### Verdicts
+- Programmer: `complete` (round 1 & round 2), entries: `.agent/journal/2026-10-04T2011-programmer-p14b-note-figures.md`, `.agent/journal/2026-10-04T2130-programmer-p14b-note-figures.md`
+- Code reviewer: `approved` (round 1 & round 2), entries: `.agent/journal/2026-10-04T2041-code_reviewer-p14b-note-figures.md`, `.agent/journal/2026-10-04T2144-code_reviewer-p14b-note-figures.md`
+- Tester: `pass` (round 1 & round 2), entries: `.agent/journal/2026-10-04T2058-tester-p14b-note-figures.md`, `.agent/journal/2026-10-04T2155-tester-p14b-note-figures.md`
+
+### Gates
+- Test gate (with empty keys): 1066 passed (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q --ignore-glob="*_rule3_red.py"`)
+- Full suite: 2 failed (the known two), 1066 passed (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q`)
+- Lint: 4 errors, all `BLE001` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m ruff check .`)
+- Types: 8 errors in 3 files (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports`)
+- Rule 3 census: 65 (`grep -rnE "if [^)]+ else 0(\.0)?\b|\bor +0(\.0)?\b|\.get\([^,]+, *0(\.0)?\)|: *float *= *0\.0" '--include=*.py' models analysis api ingestion | wc -l`)
+- Web root route: HTTP 200 (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -c "from starlette.testclient import TestClient; from app import app; print(TestClient(app).get('/').status_code)"`)
+- Guard check: 48/48 correct (`.venv/bin/python .claude/check_guard.py`)
+- Walmart Route B check: exit 0; 89 of 89 printed lines found; 4 of 4 Pass 2 items confirmed; `Row unit scales looked up on their cited pages: 89 checked, 4 pages, 0 pages not confirmed.` printed (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m ingestion.session_extraction check extractions/WMT.json`)
+- Walmart end-to-end: stages 1 to 10 match baseline `525b98f`; PV of terminal value 214,819M; implied price $28.02; downside -73.1% (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python cli.py --session-file extractions/WMT.json`)
+
+### Findings and notes
+- F1 (Rule 3): resolved. Accesses in `_row_scale_failures` use direct `[]` indexing without defaults. Scratch missing-key checks raise `KeyError`, and 5 tests lock `KeyError` on missing keys.
+- F2 (Process): resolved. Re-measured Criterion 10 scan across all 16 filings using the overall lead's exact script (320 pages checked: 249 OK, 71 NONE; 0 primary statement pages lack scale). Recorded per-filing counts and all 71 NONE pages with first lines.
+- F3 (Docs): resolved. Updated `docs/2-rules/llm-boundary.md` and `docs/3-architecture/extraction.md` to state that a row citing a page beyond the PDF or with no text layer fails Check B1 and stops the run in both routes (`check` exits 2).
+- F4 (Route A): resolved. Distinguished `stmt_failures` and `row_scale_failures` in `_run_financials_pass`; stop message, docstring, comments, and retry prompt name and count each kind separately.
+- F5 (Page 1 formatting): resolved. When `page == 1`, prints `"no unit statement on page 1"`.
+- F6 (Wider limit in docs): resolved. Stated the wider Check B1 limit (table governance vs page-level parenthesised statement presence) in both docs files.
+
+### Questions for the overall lead
+None.
+
