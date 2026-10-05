@@ -4,9 +4,9 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `158f25d` (`P14b-reasoning` committed by the build team), 2026-10-04, by the overall lead**, in the working tree, on branch `main`, **on the macOS machine**
+**Measured at `525b98f` (`P15a-two-routes` committed by the build team), 2026-10-04, by the overall lead**, in the working tree, on branch `main`, **on the macOS machine**
 (`.venv/bin/python`, Python 3.11.6). Every figure before `cde33cb` was measured on the
-Windows machine. **Forty-seven work units accepted by `69436d9`, four more since (`P14b-pass2-units`, `P14b-reasoning` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
+Windows machine. **Forty-seven work units accepted by `69436d9`, six more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; **five** times a reviewer or a
 programmer overturned a claim — twice against a programmer, **three times against the
 orchestrator**. The journal is [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
@@ -23,12 +23,12 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `158f25d` (macOS) |
+| Gate | Command | Result at `525b98f` (macOS) |
 |---|---|---|
-| Tests | `.venv/bin/python -m pytest -q` | **1023 tests. 1021 pass, 2 fail**: the 2 red on purpose |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **1021 passed, 0 failed** |
+| Tests | `.venv/bin/python -m pytest -q` | **1034 tests. 1032 pass, 2 fail**: the 2 red on purpose |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **1032 passed, 0 failed**, with or without the empty-key prefix: `tests/conftest.py` empties both API keys for every test |
 | Lint | `.venv/bin/python -m ruff check .` | **4 errors**, every one `BLE001`. `P13g` removed the one in `_run_nri_pass` |
-| Types | `.venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **9 errors in 4 files**, 20 files checked. `P13f` removed `calculate_wacc`'s `BalanceSheet \| None` |
+| Types | `.venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **8 errors in 3 files**, 20 files checked. `P15a` removed the Anthropic client code and one error with it |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
 | **Rule 3 census** | the grep at [rules.md:65](docs/2-rules/rules.md) | **65**. `P13b` removed two conditional zeros (`latest_year`, `implied_share_price`). `P11a` replaced the Pass 1 parser's `.get(field, 0)` reads (114 at `24a9a90`). Under zsh, quote `'--include=*.py'` or the count reads 0 |
 | **Write guard** | `.venv/bin/python .claude/check_guard.py` | **48/48** |
@@ -306,6 +306,12 @@ is.
 
 ### The extraction path on this machine — measured, 2026-09-21
 
+**History since `2b0b265` (`P15a-two-routes`).** The Foundry gateway, the Entra token and
+the Anthropic API route below are removed on the user's decision of 2026-10-04. Route A
+reads a filing through the Gemini API (`gemini-3.1-pro-preview`, the default provider);
+Claude reads a filing only in a Claude Code session (route B). The table below is the
+record of how the Windows machine reached Claude before that.
+
 **This machine reaches Anthropic through a Microsoft Foundry gateway, not the public
 API.** `ANTHROPIC_API_KEY` and `GEMINI_API_KEY` are unset and will stay unset; Gemini is
 unreachable from this network. Every row below was **executed**, not read:
@@ -484,6 +490,8 @@ the branch.
 **`P14b-pass2-units` is accepted at `21125ed`, the first unit the build team ran end to end.** It closes item 77 on the user's "fix 77a": each Pass 2 item copies its figure as printed, its page, and the printed words that state its unit; Python reads the scale, looks both up on their pages, stops on either not found, and converts each item with its own scale. Session format v4. The overall lead re-ran all 12 criteria on its own Walmart v4 copy: `check` exit 0, 4 of 4 items, 89 of 89 lines; the PhonePe item is 0.7 from `$0.7 billion` on page 27 and 700 $M after conversion; stages 1 to 10 identical to the v3 run, $28.02; five edited copies each stop and name the right item; route A, stubbed on the real PDF, stops on a mis-cited amount with 0 network attempts. One minor finding, item 81 (a miscounted summary line), goes to `P14b-reasoning`. `extractions/WMT.json` is now v4; the `extract-filing` skill teaches the v4 item.
 
 **`P14b-reasoning` is accepted at `158f25d`.** Every provider resolution carries a `reasoning_label`, shown by the CLI and on both pages (route B: "as the Claude Code session ran; not set by this code"); item 81 is closed. Its streamed Claude call with adaptive thinking at `config.EXTRACTION_EFFORT` passed every stub check, but the user has no Anthropic key, so no real call measured it, and `P15a-two-routes` deletes it on the user's decision "1a". `P15a-two-routes` is `ready`.
+
+**`P15a-two-routes` is accepted at `525b98f`, after one rework round.** Two extraction routes only: route A through the Gemini API, the default provider (`-p claude` stops and names route B); route B, a Claude Code session file. Foundry, Entra, the Anthropic API path, `anthropic` and `azure-identity` are gone. Round 1 found that 21 tests passed only because `.env` held the user's real Gemini key; `tests/conftest.py` now empties both keys for every test. A stubbed Gemini run on the real Walmart PDF gives statements and items equal to route B's. `P14b-note-figures` is `ready`.
 
 **Phase 13 (silent defects first, the user's decision of 2026-10-03) is complete at `98b908e`.** Wave 1: `P13a` (`47b8b09`) closes items 25 and 38, `P13b` (`aa6f80d`) closes items 15, 32, 39 and 42, each reviewed and tested. `P13c` (`5b03600`) closes item 46 after three review rounds, and `P13c-tests` locks the key order and both labels without reading the real `.env`. Wave 1 is done. **Wave 2 is done at `bce6fae`**: `P13d` item 65, `P13e` items 66 and 67, `P13f` item 69 and 38b part (b), `P13g` item 50, each reviewed and tested. **Wave 3, on the user's option 1 of 2026-10-04:** `P13h` (`bc30be4`) closes item 38b part (a) with `--confirm-zero-debt` and a "Confirm zero debt" checkbox; `P13h-tests` (`98b908e`) locked all 53 cases.
 

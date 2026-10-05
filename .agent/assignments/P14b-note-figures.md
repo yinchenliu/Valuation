@@ -29,9 +29,10 @@ When this unit is done:
 
 ## What is already true — verify, do not redo
 
-Measured by the overall lead at `7d0aa26`, macOS. `P14b-reasoning` and `P15a-two-routes`
-land before this unit, so re-take the gate numbers at the `P15a-two-routes` commit and use
-those. After `P15a`, route A is Gemini: the stub in criterion 7 replaces `_call_llm`, so it
+Measured by the overall lead at `525b98f` (`P15a-two-routes`, accepted), macOS: gate
+1032 passed with and without the empty-key prefix; full 2 failed (the known two); ruff 4;
+mypy 8 in 3 files; census 65; guard 48/48. `tests/conftest.py` empties both API keys
+for every test. After `P15a`, route A is Gemini: the stub in criterion 7 replaces `_call_llm`, so it
 does not depend on the provider.
 
 | Fact | Command | Result |

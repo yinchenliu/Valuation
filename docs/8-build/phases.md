@@ -321,7 +321,7 @@ again once, after both land, and not once for each. The build order and the stat
 each unit are in `.agent/QUEUE.md`. Each unit states what happens to a `v2` session file
 such as `extractions/WMT.json`.
 
-## Phase 15 — two extraction routes · **planned**
+## Phase 15 — two extraction routes · **done at `525b98f`**
 
 **The user's decisions of 2026-10-04:** "remove the foundry gateway, we only keep two
 gateway, 1 is the api, another is the chat box from the claude code"; "I dont' have

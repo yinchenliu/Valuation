@@ -230,3 +230,25 @@ The reviewer re-checks F1 and F2 only. The other criteria stand as measured abov
 ### Questions for the overall lead
 None.
 
+
+## Overall lead review, round 2
+
+**Verdict: `accepted`**, 2026-10-04, at `525b98f`, by the overall lead.
+
+- **The code is the code reviewed in round 1.** `git diff 2b0b265 HEAD` over `ingestion`,
+  `config.py`, `cli.py`, `api`, `templates`, `models`, `analysis` and `requirements.txt` is
+  empty. Criteria 1 to 9 stand as measured in round 1.
+- **F1 fixed.** The three tests set a placeholder `GEMINI_API_KEY` (`75b31aa`), and
+  `tests/conftest.py` empties both keys for every test (`e42b312`). The gate gives 1032
+  passed both with the empty-key prefix and without it; full suite 2 failed (the known
+  two), 1032 passed.
+- **F2 fixed.** `README.md` has `- Python 3.10+` again.
+- **F3 fixed.** Step 8 ran: gates with the empty-key prefix, commits, handoff, queue state.
+- Gates: ruff 4; mypy 8 in 3 files (down from 9); census 65; guard 48/48; Walmart
+  route B $28.02.
+- **Criterion 12 is the user's.** One page of the Walmart 10-K already went through
+  `gemini-3.1-pro-preview` correctly (`STATUS.md`, `bb28ffb`); a whole-filing run is not
+  yet measured.
+
+**Done by the overall lead after acceptance:** the `extract-filing` skill names Gemini as
+route A; `STATUS.md` re-measured; `P14b-note-figures` set `ready`.

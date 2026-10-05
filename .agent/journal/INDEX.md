@@ -140,6 +140,7 @@ edits another's.
 | 2026-10-04 | P15a-two-routes | programmer, r2 | `complete` — F2 fixed: restored Python 3.10+ under Prerequisites in README.md; all criteria verified with empty keys; gates clean | [entry](2026-10-04T1945-programmer-p15a-two-routes-r2.md) |
 | 2026-10-04 | P15a-two-routes | code_reviewer, r2 | **`approved`** — F1 and F2 verified fixed; gates clean (1032 passed with empty keys, ruff 4, mypy 8 in 3 files, census 65) | [entry](2026-10-04T1951-code_reviewer-p15a-two-routes-r2.md) |
 | 2026-10-04 | P15a-two-routes-tests | tester, r2 | **`pass`** — F1 fixed: autouse fixture in `tests/conftest.py` empties `ANTHROPIC_API_KEY` and `GEMINI_API_KEY`; gate 1032 passed identically with/without empty keys; full suite 2 failed (known red), 1032 passed | [entry](2026-10-04T1956-tester-p15a-two-routes-r2.md) |
+| 2026-10-04 | P15a-two-routes | overall lead, r2 | **`accepted`** at `525b98f`. Code unchanged since round 1 (empty diff over shipped code); F1: gate 1032 passed with and without empty keys, conftest empties both keys; F2: README line restored; F3: step 8 ran. ruff 4, mypy 8 in 3 files, census 65, guard 48/48, Walmart $28.02. Skill route table names Gemini. `P14b-note-figures` set `ready` | [review](../assignments/P15a-two-routes.md) |
 
 
 

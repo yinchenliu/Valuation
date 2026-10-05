@@ -16,7 +16,7 @@ The pipeline has two extraction routes. They meet at the same parser
 
 | Route | Who reads the PDF | Cost |
 |---|---|---|
-| A | the Anthropic API, called by `ingestion/claude_extractor.py` | API tokens, two calls per filing |
+| A | the Gemini API (`gemini-3.1-pro-preview` by default), called by `ingestion/claude_extractor.py` | Gemini API tokens, two calls per filing |
 | B | **you, in this session**, writing a session file | this session only |
 
 In route B you do exactly what the API model does in route A. You answer the **same
