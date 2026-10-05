@@ -157,3 +157,52 @@ grep -n "\b\(partition_by_confidence\|normalize_financials\|derive_assumptions\|
 Items 5, 6, 8, 13, 17, 26 and 62 in `api/routes_valuation.py`; items 49, 72 (the
 `total_debt` display line) and 82 in `cli.py`; item 1 (the census); the share count
 fallback. A reviewer must not raise them as findings against this unit.
+
+## Round 2 amendment (overall lead)
+
+The code review of round 1 (`.agent/journal/2026-10-05T0011-code_reviewer-p3a-one-pipeline.md`)
+returned `changes_requested` with F1 to F4. The overall lead's answer to each, by number.
+The programmer answers each by number in a new entry.
+
+- **F1, blocker: the share count fallback. The overall lead widens the unit.** The
+  fallback (`if shares == 0`, `yf.Ticker(ticker).info`, `info.get("sharesOutstanding",
+  0) / 1e6`) breaks rules 3 and 5. The rules override this assignment, and no user
+  decision exempts the lines. A share count of 0 is reachable: `diluted_shares` may be
+  `[]` (only `net_income` is in `PASS1_YEAR_NEVER_EMPTY_FIELDS`). **Replace step 2:**
+  delete the fallback and the `yfinance` import with it. When the latest year's
+  `diluted_shares_outstanding` is not a finite number above 0, `value_company` stops with
+  `ValueError`. The message names `diluted_shares`, the ticker and the fiscal year, and
+  says that no share count is taken from market data (rule 5). Delete
+  `shares_from_market_data` and the CLI's "Diluted shares from yfinance" line.
+  **The one behaviour change of this unit:** a filing with no diluted share count used to
+  get a price from a yfinance share count, and now stops, the same way in the CLI and on
+  the web page. Every other path moves no number. `P3b-pipeline-stops` keeps items 49 and
+  72 (the `total_debt` display line).
+- **F2, major: the `assumptions` dict (rule 2). Not a finding against this unit.**
+  `derive_assumptions` returns a bare `dict`, and `project_fcffs(financials, assumptions:
+  dict)` takes it (`analysis/projector.py:329-332`). Both entry points passed it the same
+  way before this unit, and `analysis/` is out of scope. The overall lead records it as
+  backlog item 88. Change nothing.
+- **F3, minor: criteria 3 and 4. The assignment's error.** `run_capm` prints "ERP from
+  history: ..." from inside `analysis/capm.py:215`, and `value_company` now runs before
+  stage 6 prints. So the line moves above the stage 6 banner. **Criteria 3 and 4 now
+  expect:** identical but for the lines that hold `elapsed` or `Done in`, and the position
+  of the "ERP from history" line, whose text is unchanged. Recorded as backlog item 89.
+  Change nothing.
+- **F4, note: what a stop hides.** In `docs/3-architecture/entry-points.md`, state in
+  words which CLI stage output a stop now hides: a stop inside `adjust_financials` comes
+  before stages 3 to 5 print; a stop inside `value_company` comes before stages 6 to 10
+  print. The error message itself is unchanged. **Criterion 6 now also expects** this
+  paragraph.
+
+**Criteria that change with F1.** Criterion 7: the census over `models analysis api
+ingestion pipeline.py` is **64**, because the `sharesOutstanding` site is deleted, not
+moved. **A new criterion 8:** a copy of the Walmart session file whose 2026
+`diluted_shares` is `[]` stops in the CLI (exit 1) and on the web result page, with the
+same message, naming `diluted_shares`, `WMT` and 2026; with no network attempt to
+yfinance's `Ticker.info` (stub `yfinance.Ticker` to raise, and show that it was not
+called).
+
+**The reviewer's two smaller items** are not this unit's. The overall lead records them:
+the web price differs from the CLI price because the assumptions form rounds its defaults
+(item 87), and `cli.py:205`'s literal `0.025` terminal growth default (item 90).
