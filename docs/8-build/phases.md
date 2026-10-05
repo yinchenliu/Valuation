@@ -333,6 +333,7 @@ now: no source confirmed that its API reads a PDF.
 | Unit | What | Items |
 |---|---|---|
 | `P15a-two-routes` | Gemini the default and the only route A provider; `-p claude` stops and names route B; delete Foundry, Entra, the Anthropic API path, `anthropic` and `azure-identity` | — |
+| `P15b-gemini-flash` | the default model becomes `gemini-3.8-flash` (the user's decision of 2026-10-04); the CLI cache key names the model ID | 82 |
 
 It runs after `P14b-reasoning` and before `P14b-note-figures`: all three edit
 `ingestion/claude_extractor.py`, and this order makes route A runnable with the user's

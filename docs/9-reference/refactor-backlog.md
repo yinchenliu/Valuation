@@ -114,6 +114,7 @@ rather than lying.
 | 79 | Route A's unit stop names the field, the text and the page, but not the PDF | — | `ingestion/claude_extractor.py` | **new, the `P14a` programmer.** `_run_financials_pass` holds only bytes. The same shape as item 73 |
 | 80 | The arithmetic check table and route B's failed-check messages are in printed units, and say nothing about it | — | `ingestion/claude_extractor.py` | **new, the `P14a` programmer.** For a filing in thousands, `printed=11,313,853` appears beside statements shown in $M |
 | 81 | The Pass 2 page check's summary line miscounts the items not confirmed | — | `ingestion/claude_extractor.py` | **closed by `P14b-reasoning` (`49cf0f5`), locked at `158f25d`**: each item records whether any of its checks failed, and the summary counts those items |
+| 82 | The CLI cache key stores the model as "(provider default)" when `-m` is not given | **silent**, latent | `cli.py` | **new, the overall lead, 2026-10-04.** After the default model changes, a cache written under the old default matches, and figures read by the old model are labelled with the new one (rule 6). No route A cache exists on this machine yet. Assigned to `P15b-gemini-flash` |
 
 ---
 

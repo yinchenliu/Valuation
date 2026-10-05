@@ -287,7 +287,11 @@ Built 2026-09-20 on Windows. **Development moved to a macOS machine by 2026-09-2
   default) among them. Page 21 of the Walmart 10-K 2026-01-31, sent alone as a PDF with
   the code's settings (temperature 0, JSON reply), came back as `713,163` and
   `(Amounts in millions, except per share data)`, the figures printed there; 5.1 s, 599
-  input, 42 output and 458 thinking tokens. A whole-filing route A run is not yet measured. Since `P13c`, a shell value wins over
+  input, 42 output and 458 thinking tokens. A whole-filing route A run is not yet measured.
+  **`gemini-3.8-flash`, the same day:** the key reaches it (output limit 65,536). Page 21 gave
+  `713,163` and the unit statement, page 22 gave `(2,075)`, `794`, `3,027` and `8,022`, each as
+  printed; 2.0 s per page; 277 and 242 thinking tokens. The user chose it as the default
+  (`P15b-gemini-flash`, planned). Since `P13c`, a shell value wins over
   `.env` (backlog item 46, closed).
   `pdftoppm` is absent and Homebrew 4.4.6 cannot install it on macOS 27.0, so a session
   reads PDFs through `session_extraction text`.
@@ -402,6 +406,7 @@ the headline. Re-ranked at `622262b`.
 | 78 | The "already converted" guard sees balance sheets only | **new, the `P14a` review's F5.** No call site converts twice today |
 | 79 | Route A's unit stop does not name the PDF | **new, the `P14a` programmer.** The same shape as item 73 |
 | 80 | The arithmetic check table and route B's failed-check messages are in printed units, with no label | **new, the `P14a` programmer.** For a filing in thousands, `printed=11,313,853` shows beside statements in $M |
+| 82 | The CLI cache key stores the model as "(provider default)" | **new, latent.** A change of default would label old figures with the new model. Assigned to `P15b-gemini-flash` |
 | 47 | The income statement shown has no interest income row | **new, display.** EBT does not add up from the rows shown |
 | 52 | A cache hit ignores `files` sent with `session_file` | **new, found by the `P9b` review.** Hand-built requests only |
 | 51 | The arithmetic check's `WARN` branch is dead | **new, found by `P9c`** |
