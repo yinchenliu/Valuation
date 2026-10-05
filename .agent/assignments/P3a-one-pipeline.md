@@ -206,3 +206,18 @@ called).
 **The reviewer's two smaller items** are not this unit's. The overall lead records them:
 the web price differs from the CLI price because the assumptions form rounds its defaults
 (item 87), and `cli.py:205`'s literal `0.025` terminal growth default (item 90).
+
+## The user's decision on F2 (round 2 review)
+
+The round 2 review (`.agent/journal/2026-10-05T0027-code_reviewer-p3a-one-pipeline-r2.md`)
+kept F2 as a `major` blocker: `pipeline.py` passes the `assumptions` dict that
+`derive_assumptions` returns to `project_fcffs` and reads its keys (rule 2), and the round 2
+amendment exempted it with no user decision. It found nothing else that would stop
+approval.
+
+**The user's decision of 2026-10-05**, asked by the overall lead: "Accept until item 88".
+The user accepts `pipeline.py`'s `assumptions: dict` (`ValuationRun.assumptions`, and its
+reads and its pass to `project_fcffs`) until backlog item 88 gives `derive_assumptions` a
+typed return. The reviewer's condition for approval is met. No code changes. F5 (the
+`cli.py` line count in `entry-points.md`) is a note; the overall lead corrects it on
+acceptance. The unit goes to the tester, `P3a-one-pipeline-tests`.

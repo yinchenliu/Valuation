@@ -1,7 +1,9 @@
 # Entry points
 
-Two programs run the same eight steps. **They are separate implementations**, which is
-[backlog item 7](../9-reference/refactor-backlog.md) and the reason this file exists.
+Two programs run the same eight steps. Since `P3a-one-pipeline` both call **one
+module, `pipeline.py`**, for those steps (backlog item 7); what each entry point still
+does on its own is listed in "What `pipeline.py` holds, and how the two still differ"
+below.
 
 ---
 
@@ -98,9 +100,10 @@ Backlog item 5.
 .venv/Scripts/python.exe cli.py --help
 ```
 
-1,109 lines: argument parsing, a pickle cache, a 10-step progress display, one print
-function per pipeline stage, and stage 1 by either route. Filing discovery moved to
-`ingestion/filings.py` at `P9a-session-route`.
+1,150 lines (measured at `P3a-one-pipeline`): argument parsing, a pickle cache, a
+10-step progress display, one print function per pipeline stage, and stage 1 by either
+route. Filing discovery moved to `ingestion/filings.py` at `P9a-session-route`; the
+valuation steps moved to `pipeline.py` at `P3a-one-pipeline`.
 
 **It is the cheaper way to iterate on `analysis/`**, because `--cache-dir` stores the
 extraction result as a pickle and `--no-cache` forces a re-run. You can change a formula
@@ -147,48 +150,73 @@ Added by `P9a-session-route`. Reads the extraction from a Claude Code session fi
   the closing "not measured" block names the session file and says no API call was made.
 
 Stage 1 is two functions, `_extract_via_api` (the old stage 1, moved unchanged) and
-`_extract_from_session_file`. Stages 2 to 10 are the same code for both.
+`_extract_from_session_file`. Stages 2 to 10 are the same code for both: `main` calls
+`pipeline.adjust_financials` before it prints stages 3 to 5, then
+`pipeline.value_company` once, and prints stages 6 to 10 from its result.
 
 > **Warning.** The cache is a **pickle**. Loading a pickle executes code inside it. Do
 > not load a `.pkl` from anywhere but your own machine, and note that five are committed
 > to this repository (backlog item 12).
 
-## Where they duplicate each other
+## What `pipeline.py` holds, and how the two still differ
 
-Both build the same call sequence independently:
+Until `P3a-one-pipeline` each entry point called the eight valuation functions in its
+own copy and chose the share count and the arguments itself, so a fix made in one copy
+did not reach the other (backlog item 7). Now `pipeline.py`, at the repository root
+beside `cli.py` and `app.py`, holds the sequence once. It is not in `analysis/` because
+it calls `ingestion.price_fetcher.fetch_price_data`, and `analysis/` importing from
+`ingestion/` is backlog item 17.
 
-| Step | `cli.py` | `api/routes_valuation.py` |
-|---|---|---|
-| normalise | `:667` | `:139` |
-| assumptions | `:677` | `:163` |
-| price data | `:682` | `:166` |
-| CAPM | `:687` | `:167` |
-| WACC | `:710` | `:187` |
-| project | `:722` | `:197` |
-| DCF | — `main()` | `:200` |
+| Function | Runs | Returns | Called by |
+|---|---|---|---|
+| `adjust_financials(raw_financials, non_recurring)` | `partition_by_confidence`, then `normalize_financials` with the applied half | `AdjustedFinancials`: `applied`, `excluded`, `adjusted` | `cli.main` (before stages 3 to 5 print); `assumptions_page`; the cache-miss branch of `run_valuation` |
+| `value_company(adjusted, overrides, ticker, lookback_years, frequency)` | `derive_assumptions(adjusted, overrides)`, the share count (it stops when the filing gives none), `fetch_price_data`, `run_capm`, the market cap, `calculate_wacc`, `project_fcffs`, `run_dcf` | `ValuationRun`: `assumptions`, `price_data`, `capm_result`, `shares`, `market_cap`, `latest_balance_sheet`, `wacc_result`, `projected`, `dcf_result` | `cli.main` (before stages 6 to 10 print); `run_valuation` |
 
-**They also differ**, which is worse than duplicating:
+Two functions and not one, because the callers stop at different places: the CLI prints
+stages 3 to 5 before it fetches market data, and the assumptions page uses the first
+function alone. The assumptions page also keeps its own `derive_assumptions` call with
+no overrides; it fills the form's defaults and is not part of the valuation. Neither
+pipeline function prints or formats; the CLI's audit trail and the routes' templates
+stay with the callers.
+
+**The share count comes from the filing, and from nowhere else.** `value_company`
+reads the latest fiscal year's `diluted_shares_outstanding`. When it is not a finite
+number above 0 (an empty `diluted_shares` list in the extraction becomes 0), the run
+stops with a `ValueError` that names `diluted_shares`, the ticker and the fiscal year,
+and says that no share count is taken from market data. The stop comes after
+`derive_assumptions` and before `fetch_price_data`, so it makes no network call. The CLI
+prints it as `ERROR: ...` and exits 1; the web result page shows it in its error block.
+**This is the one behaviour change of `P3a-one-pipeline`** (review F1, rules 3 and 5):
+until then both entry points asked yfinance for `sharesOutstanding` when the filing gave
+0, and that lookup itself fell back to 0. That fallback is deleted, with the CLI's line
+"Diluted shares from yfinance: ...".
+
+**What a stop hides in the CLI.** The CLI prints each stage after the pipeline function
+that computes it, so a stop inside a pipeline function now comes before some stage
+output that used to print ahead of it. A stop inside `adjust_financials` (a
+normalisation stop) comes before stages 3 to 5 print: the stage 3 banner shows, then
+the error, with no non-recurring items, no normalisation table and no historical FCFF.
+A stop inside `value_company` (the share count, the market data, CAPM, WACC, the
+projection or the DCF) comes before stages 6 to 10 print: no assumptions, no CAPM
+result, no WACC. Each error message is the one the failing function raised before the
+move, and the web result page, which never showed the stages, is unchanged.
+
+**One display difference the move made.** `run_capm` prints the line "ERP from
+history: ..." when no equity risk premium is supplied (`analysis/capm.py`). The CLI now
+calls `value_company` before stage 6, so that line prints after stage 5's table instead
+of under stage 7. No figure moved.
+
+**They still differ** in what each does around the pipeline:
 
 - the default provider (`gemini` in the CLI, file-count-dependent in the route — backlog
   item 13),
 - override parsing — argparse types against `x / 100 if x else None` (backlog item 6),
-- the share-count fallback: the route reaches for yfinance at `:182`, the CLI does not
-  in the same way,
-- the CLI prints a full audit trail per stage; the web app shows only the result.
-
-**A figure verified in one is not verified in the other.**
-
-### The fix, when it is assigned
-
-Extract one function both call:
-
-```python
-def run_pipeline(financials, overrides, ticker) -> PipelineResult: ...
-```
-
-The CLI keeps its printing layer. The route keeps its form parsing. Neither keeps a copy
-of the sequence. **Do this before fixing backlog items 1, 2 or 3**, or every one of
-those fixes must be made twice.
+- the CLI prints a full audit trail per stage; the web app shows only the result, and
+  the assumptions form rounds each default to one decimal place, so a web user who
+  accepts every default values on the rounded figures,
+- the historical FCFF table: the CLI prints it from the statements as extracted, the
+  web pages from the normalised statements (display only; neither reaches the DCF),
+- the extraction step (stage 1) stays in each entry point (backlog item 49).
 
 ## Templates
 

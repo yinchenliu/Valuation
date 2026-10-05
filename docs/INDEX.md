@@ -40,7 +40,7 @@ rule wins.**
 | [3-architecture/data-contract.md](3-architecture/data-contract.md) | the `models/` dataclasses, what each field means, and which are derived | you are reading or writing a `FinancialStatements` |
 | [3-architecture/extraction.md](3-architecture/extraction.md) | the two passes, the providers, the multi-PDF year routing | you are changing `ingestion/claude_extractor.py` |
 | [3-architecture/valuation-math.md](3-architecture/valuation-math.md) | every formula: normalisation, assumptions, CAPM, WACC, FCFF, DCF | you are writing or checking arithmetic |
-| [3-architecture/entry-points.md](3-architecture/entry-points.md) | the web routes, the CLI, and where the two duplicate each other | you are changing `api/`, `templates/` or `cli.py` |
+| [3-architecture/entry-points.md](3-architecture/entry-points.md) | the web routes, the CLI, the one valuation sequence both call (`pipeline.py`), and how the two still differ | you are changing `api/`, `templates/`, `cli.py` or `pipeline.py` |
 
 ## 4. Conventions
 

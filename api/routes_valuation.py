@@ -9,12 +9,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 import config
-from analysis.capm import run_capm
-from analysis.dcf import run_dcf
 from analysis.fcff import calculate_fcff_historical
-from analysis.normalizer import normalize_financials, partition_by_confidence
-from analysis.projector import derive_assumptions, project_fcffs
-from analysis.wacc import calculate_wacc
+from analysis.projector import derive_assumptions
 from config import BASE_DIR
 from ingestion.claude_extractor import (
     Provider,
@@ -23,7 +19,6 @@ from ingestion.claude_extractor import (
     extract_multi_year,
     resolve_provider,
 )
-from ingestion.price_fetcher import fetch_price_data
 from ingestion.session_extraction import load_session_extraction
 from models.financial_statements import FinancialStatements, NonRecurringItem
 from models.valuation import (
@@ -31,6 +26,7 @@ from models.valuation import (
     HistoricalFCFFYear,
     ProjectionAssumptions,
 )
+from pipeline import adjust_financials, value_company
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -403,15 +399,17 @@ async def assumptions_page(
             ticker, company_name = _shown_identity(
                 session_file, ticker, company_name, raw_financials,
             )
-            # Partition first, normalise with the applied half only. The
-            # decision belongs to analysis/ (rule 1) and normalize_financials
-            # keeps the signature its tests were written against.
-            applied_items, excluded_items = partition_by_confidence(non_recurring)
+            # Partition first, normalise with the applied half only, in
+            # `pipeline.adjust_financials`, the one home the CLI shares
+            # (backlog item 7). The decision belongs to analysis/ (rule 1).
             # `normalize_financials` returns a NEW FinancialStatements through
             # dataclasses.replace (`analysis/normalizer.py:245`); it does not
             # mutate its argument. So `raw_financials` below is still the
             # pre-adjustment extraction, and the reconciliation has both sides.
-            normalised_financials = normalize_financials(raw_financials, applied_items)
+            adjustment = adjust_financials(raw_financials, non_recurring)
+            applied_items = adjustment.applied
+            excluded_items = adjustment.excluded
+            normalised_financials = adjustment.adjusted
             _extraction_cache[cache_key] = CachedExtraction(
                 raw_financials=raw_financials,
                 normalised_financials=normalised_financials,
@@ -589,12 +587,14 @@ async def run_valuation(
             )
             raw_financials = run.raw_financials
             extraction = run.extraction
-            # Same order as assumptions_page: partition, then normalise with the
-            # applied half. Both branches must produce the same FIVE values, or
-            # the page would report a different exclusion than the arithmetic
-            # used depending on which one ran.
-            applied_items, excluded_items = partition_by_confidence(run.non_recurring)
-            financials = normalize_financials(raw_financials, applied_items)
+            # The same `adjust_financials` as assumptions_page: partition, then
+            # normalise with the applied half. Both branches must produce the
+            # same FIVE values, or the page would report a different exclusion
+            # than the arithmetic used depending on which one ran.
+            adjustment = adjust_financials(raw_financials, run.non_recurring)
+            applied_items = adjustment.applied
+            excluded_items = adjustment.excluded
+            financials = adjustment.adjusted
 
         # Route B: the ticker priced below is the session file's.
         ticker, company_name = _shown_identity(
@@ -629,52 +629,24 @@ async def run_valuation(
             return_frequency=return_frequency,
         )
 
-        assumptions = derive_assumptions(financials, overrides)
-
-        # 3. Fetch price data and run CAPM
-        price_data = fetch_price_data(ticker, beta_lookback_years, return_frequency)
-        capm_result = run_capm(
-            price_data,
-            risk_free_rate=overrides.risk_free_rate,
-            equity_risk_premium=overrides.equity_risk_premium,
-            beta_override=overrides.beta_override,
+        # 3. The valuation: assumptions, market data, CAPM, the share count,
+        # WACC, the projection and the DCF, in `pipeline.value_company` — the
+        # same call the CLI makes (backlog item 7). The share count is read
+        # there, from the filing only: a filing with no diluted share count
+        # stops with a `ValueError`, shown by the error branch below (rules 3
+        # and 5; there is no yfinance fallback).
+        valuation = value_company(
+            financials,
+            overrides,
+            ticker=ticker,
+            lookback_years=beta_lookback_years,
+            frequency=return_frequency,
         )
-
-        # 4. Calculate WACC
-        latest_year = financials.latest_year
-        latest_is = financials.get_income_statement(latest_year)
-        latest_bs = financials.get_balance_sheet(latest_year)
-
-        # Get diluted shares: from financials if available, otherwise from yfinance
-        shares = latest_is.diluted_shares_outstanding
-        if shares == 0:
-            import yfinance as yf
-            info = yf.Ticker(ticker).info
-            shares = info.get("sharesOutstanding", 0) / 1e6  # Convert to millions
-        market_cap = price_data.current_price * shares
-
-        wacc_result = calculate_wacc(
-            capm_result=capm_result,
-            income_statement=latest_is,
-            balance_sheet=latest_bs,
-            market_cap=market_cap,
-            cost_of_debt_override=overrides.cost_of_debt_override,
-            tax_rate_override=assumptions["tax_rate"],
-            zero_debt_confirmed=overrides.zero_debt_confirmed,
-        )
-
-        # 5. Project FCFFs
-        projected = project_fcffs(financials, assumptions)
-
-        # 6. Run DCF
-        dcf_result = run_dcf(
-            projected_fcffs=projected,
-            wacc_result=wacc_result,
-            financials=financials,
-            terminal_growth_rate=assumptions["terminal_growth_rate"],
-            current_price=price_data.current_price,
-            diluted_shares=shares,
-        )
+        assumptions = valuation.assumptions
+        price_data = valuation.price_data
+        capm_result = valuation.capm_result
+        wacc_result = valuation.wacc_result
+        dcf_result = valuation.dcf_result
 
         # Rule 6: `extraction`, set in step 1, is who read the filing — RECORDED
         # when the extraction ran (in the cache entry, or by the cache-miss
@@ -682,7 +654,7 @@ async def run_valuation(
         # filing now: wrong if the environment moved since, and wrong for every
         # session file, which no API read at all.
 
-        # 7. The chain behind the figures above, for the page to show.
+        # 4. The chain behind the figures above, for the page to show.
         #
         # Built from the NORMALISED statements, because that is what the DCF
         # ran on. Computed here, after the valuation, so the order in which

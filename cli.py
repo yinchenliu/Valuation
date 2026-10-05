@@ -47,19 +47,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 import config
-from analysis.capm import run_capm
-from analysis.dcf import run_dcf
 from analysis.fcff import calculate_fcff_historical
-from analysis.normalizer import normalize_financials, partition_by_confidence
-from analysis.projector import derive_assumptions, project_fcffs
-from analysis.wacc import calculate_wacc
 from ingestion.claude_extractor import (
     describe_resolution,
     extract_financials,
     extract_multi_year,
 )
 from ingestion.filings import InputFingerprint, fingerprint_filings, parse_pdf_args
-from ingestion.price_fetcher import fetch_price_data
 from ingestion.session_extraction import load_session_extraction
 from models.financial_statements import (
     BALANCE_CHECK_TOLERANCE,
@@ -67,6 +61,7 @@ from models.financial_statements import (
     NonRecurringItem,
 )
 from models.valuation import ProjectionAssumptions
+from pipeline import adjust_financials, value_company
 
 W = 70  # output width
 TOTAL_STEPS = 10
@@ -1014,84 +1009,65 @@ def main() -> None:
 
     # ===== STAGE 3: NON-RECURRING ITEMS (Pass 2 output) =====================
     _step(3, "Displaying non-recurring items")
-    # The partition happens BEFORE normalisation and outside it: rule 1 puts the
-    # decision in analysis/, and normalize_financials keeps the signature its
-    # tests were written against. Only `applied` reaches the arithmetic.
-    applied, excluded = partition_by_confidence(adjustments)
+    # The partition and the normalisation run in `pipeline.adjust_financials`,
+    # the one home both entry points share (backlog item 7). Only `applied`
+    # reaches the arithmetic.
+    adjustment = adjust_financials(financials, adjustments)
+    applied, excluded = adjustment.applied, adjustment.excluded
+    adjusted = adjustment.adjusted
     print_non_recurring_items(applied, identified_by)
     print_excluded_non_recurring_items(excluded)
 
     # ===== STAGE 4: NORMALIZE (GAAP -> Non-GAAP) ============================
     _step(4, "Normalizing financials (GAAP -> Non-GAAP)")
-    adjusted = normalize_financials(financials, applied)
     print_normalization(financials, adjusted)
 
     # ===== STAGE 5: HISTORICAL FCFF =========================================
     _step(5, "Computing historical FCFF")
     print_historical_fcff(financials)
 
+    # ===== STAGES 6-10: THE VALUATION =======================================
+    # One call, `pipeline.value_company`, runs the assumptions, the market
+    # data, CAPM, the share count, WACC, the projection and the DCF — the same
+    # sequence the web route runs. The stages below print its result, so stage
+    # 6's banner now appears after the market data call, not before it.
+    overrides = build_overrides(args)
+    run = value_company(
+        adjusted,
+        overrides,
+        ticker=args.ticker,
+        lookback_years=args.lookback_years,
+        frequency=args.frequency,
+    )
+    assumptions = run.assumptions
+    price_data = run.price_data
+    capm_result = run.capm_result
+    wacc_result = run.wacc_result
+    dcf_result = run.dcf_result
+
     # ===== STAGE 6: DERIVE ASSUMPTIONS ======================================
     _step(6, "Deriving projection assumptions")
-    overrides = build_overrides(args)
-    assumptions = derive_assumptions(adjusted, overrides)
     print_assumptions(assumptions, overrides)
 
     # ===== STAGE 7: CAPM ====================================================
     _step(7, "Fetching market data & running CAPM")
-    price_data = fetch_price_data(
-        args.ticker,
-        lookback_years=args.lookback_years,
-        frequency=args.frequency,
-    )
-    capm_result = run_capm(
-        price_data,
-        risk_free_rate=overrides.risk_free_rate,
-        equity_risk_premium=overrides.equity_risk_premium,
-        beta_override=overrides.beta_override,
-    )
     print_capm(capm_result, price_data, args)
 
     # ===== STAGE 8: WACC ====================================================
     _step(8, "Calculating WACC")
-    latest_is = adjusted.get_income_statement(adjusted.latest_year)
-    latest_bs = adjusted.get_balance_sheet(adjusted.latest_year)
+    latest_bs = run.latest_balance_sheet
 
-    shares = latest_is.diluted_shares_outstanding if latest_is else 0
-    if shares == 0:
-        import yfinance as yf
-        info = yf.Ticker(args.ticker).info
-        shares = info.get("sharesOutstanding", 0) / 1e6
-        print(f"\n  Diluted shares from yfinance: {shares:,.0f}M (not in extracted F/S)")
-
-    market_cap = price_data.current_price * shares
+    market_cap = run.market_cap
     total_debt = latest_bs.total_debt if latest_bs else 0
 
-    wacc_result = calculate_wacc(
-        capm_result=capm_result,
-        income_statement=latest_is,
-        balance_sheet=latest_bs,
-        market_cap=market_cap,
-        cost_of_debt_override=overrides.cost_of_debt_override,
-        tax_rate_override=assumptions["tax_rate"],
-        zero_debt_confirmed=overrides.zero_debt_confirmed,
-    )
     print_wacc(wacc_result, market_cap, total_debt)
 
     # ===== STAGE 9: PROJECT FCFFs ===========================================
     _step(9, "Projecting future FCFFs")
-    projected = project_fcffs(adjusted, assumptions)
-    print_projected_fcffs(projected)
+    print_projected_fcffs(run.projected)
 
     # ===== STAGE 10: DCF ====================================================
     _step(10, "Running DCF valuation")
-    dcf_result = run_dcf(
-        projected_fcffs=projected,
-        wacc_result=wacc_result,
-        financials=adjusted,
-        terminal_growth_rate=assumptions["terminal_growth_rate"],
-        current_price=price_data.current_price,
-        diluted_shares=shares,
-    )
     print_dcf_result(dcf_result)
     # ===== FINAL SUMMARY ========================================================
     _section("FINAL VALUATION SUMMARY")
