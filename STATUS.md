@@ -291,7 +291,22 @@ Built 2026-09-20 on Windows. **Development moved to a macOS machine by 2026-09-2
   **`gemini-3.8-flash`, the same day:** the key reaches it (output limit 65,536). Page 21 gave
   `713,163` and the unit statement, page 22 gave `(2,075)`, `794`, `3,027` and `8,022`, each as
   printed; 2.0 s per page; 277 and 242 thinking tokens. The user chose it as the default
-  (`P15b-gemini-flash`, planned). Since `P13c`, a shell value wins over
+  (`P15b-gemini-flash`, planned).
+  **First whole-filing route A run, 2026-10-04, at `3c3fac0` (a clean copy), `-m gemini-3.8-flash`,
+  Walmart 10-K 2026-01-31, on the user's approval.** Pass 1's first answer failed net income in
+  all three years by exactly twice "Other (gains) and losses" (2 x 3,027, 2 x 794, 2 x 2,075):
+  the row's sign was wrong. The check caught it and the one retry fixed it. Then 86 of 86 lines
+  found, both unit statements found, every check OK; 3 of 3 Pass 2 items found. Tokens: Pass 1
+  47,626 in and 4,171 out, the retry 52,603 and 4,171, Pass 2 45,886 and 441. **Against route B
+  (Claude, `extractions/WMT.json`): 90 of 100 statement fields equal.** The 10 that differ: (1)
+  finance lease obligations, 856 current and 5,905 long-term, are debt in route B and other
+  liabilities in Gemini's answer (backlog item 83); (2) share-based compensation is its own field
+  in route B and inside other operating activities in Gemini's answer (no analysis code reads
+  either field). Pass 2 differs in judgment: both flag PhonePe 700; route B also flags "Other
+  (gains) and losses" in each year, Gemini a $37 million FTC settlement and a $0.3 billion JD.com
+  loss. **Result: $28.04 against route B's $28.02, but that agreement is partly chance:** net debt
+  34,035 against 40,796, WACC 7.74% against 7.68%, enterprise value 265,512M against 272,116M.
+  The two effects of the debt difference almost cancel. First measurement for backlog item 36. Since `P13c`, a shell value wins over
   `.env` (backlog item 46, closed).
   `pdftoppm` is absent and Homebrew 4.4.6 cannot install it on macOS 27.0, so a session
   reads PDFs through `session_extraction text`.
@@ -407,6 +422,7 @@ the headline. Re-ranked at `622262b`.
 | 79 | Route A's unit stop does not name the PDF | **new, the `P14a` programmer.** The same shape as item 73 |
 | 80 | The arithmetic check table and route B's failed-check messages are in printed units, with no label | **new, the `P14a` programmer.** For a filing in thousands, `printed=11,313,853` shows beside statements in $M |
 | 82 | The CLI cache key stores the model as "(provider default)" | **new, latent.** A change of default would label old figures with the new model. Assigned to `P15b-gemini-flash` |
+| 83 | Finance lease obligations: debt or not? The schema does not say | **new, silent; waits for the user.** Walmart: Claude counted 6,761M of finance leases as debt, Gemini did not; net debt differs by that much |
 | 47 | The income statement shown has no interest income row | **new, display.** EBT does not add up from the rows shown |
 | 52 | A cache hit ignores `files` sent with `session_file` | **new, found by the `P9b` review.** Hand-built requests only |
 | 51 | The arithmetic check's `WARN` branch is dead | **new, found by `P9c`** |
