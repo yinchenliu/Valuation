@@ -160,6 +160,12 @@ still asks for "fiscal year 2024". Read the column whose date ends that fiscal y
    - `[]` means the filing prints no such row. Never omit a key.
    - Every row belongs to exactly one field. A row that matches no named field goes
      into its section's `other_*` list.
+   - **Finance lease obligations are debt. Operating lease obligations are not**
+     (the user's decision "83a", `P14d-finance-leases`). The finance lease obligation due
+     within one year goes in `short_term_debt`, and the long-term one in
+     `long_term_debt`. Operating lease obligations go in `other_current_liabilities`
+     and `other_non_current_liabilities`. The prompt says the same, so both routes
+     put the same row in the same field.
    - `gross_profit`, `operating_income` and `net_income` are the printed subtotal rows.
      Write `gross_profit: []` when the filing prints none.
    - The balance sheet also takes the printed `total_assets` and
