@@ -48,3 +48,40 @@ Never make paid API calls or real network calls in tests. All stubs/mocks in mem
 | 5 | lint | 4 errors (BLE001 pre-existing), 0 in `tests/` | `.venv/bin/python -m ruff check .` |
 | 6 | mypy | 8 errors in 3 files, 0 in `tests/` | `.venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` |
 | 7 | two counts | accuracy and coverage reported | tester log entry |
+
+## Round 2 amendment (overall lead, one-team mode)
+
+**Why a second tester run.** The first tester run (Gemini) stopped part way when the
+build team's quota ran out. Its entry,
+`.agent/journal/2026-10-05T0246-tester-p14d-finance-leases.md`, says `status: partial`,
+and every evidence table in it is empty. Its three test files are committed as found at
+`78d21c4`. You continue from them. Write a new entry. Do not edit the old one.
+
+**Three findings in the committed tests. Answer each by number in your entry.**
+
+- **T1. One test asserts the code's own output.**
+  `test_route_b_walmart_valuation_share_price_ties_to_28_02` patches CAPM and the price
+  with values copied from a run (beta `0.5662169972765607`, equity risk premium
+  `0.06892192021225155`, price `104.26000213623047`). Its docstring takes enterprise
+  value 272,116M as given, not derived. That is the trap in the first section of
+  `.claude/agents/tester.md`. Delete the test, or replace it with one whose expected
+  value is derived by hand from inputs you choose. The Walmart end-to-end price is done-criterion 3 of
+  `P14d-finance-leases`, and the overall lead measures it. It is not a unit test.
+- **T2. Four tests read a file that git does not track.** `.gitignore` ignores
+  `extractions/` and `10K_filings/`. `test_route_b_cmd_prompt_exits_zero_and_emits_lease_rules`,
+  `test_route_b_walmart_session_check_exits_zero`,
+  `test_route_b_walmart_debt_lines_breakdown_by_hand_arithmetic` and the T1 test read
+  `extractions/WMT.json`. On a machine without that file, they fail. For the debt
+  arithmetic, build the input inside the test from the figures printed on Walmart's PDF
+  page 22, cited in a comment, so that the test runs on every machine. A test that still
+  needs the real session file or a real PDF carries
+  `pytest.mark.skipif(not path.exists(), reason=...)`, as
+  `tests/unit/test_p14b_note_figures.py:874` does.
+- **T3. Every other test, checked against the tester card.** For each test in the three
+  files, the expected value must exist before the code runs. In your entry, list each
+  test that you keep, change or delete, with the reason.
+
+**Done-criteria.** The table above holds, with one change: criterion 1 expects 0 failed,
+and the passed count is whatever the suite now holds. Criterion 4 (mutants) covers the
+schema text, the prompt rule and the cache marker: a scratch copy without each one must
+turn a test red. Run every command with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`.

@@ -176,3 +176,5 @@ a reviewer that re-ran the measurements rather than reading them. Three times a 
 overturned a claim: it disproved a programmer's reason for stopping, it disproved a
 different programmer's finding, and it confirmed two errors in the orchestrator's own
 documents.
+| 2026-10-05 | P14d-finance-leases-tests | tester | **`partial`**: stopped when the build team's Gemini quota ran out. Frontmatter says `pass`, but every evidence table is empty. Test files committed as found at `78d21c4` | [entry](2026-10-05T0246-tester-p14d-finance-leases.md) |
+| 2026-10-05 | P14d-finance-leases | overall lead | **one-team mode** on the user's words ("you can takeover the build"); decision "2a": the build team's work committed as found at `78d21c4`. Tests assignment amended: T1 the $28.02 test copies CAPM values from a run; T2 four tests read the untracked `extractions/WMT.json`; T3 check every test. Claude tester dispatched | [amendment](../assignments/P14d-finance-leases-tests.md) |

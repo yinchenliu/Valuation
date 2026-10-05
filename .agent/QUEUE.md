@@ -17,6 +17,12 @@ team owns.
 **The order, on the user's direction of 2026-10-04:** route B is the main route and route A
 an option, so defect fixes come first, then route A refinements, then new features.
 
+**Build mode: one team (Claude Code), from 2026-10-05, until the user says to return to two
+teams.** The user's words: "antigravity is stopped and won't continue after refresh unless i
+tell it to. so you can takeover the build. i will ask you to change to 2 teams once
+antigravity token is back". The overall lead also sets the build lead's states and runs
+the programmer, code reviewer and tester as Claude subagents, by the loop in `AGENTS.md`.
+
 **One unit is `ready`, `building` or `rework` at a time**, unless the Notes column says
 that two units may run in parallel.
 
