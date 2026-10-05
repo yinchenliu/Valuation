@@ -4,9 +4,9 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `9e49bef` (`P14d-finance-leases-tests`, committed in one-team mode), 2026-10-05, by the overall lead**, in the working tree, on branch `main`, **on the macOS machine**
+**Measured at `ac736e7` (`P3a-one-pipeline-tests`, committed in one-team mode), 2026-10-05, by the overall lead**, in the working tree, on branch `main`, **on the macOS machine**
 (`.venv/bin/python`, Python 3.11.6). Every figure before `cde33cb` was measured on the
-Windows machine. **Forty-seven work units accepted by `69436d9`, ten more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes`, `P14b-note-figures`, `P14d-finance-leases` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
+Windows machine. **Forty-seven work units accepted by `69436d9`, twelve more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes`, `P14b-note-figures`, `P14d-finance-leases`, `P3a-one-pipeline` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; **five** times a reviewer or a
 programmer overturned a claim — twice against a programmer, **three times against the
 orchestrator**. The journal is [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
@@ -23,14 +23,14 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `9e49bef` (macOS) |
+| Gate | Command | Result at `ac736e7` (macOS) |
 |---|---|---|
-| Tests | `.venv/bin/python -m pytest -q` | **1094 tests. 1092 pass, 2 fail**: the 2 red on purpose |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **1092 passed, 0 failed**, with or without the empty-key prefix: `tests/conftest.py` empties both API keys for every test |
+| Tests | `.venv/bin/python -m pytest -q` | **1111 tests. 1109 pass, 2 fail**: the 2 red on purpose |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **1109 passed, 0 failed**, with or without the empty-key prefix: `tests/conftest.py` empties both API keys for every test |
 | Lint | `.venv/bin/python -m ruff check .` | **4 errors**, every one `BLE001`. `P13g` removed the one in `_run_nri_pass` |
-| Types | `.venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **8 errors in 3 files**, 20 files checked. `P15a` removed the Anthropic client code and one error with it |
+| Types | `.venv/bin/python -m mypy models analysis ingestion api config.py app.py pipeline.py --ignore-missing-imports` | **6 errors in 3 files**, 21 files checked, 0 in `pipeline.py`. `P3a` removed two in `api/routes_valuation.py` (the share count lines moved into `pipeline.py`, which stops on a missing income statement); `P15a` removed one before that |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
-| **Rule 3 census** | the grep at [rules.md:65](docs/2-rules/rules.md) | **65**. `P13b` removed two conditional zeros (`latest_year`, `implied_share_price`). `P11a` replaced the Pass 1 parser's `.get(field, 0)` reads (114 at `24a9a90`). Under zsh, quote `'--include=*.py'` or the count reads 0 |
+| **Rule 3 census** | the grep at [rules.md:65](docs/2-rules/rules.md), with `pipeline.py` added | **64**. `P3a` deleted the yfinance share count fallback's `.get("sharesOutstanding", 0)`; `pipeline.py` holds 0 sites. `P13b` removed two conditional zeros (`latest_year`, `implied_share_price`). `P11a` replaced the Pass 1 parser's `.get(field, 0)` reads (114 at `24a9a90`). Under zsh, quote `'--include=*.py'` or the count reads 0 |
 | **Write guard** | `.venv/bin/python .claude/check_guard.py` | **48/48** |
 
 **There is a fourth gate now, and it is stricter than `import app` ever was.**
@@ -498,6 +498,7 @@ the headline. Re-ranked at `622262b`.
 | 77 | Pass 2 asked the model to convert a note's figure into the statements' units | `dde9b25` (`P14b-pass2-units`), locked at `21125ed` |
 | 81 | The Pass 2 summary line miscounted the items not confirmed | `49cf0f5` (`P14b-reasoning`), locked at `158f25d` |
 | 83 | The Pass 1 schema did not say whether a finance lease obligation is debt | `78d21c4` (`P14d-finance-leases`), locked at `9e49bef` |
+| 7 | `cli.py` and `api/` duplicated the valuation sequence | `dc81088` (`P3a-one-pipeline`), locked at `ac736e7` |
 
 **At `a64818b` these tables hold 24 closed items and 37 open ones** (item 23 appears twice above). They are the headline, not the whole list: items 55, 57, 58, 60 and 61 are open in the backlog and not shown here. Items 19 to 28 did not exist when this build
 started — **every one of them was found by running the code**, not by reading it. So were
@@ -523,6 +524,8 @@ the branch.
 **From 2026-10-05 one team builds, on the user's words** ("you can takeover the build. i will ask you to change to 2 teams once antigravity token is back"). The Gemini quota ran out during `P14d-finance-leases`. The overall lead now also runs the programmer, code reviewer and tester as Claude subagents, so the write guard and the seal run again. `.agent/QUEUE.md` holds the mode line.
 
 **`P14d-finance-leases` is accepted at `9e49bef`.** It closes item 83 on the user's "83a": the Pass 1 schema and prompt say that finance lease obligations are debt and operating lease obligations are not; `CACHE_FORMAT` is `p14d-finance-leases-v1`. Its Gemini programmer and reviewer finished; its Gemini tester stopped part way, and that work was committed as found (`78d21c4`, the user's "2a"). A Claude tester finished it: it deleted a test that asserted CAPM values copied from a run, and rebuilt the Walmart debt arithmetic from PDF page 22 inside the test, so the suite no longer needs the untracked `extractions/WMT.json` (clean checkout: 1087 passed, 5 skipped). Walmart route B does not move: ST debt 10,994, LT debt 40,529, net debt 40,796, $28.02. No Gemini run has shown that route A follows the rule. The `extract-filing` skill teaches the rule. Phase 3 is next.
+
+**`P3a-one-pipeline` (Phase 3, part 1) is accepted at `ac736e7`.** It closes item 7. A new root module, `pipeline.py`, holds the valuation sequence once: `adjust_financials` (partition the items, normalise) and `value_company` (assumptions, market data, CAPM, share count, WACC, projection, DCF). `cli.py` and both web routes call it. Walmart does not move: the CLI gives $28.02 with only the "ERP from history" line moved (item 89), and the web pages are byte-identical with the market data held fixed. **One behaviour changed, on the user's rules:** the yfinance share count fallback is deleted, so a filing with no diluted share count now stops and names `diluted_shares` in both entry points, with no market call (rules 3 and 5). The review's rule 2 finding on the `assumptions` dict is accepted until item 88, on the user's decision "Accept until item 88". New items: 87 (the web form rounds its defaults, $27.01 against $28.02), 88, 89, 90, 91. `P3b-pipeline-stops` (items 49 and 72) is next; its assignment is not written.
 
 **Phase 13 (silent defects first, the user's decision of 2026-10-03) is complete at `98b908e`.** Wave 1: `P13a` (`47b8b09`) closes items 25 and 38, `P13b` (`aa6f80d`) closes items 15, 32, 39 and 42, each reviewed and tested. `P13c` (`5b03600`) closes item 46 after three review rounds, and `P13c-tests` locks the key order and both labels without reading the real `.env`. Wave 1 is done. **Wave 2 is done at `bce6fae`**: `P13d` item 65, `P13e` items 66 and 67, `P13f` item 69 and 38b part (b), `P13g` item 50, each reviewed and tested. **Wave 3, on the user's option 1 of 2026-10-04:** `P13h` (`bc30be4`) closes item 38b part (a) with `--confirm-zero-debt` and a "Confirm zero debt" checkbox; `P13h-tests` (`98b908e`) locked all 53 cases.
 
@@ -571,8 +574,11 @@ Things that have already misled a reader of this repository.
 2. **A valuation that runs proves nothing.** Every dataclass money field defaults to
    `0.0`, so the pipeline produces a share price from an extraction that returned
    nothing at all. "It ran" is not evidence. Name an input that came from a filing.
-3. **`cli.py` and the web app can disagree.** They build assumptions by separate code
-   paths. A figure verified in one is not verified in the other.
+3. **`cli.py` and the web app can still disagree.** Since `P3a-one-pipeline` both run
+   the valuation through `pipeline.py`, and a test shows one price for the same inputs.
+   But each still extracts and parses its own inputs, and the web form posts its
+   defaults back rounded to one decimal: Walmart is $27.01 on the web page and $28.02 in
+   the CLI (backlog item 87).
 4. **Two test cases are red on purpose.** On macOS `pytest -q` reports `2 failed, 857
    passed` at `bce6fae`. That is the expected
    state. Do not fix it by weakening it; fix backlog item 2. The gate

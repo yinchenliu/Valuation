@@ -141,10 +141,13 @@ Market data — price history, the S&P 500 series, shares outstanding — comes 
 yfinance, and is **labelled as market data** wherever it is shown next to filing data.
 
 **Why.** Two sources for one number means a disagreement nobody notices, because
-whichever source is read second wins silently. The current code already breaks this once:
-`api/routes_valuation.py:182` falls back to yfinance for `sharesOutstanding` when the
-filing gives zero shares, mid-pipeline, behind an inline import. The share count is the
-denominator of the headline figure, so its source has to be visible.
+whichever source is read second wins silently. The code broke this once:
+`api/routes_valuation.py:182`, and `cli.py` in its own copy, fell back to yfinance for
+`sharesOutstanding` when the filing gave zero shares, mid-pipeline, behind an inline
+import. The share count is the denominator of the headline figure, so its source has to
+be visible. **Closed by `P3a-one-pipeline`**: a share count that is not a finite number
+above 0 now stops and names `diluted_shares` (`pipeline.py`, `value_company`). It stays
+here as the example that forced this rule.
 
 ## Rule 6 — An assumption is labelled as an assumption.
 

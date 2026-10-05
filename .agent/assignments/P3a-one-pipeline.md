@@ -221,3 +221,41 @@ reads and its pass to `project_fcffs`) until backlog item 88 gives `derive_assum
 typed return. The reviewer's condition for approval is met. No code changes. F5 (the
 `cli.py` line count in `entry-points.md`) is a note; the overall lead corrects it on
 acceptance. The unit goes to the tester, `P3a-one-pipeline-tests`.
+
+## Handoff
+
+Written by the overall lead in one-team mode.
+
+### Commits
+- `dc81088`: `pipeline.py`, `cli.py`, `api/routes_valuation.py`, the two docs files (programmer rounds 1 and 2).
+- `ac736e7`: the tests (`P3a-one-pipeline-tests`).
+
+### Verdicts
+- Programmer: `complete`, round 1 `.agent/journal/2026-10-04T2350-programmer-p3a-one-pipeline.md`, round 2 `.agent/journal/2026-10-05T0014-programmer-p3a-one-pipeline-r2.md`
+- Code reviewer: `changes_requested`, round 1 `.agent/journal/2026-10-05T0011-code_reviewer-p3a-one-pipeline.md` (F1 to F4); `changes_requested`, round 2 `.agent/journal/2026-10-05T0027-code_reviewer-p3a-one-pipeline-r2.md` (F2 only, cleared by the user's decision "Accept until item 88"; F5 a note)
+- Tester: `pass`, `.agent/journal/2026-10-05T0831-tester-p3a-one-pipeline.md`
+
+### Gates
+All with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`, macOS, at `ac736e7`: gate 1109 passed; full
+suite 2 failed (the two red on purpose), 1109 passed; ruff 4, all `BLE001`; mypy with
+`pipeline.py` 6 errors in 3 files, 0 in `pipeline.py`; census over `models analysis api
+ingestion pipeline.py` 64; `GET /` 200; guard 48/48.
+
+## Overall lead review
+
+**Verdict: `accepted`**, 2026-10-05, by the overall lead, on `ac736e7`.
+
+| # | Result, re-run by the overall lead |
+|---|---|
+| 1 | the grep prints 9 lines: each of the eight calls once in `pipeline.py`, and the assumptions page's `derive_assumptions(normalised_financials)` |
+| 3 | `cli.py --session-file extractions/WMT.json` at a worktree on `6c528f0` and at the head: the only difference is the position of the "ERP from history" line (item 89); $28.02 |
+| 5 | with one recorded `fetch_price_data` result served to both commits, `GET /assumptions` and two `POST /valuation` calls (cache hit, then cache miss) give byte-identical HTML; the page shows $28.02 |
+| 7 | the gates above |
+| 8 | a copy of the Walmart session file with 2026 `diluted_shares` `[]`: the CLI stops with "diluted_shares is 0.0 for 'WMT' in fiscal year 2026 ... No share count is taken from market data (rule 5)", the web page shows the same, and neither `yfinance.Ticker` nor `fetch_price_data` is called |
+| tests | `test_pipeline.py`: 17 passed; with the share stop removed in a scratch copy, 6 of them fail |
+
+**Notes, recorded on acceptance.** Backlog item 7 is closed. Item 72 keeps only the
+`total_debt` display line in `cli.py`. New item 91: seven scripts in `tests/` run their
+own valuation sequence with the yfinance share count fallback, outside the census. The
+docstring of `tests/unit/_session_route_helpers.py:19` still names the route module's
+`fetch_price_data`: wording only. F5: `entry-points.md` now gives `cli.py` as 1,146 lines.

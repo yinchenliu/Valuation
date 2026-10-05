@@ -100,7 +100,7 @@ Backlog item 5.
 .venv/Scripts/python.exe cli.py --help
 ```
 
-1,150 lines (measured at `P3a-one-pipeline`): argument parsing, a pickle cache, a
+1,146 lines (measured at `P3a-one-pipeline`): argument parsing, a pickle cache, a
 10-step progress display, one print function per pipeline stage, and stage 1 by either
 route. Filing discovery moved to `ingestion/filings.py` at `P9a-session-route`; the
 valuation steps moved to `pipeline.py` at `P3a-one-pipeline`.

@@ -190,7 +190,7 @@ rest of the codebase should behave.
 |---|---|---|
 | Tests | `.venv/Scripts/python.exe -m pytest -q` | **3 collection errors, 0 tests** |
 | Lint | `.venv/Scripts/python.exe -m ruff check .` | **45 errors** |
-| Types | `.venv/Scripts/python.exe -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports` | **33 errors in 4 files** |
+| Types | `.venv/Scripts/python.exe -m mypy models analysis ingestion api config.py app.py pipeline.py --ignore-missing-imports` | **33 errors in 4 files** (without `pipeline.py`, which `P3a-one-pipeline` added) |
 
 **No gate passes today.** That is the starting position. [STATUS.md](../../STATUS.md)
 section 1 holds the breakdown and keeps the current figure; this file owns the
@@ -206,7 +206,9 @@ free until that is fixed.
 ### mypy is scoped deliberately
 
 `mypy .` is **not** the gate. It would include `tests/` and `cli.py`, which are
-scripts. The gate names the four source packages plus the two root modules.
+scripts. The gate names the four source packages plus the three root modules that are
+not scripts: `config.py`, `app.py` and, since `P3a-one-pipeline`, `pipeline.py`. Add
+`pipeline.py` to the rule 3 census grep too; it held 0 sites when it was added.
 
 `--ignore-missing-imports` is required: `yfinance`, `pdfplumber` and `scipy` ship no
 type stubs.
