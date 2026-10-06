@@ -46,9 +46,20 @@ COLLISION (2022, 0.2, 'add_back')
 ```
 
 `len(load_session_extraction('extractions/WMT.json').non_recurring)` is **13**. So **200
-$M of add-back is lost from fiscal 2022**, the fiscal 2022 operating margin is understated
-by that amount, and the three-year average the projection uses moves with it. Nothing on
-either page and nothing in `check`'s output says an item was dropped.
+$M of add-back is lost from fiscal 2022.** Nothing on either page and nothing in `check`'s
+output says an item was dropped.
+
+**Corrected 2026-10-06, after round 1. The first version of this paragraph named the wrong
+mechanism, and both the programmer and the code reviewer proved it wrong by execution.**
+It said the fiscal 2022 operating margin is understated. It is not. All four Walmart
+fiscal 2022 items carry `line_item: "other_non_operating"`, which the normalizer applies
+**below** EBIT, so `operating_margin` is `0.045293441861602016` and `ebit` is `25942.0` in
+both trees. **What moves is the fiscal 2022 effective tax rate**: `ebt` goes from
+`23706.0` to `23906.0`, exactly 200 apart, against an unchanged `tax_expense` of `4756.0`,
+so `effective_tax_rate` goes `0.20062431451953092 → 0.19894587132937339`. That changes the
+derived `tax_rate` assumption, 23.147309% to 23.113740%, hence NOPAT in all five projected
+years and the terminal value. **The defect and its cost are real. The path this paragraph
+described was not.**
 
 **Why the dedupe exists, and it is right about that case.** Filings overlap. Walmart's
 fiscal 2024 10-K presents fiscal 2022, 2023 and 2024, and the fiscal 2025 10-K presents
@@ -167,3 +178,67 @@ change that moves a number must show the number before and the number after.
 - `extractions/WMT.json` holds three filings and five fiscal years, 2022 to 2026. The
   balance sheet is on `filings[2]`, the newest filing, not on `filings[0]`.
 - The suite takes about 120 seconds.
+
+---
+
+## Round 2 amendment (overall lead), 2026-10-06
+
+**Round 1 is `approved`.** The code reviewer re-ran all 14 criteria and they agree. This
+amendment adds **one** change, and it answers the reviewer's F1, which is a defect in my
+assignment and not in your code.
+
+**The fact.** Step 1 of "What to do" told you never to dedupe two items that came from one
+filing's answer. You followed it exactly. The reviewer then measured the consequence: a
+filing whose Pass 2 answer lists **the identical row twice** — same year, same amount, same
+direction, same description **and the same page** — now produces two items, silently. At
+`HEAD` the second was dropped, also silently.
+
+**What follows.** This unit set out to make a silent drop impossible, and in this one case
+it replaced a silent drop with a silent double-count. A double-count inflates the add-back
+instead of losing it. Both are silent and both are wrong.
+
+**Why the fix carries no judgement, which is why I am asking for it rather than deferring
+it.** Your reason for keeping `page` out of the key is correct **across** filings: a full
+`source` string carries one PDF's page number, and the reviewer confirmed the same
+disclosure moves between filings — `Note 1 … Investments, page 52` in the FY2024 10-K and
+`page 51` in the FY2025. **That reason does not apply inside one filing.** Within one PDF,
+`page` is what separates Asda on page 66 from Seiyu on page 67. Two rows that agree on the
+year, the amount, the direction, the description **and** the page are one printed line
+written twice, not two charges.
+
+### What to do
+
+1. **Give the within-filing comparison its own key**: `(year, amount, direction,
+   description, page)`. The across-filing key is unchanged at `nri_identity`, for the
+   reason you gave and the reviewer confirmed.
+2. **Report a within-filing drop exactly as you report a cross-filing one.** Use
+   `_print_repeated_item` or the same words. **The whole point of this amendment is that
+   neither direction is silent**, so a within-filing repeat that is dropped must say so.
+3. **Say in the docstring which key applies where, and why `page` is in one and not the
+   other.** A reader meeting two keys must not have to infer the reason.
+4. Change nothing else. Round 1's behaviour, its message text and its public
+   `nri_identity` all stand.
+
+### Added done-criteria
+
+| # | Criterion | Expected | How it is measured |
+|---|---|---|---|
+| 15 | The identical row twice in one filing is one item, and the drop is reported | 1 item, and the message names both copies with their page | one filing's answer holding two rows identical in year, amount, direction, description and page |
+| 16 | Asda and Seiyu still survive | 2 items | the two real rows, which differ only in description and page |
+| 17 | Two rows alike in every field but the page, in one filing | **2 items**, no drop | the reviewer's case, stated so the boundary is measured from both sides |
+| 18 | Walmart does not move | `MERGED 14`, Asda and Seiyu both present | the criterion 1 command |
+| 19 | The cross-filing behaviour does not move | the same results as round 1 for criteria 3, 4, 5 and 6 | re-run them |
+| 20 | Gates, after the last edit | types 5 in 2, lint 4 all `BLE001`, census 64, route 200 | the commands above |
+| 21 | The failing test set | the same two tests as round 1, and no others | `-m pytest -q --ignore-glob="*_rule3_red.py" -p no:randomly`, compared **by name** |
+
+### Not in this round
+
+- **The differently-worded re-report across filings is a silent double-count.** The
+  reviewer's F2. It is a backlog item, not this round's work: the reviewer measured that
+  `plan_filings` gives every filing after the oldest its own fiscal year alone, so the
+  planned path has disjoint years and a cross-filing re-report needs the model to
+  volunteer a year it was not asked for. In the real Walmart file it never did.
+- **Carrying a drop to the web page.** Backlog item 62. Out of scope, and the reviewer
+  agreed stopping was right.
+- **`tests/`.** Both red tests build their repeat with a **different** description and
+  cannot pass under any correct new key. The tester re-expresses them.
