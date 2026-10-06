@@ -41,11 +41,17 @@ def isolate_environment_keys(monkeypatch: pytest.MonkeyPatch) -> None:
 # A connection to `127.0.0.1`, `::1` or `localhost` never leaves the machine,
 # so allowing it costs nothing the fixture was there to buy.
 #
-# Two tests in `tests/unit/test_routes.py` hold this contract in place:
-# `test_no_socket_refuses_an_address_that_leaves_the_machine` and
-# `test_no_socket_allows_the_loopback_address`. Without the first, a later
-# change that turns the fixture into a no-op would pass every test in the
-# suite.
+# Three tests in `tests/unit/test_routes.py` exercise this fixture:
+# `test_no_socket_refuses_an_address_that_leaves_the_machine`,
+# `test_no_socket_refuses_an_address_it_cannot_read` and
+# `test_no_socket_allows_the_loopback_address`.
+#
+# **The two refusal tests are what hold the contract.** The loopback test
+# cannot detect a fixture turned into a no-op: a connection to `127.0.0.1`
+# succeeds with no patch at all, so that test stays green against a fixture
+# that patches nothing. It states the Windows exception, it does not guard it.
+# Delete either refusal test and a later change that empties `_no_socket` would
+# pass every test in the suite.
 # ===========================================================================
 
 _REAL_CONNECT = socket.socket.connect

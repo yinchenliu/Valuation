@@ -19,7 +19,7 @@ Where every expected value comes from (the tester card, `.claude/agents/tester.m
   `.agent/assignments/P14d-finance-leases.md` ("What to do", steps 1 and 2) asks for.
 - The marker string is the one the assignment names (step 3).
 - The Walmart debt arithmetic is built in the test from the figures printed on
-  `10K_filings/Walmart/Walmart Inc._10-K_2026-01-31_English.pdf`, PDF page 22
+  `10K_filings/WMT/Walmart Inc._10-K_2026-01-31_English.pdf`, PDF page 22
   (printed page 53, "Consolidated Balance Sheets, As of January 31, (Amounts in
   millions)", column 2026), read off the page by the tester. The sums are worked by
   hand in the comments. No figure is taken from `extractions/WMT.json`, a cached

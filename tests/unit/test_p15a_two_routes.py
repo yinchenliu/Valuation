@@ -233,9 +233,18 @@ def test_cli_refuses_dash_p_claude() -> None:
     so the optional quote is the only thing the pattern tolerates. The closing
     parenthesis is part of the pattern, so a second accepted provider appearing
     in the list would still turn this test red.
+
+    The folder argument reads `10K_filings/WMT` because that is how this
+    repository stores filings, one folder per ticker. It was `10K_filings/Walmart`
+    until P1d, which is a folder no machine holds. **Neither spelling changes any
+    of the three assertions and neither is read**: argparse rejects `-p claude`
+    while parsing arguments, before `cli.py` opens anything, so the run exits 2
+    with the same stderr whatever path follows. The same typing error in
+    `test_p14b_note_figures.py` was not harmless, so the spelling is corrected
+    here too rather than left as a second example of it (backlog item 101).
     """
     result = subprocess.run(
-        [sys.executable, "cli.py", "-p", "claude", "10K_filings/Walmart"],
+        [sys.executable, "cli.py", "-p", "claude", "10K_filings/WMT"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,

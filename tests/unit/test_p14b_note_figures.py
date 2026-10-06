@@ -34,11 +34,13 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import io
 import json
 import socket
 from pathlib import Path
 from typing import Any
 
+import pdfplumber
 import pytest
 
 import ingestion.claude_extractor as ce
@@ -54,6 +56,7 @@ from ingestion.session_extraction import (
     cmd_check,
     load_session_extraction,
 )
+from tests.unit._real_filings import RealFiling
 from tests.unit._session_route_helpers import (
     make_pdf,
     pass1_answer,
@@ -77,10 +80,22 @@ pytestmark = pytest.mark.usefixtures("_no_socket")
 _TICKER = "TST"
 _COMPANY = "Test Corp"
 
-_REAL_WALMART_PDF = Path("10K_filings/Walmart/Walmart Inc._10-K_2026-01-31_English.pdf")
-_REAL_CHIPOTLE_PDF = Path("10K_filings/Chipotle/Chipotle Mexican Grill Inc._10-K_2025-12-31_English.pdf")
-_REAL_OKTA_PDF = Path("10K_filings/Okta/Okta Inc._10-K_2026-01-31_English.pdf")
-_REAL_LHX_PDF = Path("10K_filings/LHX/L3Harris Technologies Inc._10-K_2026-01-02_English.pdf")
+# Real filings live under `10K_filings/<TICKER>/`, and `10K_filings/` is
+# git-ignored, so each of these four tests runs only where its filing is held.
+# Until P1d the Walmart lookup read `10K_filings/Walmart/`, a folder no machine
+# uses, so it skipped on this machine, which holds that exact file name under
+# `10K_filings/WMT/` (backlog item 101). `RealFiling` states the convention
+# once and puts the pattern it tried into the skip reason.
+#
+# The L3Harris file name is the one the repository stores, and it is the filing
+# the test describes: its cover page (PDF page 1) reads "For the fiscal year
+# ended January 2, 2026". The folder names it by fiscal-year label (2025) where
+# Walmart's names the period end date (2026-01-31); both conventions are on
+# disk, so neither can be assumed from the other.
+_REAL_WALMART_PDF = RealFiling("WMT", "Walmart Inc._10-K_2026-01-31_English.pdf")
+_REAL_CHIPOTLE_PDF = RealFiling("CMG", "Chipotle Mexican Grill Inc._10-K_2025-12-31_English.pdf")
+_REAL_OKTA_PDF = RealFiling("OKTA", "Okta Inc._10-K_2026-01-31_English.pdf")
+_REAL_LHX_PDF = RealFiling("LHX", "L3Harris Technologies Inc._10-K_2025_English.pdf")
 
 
 def _historical_year(
@@ -896,16 +911,33 @@ def test_rule_3_invalid_pdf_bytes_raises_value_error() -> None:
 # 11. Real 10-K Filings verification
 # ===========================================================================
 
-@pytest.mark.skipif(not _REAL_WALMART_PDF.exists(), reason="Walmart 10-K PDF not found")
+@pytest.mark.skipif(not _REAL_WALMART_PDF.found, reason=_REAL_WALMART_PDF.skip_reason)
 def test_real_walmart_filing_scale_confirmation() -> None:
     """Real Walmart 10-K: page 21 prints '(Amounts in millions, except per share data)' -> 0 failures.
     Row citing page 2 (TOC/intro without scale) -> 1 failure naming page 2.
 
-    Citations:
-      Walmart 10-K page 21 prints: '(Amounts in millions, except per share data)'.
-      Page 1 and 2 print no unit statement.
+    Citations (every page number here is a **PDF page index**, 1-based, which is
+    what `_row_scale_failures` reads: `pdf.pages[page - 1]`, claude_extractor.py:1303):
+      Walmart FY2026 10-K (cover page: 'For the fiscal year ended January 31, 2026'),
+      PDF page 21 carries the end of the Report of Independent Registered Public
+      Accounting Firm and the head of the Consolidated Statements of Income, and
+      prints '(Amounts in millions, except per share data)' above the columns
+      '2026 2025 2024'. This page's text layer holds no printed page number, so the
+      PDF index is the only page number this citation can give (backlog item 100).
+      PDF page 1 (the cover page) and PDF page 2 (the table of contents) print no
+      parenthesised unit statement: page 1's parentheses are '(10-K)', '(d)',
+      '(IRS Employer Identification No.)' and the like; page 2's are '("SEC")',
+      '(the "Exchange Act")' and '(including the use of artificial intelligence "AI")'.
+      Read off the filing by the tester, P1d-skipped-filings.
     """
     pdf_bytes = _REAL_WALMART_PDF.read_bytes()
+
+    # The figure is the one PDF page 21 prints on the row named: "Total revenues
+    # 713,163 680,985 648,125" under the columns "2026 2025 2024". Before P1d this
+    # test carried 680,984 against year 2026, which is neither the 2026 column nor
+    # the 2025 figure (680,985). `_row_scale_failures` reads pages, not values, so
+    # nothing was asserted about it either way; a test that cites a filing page
+    # should still carry the figure that page prints.
 
     # Pass 1 with row on page 21 -> confirmed
     data_clean = _pass1_dict(
@@ -915,7 +947,7 @@ def test_real_walmart_filing_scale_confirmation() -> None:
         share_units_page=21,
         historical_years=[_historical_year(
             year=2026,
-            revenue=[{"label": "Total revenues", "value": 680984.0, "page": 21}],
+            revenue=[{"label": "Total revenues", "value": 713163.0, "page": 21}],
         )],
     )
     assert _row_scale_failures(data_clean, pdf_bytes) == []
@@ -928,7 +960,7 @@ def test_real_walmart_filing_scale_confirmation() -> None:
         share_units_page=21,
         historical_years=[_historical_year(
             year=2026,
-            revenue=[{"label": "Total revenues", "value": 680984.0, "page": 2}],
+            revenue=[{"label": "Total revenues", "value": 713163.0, "page": 2}],
         )],
     )
     failures = _row_scale_failures(data_bad, pdf_bytes)
@@ -936,13 +968,17 @@ def test_real_walmart_filing_scale_confirmation() -> None:
     assert "page 2 (money figures): expected millions, no unit statement on page 2 or 1" in failures[0].message
 
 
-@pytest.mark.skipif(not _REAL_CHIPOTLE_PDF.exists(), reason="Chipotle 10-K PDF not found")
+@pytest.mark.skipif(not _REAL_CHIPOTLE_PDF.found, reason=_REAL_CHIPOTLE_PDF.skip_reason)
 def test_real_chipotle_filing_scale_mismatch() -> None:
     """Real Chipotle 2025 10-K: page 29 prints '(in thousands, except per share data)'.
     Pass 1 with expected 'millions' and revenue on page 29 fails naming found statement.
 
-    Citation:
-      Chipotle 10-K page 29 prints: '(in thousands, except per share data)'.
+    Citation (PDF page index, 1-based):
+      Chipotle 10-K PDF page 29 prints: '(in thousands, except per share data)'.
+
+    This machine holds no Chipotle filing, so this test skips here and the skip
+    reason names the path it tried. The citation is the one the P14b tester wrote
+    against the filing on their machine; it has not been re-read here.
     """
     pdf_bytes = _REAL_CHIPOTLE_PDF.read_bytes()
     data = _pass1_dict(
@@ -960,13 +996,17 @@ def test_real_chipotle_filing_scale_mismatch() -> None:
     assert "'Revenue' (revenue, year 2025)" in msg
 
 
-@pytest.mark.skipif(not _REAL_OKTA_PDF.exists(), reason="Okta 10-K PDF not found")
+@pytest.mark.skipif(not _REAL_OKTA_PDF.found, reason=_REAL_OKTA_PDF.skip_reason)
 def test_real_okta_filing_two_scales() -> None:
     """Real Okta 2026 10-K: page 58 prints '(dollars in millions, shares in thousands, except per share data)'.
     Independent verification of money figures (millions) and share count (thousands).
 
-    Citation:
-      Okta 10-K page 58 prints: '(dollars in millions, shares in thousands, except per share data)'.
+    Citation (PDF page index, 1-based):
+      Okta 10-K PDF page 58 prints: '(dollars in millions, shares in thousands, except per share data)'.
+
+    This machine holds no Okta filing, so this test skips here and the skip reason
+    names the path it tried. The citation is the one the P14b tester wrote against
+    the filing on their machine; it has not been re-read here.
     """
     pdf_bytes = _REAL_OKTA_PDF.read_bytes()
     stmt = "(dollars in millions, shares in thousands, except per share data)"
@@ -1004,15 +1044,34 @@ def test_real_okta_filing_two_scales() -> None:
     assert "'Diluted shares' (diluted_shares, year 2026)" in msg
 
 
-@pytest.mark.skipif(not _REAL_LHX_PDF.exists(), reason="L3Harris 10-K PDF not found")
+@pytest.mark.skipif(not _REAL_LHX_PDF.found, reason=_REAL_LHX_PDF.skip_reason)
 def test_real_lhx_filing_multi_scale_limit() -> None:
-    """Real L3Harris 2026 10-K: page 62 prints both '(In millions)' and '(In thousands)'.
-    Confirmed under both expected millions and expected thousands.
+    """Real L3Harris 10-K for the fiscal year ended 2026-01-02: PDF page 62 prints
+    both '(In millions)' and '(In thousands)'. Confirmed under both expected
+    millions and expected thousands.
 
-    Citation:
-      L3Harris 10-K page 62 prints both '(In millions)' and '(In thousands)'.
+    Citations (PDF page index, 1-based, which is what `_row_scale_failures` reads):
+      The file is `10K_filings/LHX/L3Harris Technologies Inc._10-K_2025_English.pdf`,
+      89 pages. Its cover page (PDF page 1) reads 'For the fiscal year ended
+      January 2, 2026', so it **is** the filing this test describes, stored under the
+      fiscal-year label 2025 rather than the period end date. The two other L3Harris
+      files on disk are labelled 2023 and 2024 and their cover pages read
+      'December 29, 2023' and 'January 3, 2025'. Read by the tester, P1d.
+      PDF page 62 holds the pension contributions discussion with a table headed
+      '(In millions)' and, lower on the same page, the share-based compensation
+      table headed '(In thousands)' above 'RSUs outstanding as of January 3, 2025'.
+      Its text layer holds no printed page number (backlog item 100).
+
+    The first assertion below is the document check: if a future rename pointed this
+    pattern at a different L3Harris filing, the page-62 claims would be meaningless,
+    so the test reads the cover page before it reads page 62.
     """
     pdf_bytes = _REAL_LHX_PDF.read_bytes()
+
+    # Document identity, from the cover page, not from the file name.
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as _pdf:
+        cover = _pdf.pages[0].extract_text() or ""
+    assert "For the fiscal year ended January 2, 2026" in cover
 
     # Case A: expected scale millions -> passes
     data_millions = _pass1_dict(
@@ -1035,6 +1094,39 @@ def test_real_lhx_filing_multi_scale_limit() -> None:
         )],
     )
     assert _row_scale_failures(data_thousands, pdf_bytes) == []
+
+    # Case C: the same filing, a row on a page that prints no unit statement.
+    #
+    # Cases A and B both expect zero failures, so neither can tell check B1 working
+    # from check B1 deleted: a `_row_scale_failures` that returned `[]` for every
+    # input would pass them both. (Measured: with `return []` inserted at the head
+    # of `_row_scale_failures` in a scratch copy, this test still passed and the
+    # Walmart test failed. P1d-skipped-filings.) This case is the direction that
+    # can go wrong, on this same real filing.
+    #
+    # Citation: PDF page 2 of this filing is the table of contents and its text
+    # layer holds no parenthesised text at all; PDF page 1, the page B1 also
+    # consults, is the cover page, whose parentheses are '(10-K)', '(Mark One)',
+    # '(Exact name of registrant as specified in its charter)' and the like, none
+    # of them a unit statement. So neither page 2 nor page 1 can confirm a scale.
+    #
+    # Expected, from check B1 as the module docstring states it (item 3): one
+    # failure, naming the page, the kind, the expected scale and the citing row.
+    data_unconfirmed = _pass1_dict(
+        units_printed="(In millions)",
+        units_page=62,
+        historical_years=[_historical_year(
+            year=2025,
+            revenue=[{"label": "Revenue line", "value": 21000.0, "page": 2}],
+        )],
+    )
+    failures = _row_scale_failures(data_unconfirmed, pdf_bytes)
+    assert len(failures) == 1
+    message = failures[0].message
+    assert "page 2" in message
+    assert "money figures" in message
+    assert "millions" in message
+    assert "'Revenue line' (revenue, year 2025)" in message
 
 
 def test_candidate_raising_value_error_is_discarded_for_kind(tmp_path: Path) -> None:
