@@ -4,7 +4,7 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `2c4f69d` (`P3b-pipeline-stops` and its tests, one-team mode), 2026-10-05, by the overall lead**, on branch `main`, **on the Windows machine**
+**Measured at `f763b7c` (`P1c-test-network-copies`, one-team mode), 2026-10-05, by the overall lead**, on branch `main`, **on the Windows machine**
 (`.venv/Scripts/python.exe`, Python 3.14.4), with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`.
 The build moved back to the Windows machine at `0a8ea54`; the figures from `cde33cb` to
 `ac736e7` were measured on the macOS machine. **Forty-seven work units accepted by `69436d9`, fourteen more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes`, `P14b-note-figures`, `P14d-finance-leases`, `P3a-one-pipeline`, `P1b-windows-gate`, `P3b-pipeline-stops` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
@@ -24,10 +24,10 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `2c4f69d` (Windows) |
+| Gate | Command | Result at `f763b7c` (Windows) |
 |---|---|---|
-| Tests | `.venv/Scripts/python.exe -m pytest -q` | **1138 tests. 1136 pass, 2 fail**, plus 5 skipped: the 2 red on purpose |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **1136 passed, 5 skipped, 0 failed**, with or without the empty-key prefix: `tests/conftest.py` empties both API keys for every test |
+| Tests | `.venv/Scripts/python.exe -m pytest -q` | **1139 tests. 1137 pass, 2 fail**, plus 5 skipped: the 2 red on purpose. **4 of the 5 skips are backlog item 101**, a `skipif` that names a folder no machine uses |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **1137 passed, 5 skipped, 0 failed**, with or without the empty-key prefix: `tests/conftest.py` empties both API keys for every test |
 | Lint | `.venv/Scripts/python.exe -m ruff check .` | **4 errors**, every one `BLE001`. `P13g` removed the one in `_run_nri_pass` |
 | Types | `.venv/Scripts/python.exe -m mypy models analysis ingestion api config.py app.py pipeline.py --ignore-missing-imports` | **5 errors in 2 files**, 21 files checked, 0 in `pipeline.py`. `P3b` removed one by widening `plan_filings` and `extract_multi_year` to `Sequence`. `P3a` removed two in `api/routes_valuation.py`; `P15a` removed one before that |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
@@ -315,6 +315,10 @@ Built 2026-09-20 on Windows. **Development moved to a macOS machine by 2026-09-2
   `pdftoppm` is absent and Homebrew 4.4.6 cannot install it on macOS 27.0, so a session
   reads PDFs through `session_extraction text`.
 - **Windows interpreter:** `.venv/Scripts/python.exe`, Python **3.14.4**.
+- **The Windows machine holds 9 10-K PDFs, not 16**, measured 2026-10-05:
+  `10K_filings/ABBV/`, `10K_filings/LHX/` and `10K_filings/WMT/`, three filings each.
+  Chipotle and Okta are on the macOS machine only. `extractions/` is empty, so **no
+  end-to-end valuation of a real filing can run here** without a paid extraction.
 - All 13 runtime dependencies import. pandas **3.0.6**, numpy **2.5.3**, scipy **1.18.1**.
 - Dev gates: pytest 9.1.1, ruff 0.16.8, mypy 2.3.1, pytest-cov.
 - `ruff.toml` now exists. It sets `target-version` and one justified `B008` per-file
@@ -503,7 +507,7 @@ the headline. Re-ranked at `622262b`.
 | 83 | The Pass 1 schema did not say whether a finance lease obligation is debt | `78d21c4` (`P14d-finance-leases`), locked at `9e49bef` |
 | 7 | `cli.py` and `api/` duplicated the valuation sequence | `dc81088` (`P3a-one-pipeline`), locked at `ac736e7` |
 | 49 | Several PDFs, one with no year: the filing was dropped silently | `2c4f69d` (`P3b-pipeline-stops`), locked in the same commit |
-| 93 | Two more copies of the no-network rule refused the loopback address | `P1c-test-network-copies` |
+| 93 | Two more copies of the no-network rule refused the loopback address | `f763b7c` (`P1c-test-network-copies`) |
 | 72 | `cli.py`'s conditional zeros, the census does not search that file | `2c4f69d`: the `shares` half at `dc81088`, the `total_debt` half here |
 
 **At `a64818b` these tables hold 24 closed items and 37 open ones** (item 23 appears twice above). They are the headline, not the whole list: items 55, 57, 58, 60 and 61 are open in the backlog and not shown here. Items 19 to 28 did not exist when this build
