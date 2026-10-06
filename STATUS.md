@@ -4,13 +4,23 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `f763b7c` (`P1c-test-network-copies`, one-team mode), 2026-10-05, by the overall lead**, on branch `main`, **on the Windows machine**
+**Measured at `2e2eb2f` (`P3c-one-number` and its tests, one-team mode), 2026-10-06, by the overall lead**, on branch `main`, **on the Windows machine**
 (`.venv/Scripts/python.exe`, Python 3.14.4), with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`.
 The build moved back to the Windows machine at `0a8ea54`; the figures from `cde33cb` to
-`ac736e7` were measured on the macOS machine. **Forty-seven work units accepted by `69436d9`, fourteen more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes`, `P14b-note-figures`, `P14d-finance-leases`, `P3a-one-pipeline`, `P1b-windows-gate`, `P3b-pipeline-stops` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
-re-ran the measurements rather than reading them; **five** times a reviewer or a
+`ac736e7` were measured on the macOS machine. **Forty-seven work units accepted by `69436d9`, seventeen more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes`, `P14b-note-figures`, `P14d-finance-leases`, `P3a-one-pipeline`, `P1b-windows-gate`, `P3b-pipeline-stops`, `P1c-test-network-copies`, `P1d-skipped-filings`, `P3c-one-number` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
+re-ran the measurements rather than reading them; **six** times a reviewer or a
 programmer overturned a claim — twice against a programmer, **three times against the
-orchestrator**. The journal is [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
+orchestrator**, and once against a tester. The journal is [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
+
+**The newest overturn is the cheapest lesson in the file, and it cost one message.**
+`P3c-one-number-tests` reported the lint gate as "4 `BLE001`" and, beside it, "`All
+checks passed!` over my five files". Both cannot be true. My acceptance re-run of
+`ruff check .` found **5**, the fifth being `C402` at
+`tests/unit/test_p3c_one_number.py:648` — in a file that unit wrote. The tester had run
+ruff over its own files, then added two more tests, and never re-ran lint after that
+edit. **A gate run before the last edit produces output indistinguishable from one run
+after it.** Run lint and types after the last write, not beside the edit that prompted
+them. This is the whole reason the lead re-measures instead of reading.
 
 **The newest of the three orchestrator errors is the instructive one.** `P8a`'s
 assignment mandated a two-sentence provenance label, supplied or derived. Review round 1
@@ -24,11 +34,11 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `f763b7c` (Windows) |
+| Gate | Command | Result at `2e2eb2f` (Windows) |
 |---|---|---|
-| Tests | `.venv/Scripts/python.exe -m pytest -q` | **1139 tests. 1137 pass, 2 fail**, plus 5 skipped: the 2 red on purpose. **4 of the 5 skips are backlog item 101**, a `skipif` that names a folder no machine uses |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **1137 passed, 5 skipped, 0 failed**, with or without the empty-key prefix: `tests/conftest.py` empties both API keys for every test |
-| Lint | `.venv/Scripts/python.exe -m ruff check .` | **4 errors**, every one `BLE001`. `P13g` removed the one in `_run_nri_pass` |
+| Tests | `.venv/Scripts/python.exe -m pytest -q` | **1179 tests. 1175 pass, 2 fail**, plus 2 skipped: the 2 red on purpose. **Item 101 is closed**, so the only skips left are the Chipotle and Okta filings, which this machine does not hold |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **1175 passed, 2 skipped, 0 failed**, with or without the empty-key prefix: `tests/conftest.py` empties both API keys for every test |
+| Lint | `.venv/Scripts/python.exe -m ruff check .` | **4 errors**, every one `BLE001`: `api/routes_valuation.py:451` and `:733`, `cli.py:1204`, `tests/test_e2e_all_googl.py:106`. **Count them with `ruff check .`, never with a run over a subset of files** — see the overturn above |
 | Types | `.venv/Scripts/python.exe -m mypy models analysis ingestion api config.py app.py pipeline.py --ignore-missing-imports` | **5 errors in 2 files**, 21 files checked, 0 in `pipeline.py`. `P3b` removed one by widening `plan_filings` and `extract_multi_year` to `Sequence`. `P3a` removed two in `api/routes_valuation.py`; `P15a` removed one before that |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
 | **Rule 3 census** | the grep at [rules.md:65](docs/2-rules/rules.md), with `pipeline.py` added | **64**. `P3b` deleted `cli.py`'s `latest_bs.total_debt if latest_bs else 0`, which the census grep never searched (`cli.py` is outside its four directories), so the figure does not move. `P3a` deleted the yfinance share count fallback's `.get("sharesOutstanding", 0)`; `pipeline.py` holds 0 sites. `P13b` removed two conditional zeros (`latest_year`, `implied_share_price`). `P11a` replaced the Pass 1 parser's `.get(field, 0)` reads (114 at `24a9a90`). Under zsh, quote `'--include=*.py'` or the count reads 0 |
@@ -317,8 +327,15 @@ Built 2026-09-20 on Windows. **Development moved to a macOS machine by 2026-09-2
 - **Windows interpreter:** `.venv/Scripts/python.exe`, Python **3.14.4**.
 - **The Windows machine holds 9 10-K PDFs, not 16**, measured 2026-10-05:
   `10K_filings/ABBV/`, `10K_filings/LHX/` and `10K_filings/WMT/`, three filings each.
-  Chipotle and Okta are on the macOS machine only. `extractions/` is empty, so **no
-  end-to-end valuation of a real filing can run here** without a paid extraction.
+  Chipotle and Okta are on the macOS machine only.
+- **`extractions/WMT.json` exists on this machine since 2026-10-06**, written through
+  route B in a Claude Code session on the user's instruction. It is `session-extraction-v4`
+  and `.gitignore:33` keeps it untracked. **`check` exits 0**: 129 printed lines checked
+  and 129 found, 6 unit statements found, 14 Pass 2 figures found on their pages, every
+  printed subtotal equal to Python's sum, total assets **284,668** = total liabilities and
+  equity **284,668**. Three filings, five fiscal years, 2022 to 2026. **So an end-to-end
+  valuation of a real filing runs here now.** The macOS file held one filing and three
+  years.
 - All 13 runtime dependencies import. pandas **3.0.6**, numpy **2.5.3**, scipy **1.18.1**.
 - Dev gates: pytest 9.1.1, ruff 0.16.8, mypy 2.3.1, pytest-cov.
 - `ruff.toml` now exists. It sets `target-version` and one justified `B008` per-file
@@ -330,6 +347,55 @@ Built 2026-09-20 on Windows. **Development moved to a macOS machine by 2026-09-2
 version to choose `"ME"` over `"M"` for month-end resampling. That branch has not been
 exercised against 3.0 on real data. Treat any resampling result as unverified until it
 is.
+
+### The first route B extraction on the Windows machine, 2026-10-06
+
+**The chat box gateway works here, and the PDF input path is `session_extraction text`.**
+`pdftoppm` is not installed, so the Read tool cannot render a PDF page: it answers
+`pdftoppm is not installed`. The macOS machine had the same gap. Every page was read
+through the text layer with `pdfplumber`.
+
+**The extraction agent was given none of the macOS run's figures, on purpose.** A figure
+copied from the lead is not a figure read from the filing. The lead then re-read the
+written file through `load_session_extraction`:
+
+| Figure | macOS record | 2026-10-06, Windows |
+|---|---|---|
+| revenue 2026 | 713,163 | **713,163** |
+| EBIT 2026 | 29,825 | **29,825** |
+| interest expense 2026 | 2,799 | **2,799** |
+| diluted shares 2026 | 8,022 | **8,022** |
+| total assets | 284,668 | **284,668** |
+| short-term debt | 10,994 | **10,994** |
+| long-term debt | 40,529 | **40,529** |
+| total debt | 51,523 | **51,523** |
+| net debt | 40,796 | **40,796** |
+
+Nine of nine agree. Two machines, two sessions, the same printed pages.
+
+**The end-to-end run gives $30.56, against the macOS run's $28.02, and the whole
+difference in the growth rate is explained by the number of years in the file.**
+`cli.py --session-file extractions/WMT.json`, exit 0: operating margin 4.26%, revenue
+growth 5.3% a year, D&A 1.88%, CapEx 3.18%, NWC change 0.06%, WACC 7.87%, net debt
+40,796M, PV of terminal value 229,424M, implied price **$30.56**, downside -71.4%.
+
+`analysis/projector.py:182` takes `lookback = min(config.DEFAULT_REVENUE_GROWTH_LOOKBACK_YEARS, len(revenues) - 1)`
+and `DEFAULT_REVENUE_GROWTH_LOOKBACK_YEARS` is **3**. Computed by hand from the five
+printed revenues:
+
+```
+5 years (this file):  lookback = min(3, 4) = 3  ->  (713163/611289)^(1/3) - 1 = 5.2723%
+3 years (macOS file): lookback = min(3, 2) = 2  ->  (713163/648125)^(1/2) - 1 = 4.8975%
+```
+
+5.2723% prints as 5.3% and 4.8975% as the 4.9% the macOS record names. **So the longer
+history raises the growth rate, and the growth rate raises the price.** The market data
+also differs: this run is on a different date, with beta 0.567 and a standard error of
+0.157 over 60 observations, which the CLI itself labels as wide.
+
+**Treat $30.56 as a figure about this pipeline, not about Walmart.** The market explains
+18.3% of this stock's return variation, so the cost of equity behind it is uncertain by a
+wide margin, and the CLI says so on the page.
 
 ### The extraction path on this machine — measured, 2026-09-21
 
@@ -444,12 +510,15 @@ the headline. Re-ranked at `622262b`.
 | 31 | `discount_cash_flows`' `wacc` is unguarded on a **direct** call | **latent.** The `run_dcf` chain stops two lines later, so no current path reaches it |
 | 1 | **114** silent zero-default sites — `models/` 60, `ingestion/` 49, `analysis/` 3, `api/` 2 | **worse than its original description.** It does not produce zeros; it produces a signed, correctly-scaled figure that tracks the filing and reads as a measurement |
 | 8 | Blanket `except Exception` at five sites | **it swallowed the web outage for the life of the repository**, because the error page rendered through the same broken call |
-| 6 | Five `x / 100 if x else None` conversions | a deliberate `0` from the user is read as "not supplied" |
+| 112 | **Two different non-recurring items with the same year, amount and direction: the second is dropped in silence** | **new, the route B Walmart extraction of 2026-10-06.** The merge key is `(year, amount, direction)` with no `else`. Walmart's two fiscal 2022 divestiture losses of $0.2 billion, Asda on page 66 and Seiyu on page 67, become one. 14 written, 13 merged. **200 $M of add-back leaves fiscal 2022 and nothing says so.** Assigned to `P14e-nri-dedupe`, `ready` |
+| 116 | A year with no income statement is invisible in every table, and the branch written to report it cannot run | **new, the `P3c` tester's T1.** `FinancialStatements.years` is built from the income statements alone. **Do not delete the dead branch**: the branch is right and the set it iterates is wrong |
+| 117 | The only test of a real route B file is `skipif`-guarded on a git-ignored file | **new, the `P3c` tester's T3.** Eleven assertions run on no clean checkout. **That skip is how item 115 reached `main`** |
+| 113, 114 | `prompt --pass 2` exits 2 on a Windows console; the two unit-scale checks disagree about where a unit statement may sit | **new, the route B extraction of 2026-10-06.** Both reproduced by the overall lead |
+| 103, 104, 105, 106, 108, 109, 110, 111, 118 | nine findings from the `P3c-one-number` review and its tester | **new.** A stop that does not name the field; the basis sentence in four places; a conditional with two identical branches; a tense; a fixture that cannot see item 87; six copies of one sentence per row; two `step="0.1"` fields; a ratio shown at one decimal place everywhere; coverage blind to a continuation-line diff |
 | 22 | `analysis/wacc.py:37` — zero debt balance gives a 0% cost of debt | missing data read as a measurement |
 | 23 | `analysis/fcff.py` holds **no `raise` at all** | wholly empty statements return a well-formed result with `fcff = 0.0` |
 | 10 | D&A subtraction buried in the parser, `ingestion/claude_extractor.py:479` | an accounting decision taken inside a parser, on two zero-defaulted values |
-| 101 | A `skipif` guard names `10K_filings/Walmart/` and the folder is `10K_filings/WMT/` | **new, my review of `P1c`.** Check B1's only real-filing test skips on a machine that holds the filing. **A test that skips reports neither pass nor fail** |
-| 94, 95, 96, 97, 102 | `_parse_files_param`'s bare `int()` message; a now-unreachable third copy of the fiscal-year rule; `ValuationRun.latest_balance_sheet` read by no production code; two templates that render a multi-line error as one paragraph; a fixture comment that names two contract tests when there are three | **new, `P3b` and `P1c`.** Each is small and each is recorded in the backlog with its evidence |
+| 94, 95, 96 | `_parse_files_param`'s bare `int()` message; a now-unreachable third copy of the fiscal-year rule; `ValuationRun.latest_balance_sheet` read by no production code | **new, `P3b`.** Each is small and each is recorded in the backlog with its evidence |
 | 5 | `api/routes_valuation.py:31` — module-global extraction cache, `pop`ped on read | shared across users; a page refresh re-runs the paid extraction |
 | 11 | **10** type errors, down from 33 | one is a live crash path. Every removal so far was a real defect, never an annotation |
 | 23 | `analysis/fcff.py` holds no `raise` for empty statements, and `calculate_fcff_projected` has **seven** unguarded float parameters | wholly empty statements return a well-formed result with `fcff = 0.0` |
@@ -509,6 +578,13 @@ the headline. Re-ranked at `622262b`.
 | 49 | Several PDFs, one with no year: the filing was dropped silently | `2c4f69d` (`P3b-pipeline-stops`), locked in the same commit |
 | 93 | Two more copies of the no-network rule refused the loopback address | `f763b7c` (`P1c-test-network-copies`) |
 | 72 | `cli.py`'s conditional zeros, the census does not search that file | `2c4f69d`: the `shares` half at `dc81088`, the `total_debt` half here |
+| 101, 102 | A `skipif` guard named a folder no machine uses; the `_no_socket` comment named two contract tests of three | `d060007` (`P1d-skipped-filings`) |
+| 87 | The assumptions form posted its own rounded defaults back as the reader's overrides | `2e2eb2f` (`P3c-one-number`) |
+| 92 | The CLI and the web pages showed different historical FCFF for one filing | `2e2eb2f` |
+| 6 | Five `x / 100 if x else None` conversions read a typed `0` as "not supplied" | `2e2eb2f` |
+| 97 | Two templates rendered a multi-line error as one paragraph | `2e2eb2f` |
+| 107 | `error_text` returned `None` for any error box that carried an attribute | `2e2eb2f` |
+| 115 | The real route B test read the balance sheet from `filings[0]` | `2e2eb2f` |
 
 **At `a64818b` these tables hold 24 closed items and 37 open ones** (item 23 appears twice above). They are the headline, not the whole list: items 55, 57, 58, 60 and 61 are open in the backlog and not shown here. Items 19 to 28 did not exist when this build
 started — **every one of them was found by running the code**, not by reading it. So were
@@ -585,6 +661,48 @@ machine is `10K_filings/WMT/`, which holds that exact file name. So check B1's o
 real-filing evidence skips on a machine that holds the filing, and a skip reports neither
 pass nor fail. Backlog item 101.
 
+**`P1d-skipped-filings` is accepted at `d060007`, 2026-10-06.** It closes items 101 and
+102. `tests/unit/_real_filings.py` states the convention `10K_filings/<TICKER>/<pattern>`
+once, resolves from the repository root rather than the process working directory, counts
+**exactly one match** as found, and builds each skip reason out of the path it tried. The
+Walmart and L3Harris real-filing tests run now; Chipotle and Okta skip naming the path each
+looked for. L3Harris's cover page, read that day, states "For the fiscal year ended January
+2, 2026", so the fiscal-year-labelled file is the filing the test describes. One figure was
+corrected: the test carried 680,984 for 2026 and PDF page 21 prints 713,163.
+
+**Its acceptance found something that was not the unit's, and it is the clearest warning
+in this file about spot checks.** The suite reported **51 failures**. The cause was a
+mutation left in `ingestion/claude_extractor.py` by the overall lead's own spot check of
+`P1c`: `return []  # MUTATION - overall lead spot check, restored immediately` at the head
+of `_row_scale_failures`. **The comment said it was restored and it was not.** Check B1
+was disabled in the working tree for about ten hours. With the line removed the gate read
+`22 failed`, which was the in-flight unit's own count exactly, and the file was
+byte-identical to `HEAD` again. **A mutation belongs in a scratch copy. A mutation in the
+repository is one interruption away from being permanent, and its own comment is not
+evidence that it was undone.**
+
+**`P3c-one-number` and its tests are accepted at `2e2eb2f`, 2026-10-06.** They close items
+87, 92, 6, 97, 107 and 115. The six ratio inputs lose their `value` attribute and show the
+derived figure as a `placeholder`, which no browser submits, so an untouched form posts
+nothing and the pipeline derives at full precision (the user's decision "1a" of
+2026-10-05). The five `float = Form(0)` ratio fields are `str = Form("")`, so a typed `0`
+survives as `0.0` and is labelled `supplied` while a blank field is `None` and is labelled
+`derived`. `cli.py` builds its historical FCFF table from the normalised statements, the
+ones the valuation uses, and both entry points print the same sentence naming that basis.
+A year the CLI cannot compute prints its reason instead of vanishing. Both error blocks
+carry `white-space: pre-line`.
+
+**Measured by the tester, and the identity is exact rather than close:** an untouched form
+and `cli.main()` both give `5.331360390393289`, `float.hex` `0x1.55350235fb744p+2` on both
+sides, equal in all 53 binary digits, and the two `ProjectionAssumptions` are equal too.
+Typing the placeholder's rounded `19.0` back gives `5.311895677626452`, **0.365098%
+lower**, in the direction the formula requires. The tester's filing derives an operating
+margin of 4/21 = 19.047619…%, chosen because **backlog item 108's fixture cannot see item
+87 at all**: every ratio it derives already rounds cleanly to one decimal place, so a
+regression test built on it is green before the fix and after it. 124 of 124 assertions are
+hand-sourced, 0 from the code's output, and 22 of 22 mutations were killed in a scratch
+copy with every repository file's sha256 printed before and after.
+
 **Phase 13 (silent defects first, the user's decision of 2026-10-03) is complete at `98b908e`.** Wave 1: `P13a` (`47b8b09`) closes items 25 and 38, `P13b` (`aa6f80d`) closes items 15, 32, 39 and 42, each reviewed and tested. `P13c` (`5b03600`) closes item 46 after three review rounds, and `P13c-tests` locks the key order and both labels without reading the real `.env`. Wave 1 is done. **Wave 2 is done at `bce6fae`**: `P13d` item 65, `P13e` items 66 and 67, `P13f` item 69 and 38b part (b), `P13g` item 50, each reviewed and tested. **Wave 3, on the user's option 1 of 2026-10-04:** `P13h` (`bc30be4`) closes item 38b part (a) with `--confirm-zero-debt` and a "Confirm zero debt" checkbox; `P13h-tests` (`98b908e`) locked all 53 cases.
 
 **Phase 12 (every printed line is found on its page) is done at `1888ccb`.** `P12a`
@@ -632,11 +750,18 @@ Things that have already misled a reader of this repository.
 2. **A valuation that runs proves nothing.** Every dataclass money field defaults to
    `0.0`, so the pipeline produces a share price from an extraction that returned
    nothing at all. "It ran" is not evidence. Name an input that came from a filing.
-3. **`cli.py` and the web app can still disagree.** Since `P3a-one-pipeline` both run
-   the valuation through `pipeline.py`, and a test shows one price for the same inputs.
-   But each still extracts and parses its own inputs, and the web form posts its
-   defaults back rounded to one decimal: Walmart is $27.01 on the web page and $28.02 in
-   the CLI (backlog item 87).
+3. **`cli.py` and the web app give one price for one filing since `P3c-one-number`
+   (`2e2eb2f`), and the identity is exact.** A test holds it: `float.hex` equal in all 53
+   binary digits, not equal to the cent. Item 87 is closed, so the web form no longer
+   posts its own rounded defaults back. **They can still disagree about an input**: each
+   extracts and parses its own, and only the valuation steps are shared through
+   `pipeline.py`.
+8. **A mutation in the repository is one interruption away from being permanent.** At
+   `19fe831` a spot check left `return []  # MUTATION - overall lead spot check, restored
+   immediately` at the head of `_row_scale_failures`. It was not restored. Check B1 was
+   disabled for about ten hours, and the suite reported 51 failures instead of 22. **The
+   comment claiming the restore is not evidence of it.** Mutate a scratch copy, and print
+   the repository file's sha256 before and after.
 4. **Two test cases are red on purpose.** On macOS `pytest -q` reports `2 failed, 857
    passed` at `bce6fae`. That is the expected
    state. Do not fix it by weakening it; fix backlog item 2. The gate
