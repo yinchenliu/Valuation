@@ -61,6 +61,15 @@ from tests.unit._session_route_helpers import (
 )
 from tests.unit._text_pdf import write_text_pdf
 
+# `_no_socket` lives in `tests/conftest.py` — one definition, not three copies.
+# Until P1c one test in this module patched `socket.socket.connect` itself with
+# no loopback exception. That is the version P1b-windows-gate measured as broken:
+# on Windows `asyncio.ProactorEventLoop` builds its self-pipe through `127.0.0.1`,
+# so a blanket refusal fails tests for a reason that has nothing to do with the
+# product. That patch is deleted and the rule now applies to every test in this
+# module, not to the one it was written inside.
+pytestmark = pytest.mark.usefixtures("_no_socket")
+
 # ---------------------------------------------------------------------------
 # Test fixtures and builders
 # ---------------------------------------------------------------------------
@@ -642,11 +651,6 @@ def test_route_a_retry_exhaustion_raises_value_error_on_unconfirmed_scale(
         'Pass 1: after 2 retries, 1 row scale failure(s) are still not confirmed, so the scale of the figures is not known and the run stops:'
         and lists 'page 3 (money figures): expected millions, no unit statement on page 3 or 2'.
     """
-    # Prevent all network socket calls
-    def _block_connect(*args: object, **kwargs: object) -> None:
-        raise RuntimeError("network socket connect blocked in test")
-    monkeypatch.setattr(socket.socket, "connect", _block_connect)
-
     pdf = make_pdf(tmp_path)
     pdf_bytes = pdf.read_bytes()
 
@@ -681,6 +685,27 @@ def test_route_a_retry_exhaustion_raises_value_error_on_unconfirmed_scale(
     assert "Pass 1: after 2 retries, 1 row scale failure(s) are still not confirmed" in err_msg
     assert "page 3 (money figures): expected millions" in err_msg
     assert "'revenue' (revenue, year 2024)" in err_msg
+
+
+def test_this_module_refuses_an_address_that_leaves_the_machine() -> None:
+    """Control: `_no_socket` is applied to this module, and it refuses.
+
+    The test above used to carry its own `socket.socket.connect` patch. The patch
+    is gone, so something has to hold its replacement in place: if the
+    `pytestmark` at the top of this file is removed or misspelt, this test is the
+    one that goes red.
+
+    The expected type and the expected text are `_no_socket`'s stated contract
+    (`tests/conftest.py:88` and `:93`), written before this ran. 192.0.2.1 is
+    TEST-NET-1 (RFC 5737) and example.invalid is `.invalid` (RFC 2606), so
+    neither can resolve to anything real even on a regression.
+    """
+    with socket.socket() as sock, pytest.raises(AssertionError, match="192.0.2.1"):
+        sock.connect(("192.0.2.1", 443))
+    with socket.socket() as sock, pytest.raises(AssertionError, match="192.0.2.1"):
+        sock.connect_ex(("192.0.2.1", 443))
+    with pytest.raises(AssertionError, match="example.invalid"):
+        socket.create_connection(("example.invalid", 443))
 
 
 # ===========================================================================

@@ -64,6 +64,16 @@ from models.financial_statements import (
 from tests.unit._printed_lines import lines, printed_balance_sheet, printed_year
 from tests.unit._text_pdf import write_text_pdf
 
+# `_no_socket` lives in `tests/conftest.py` — one definition, not three copies.
+# Until P1c this module patched `socket.socket.connect` and
+# `socket.create_connection` itself, inside `no_network` below, with no loopback
+# exception. That is the version P1b-windows-gate measured as broken: on Windows
+# `asyncio.ProactorEventLoop` builds its self-pipe through `127.0.0.1`, so a
+# blanket refusal fails tests for a reason that has nothing to do with the
+# product. The two socket patches are deleted; the fixture that refuses a
+# network address for this module is now the one in `tests/conftest.py`.
+pytestmark = pytest.mark.usefixtures("_no_socket")
+
 
 @pytest.fixture(autouse=True)
 def _no_api(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -618,9 +628,11 @@ def test_merge_keeps_one_item_per_year_amount_direction() -> None:
 # first replies stop with no retry). Both are backlog items; a test here would make
 # today's behaviour permanent.
 #
-# No call can leave the process: `_call_llm` is a scripted stub, and every road to
-# a client or a socket raises `_NetworkReached` (a BaseException, so no
-# `except Exception` anywhere can swallow it). The control test proves it fires.
+# No call can leave the process: `_call_llm` is a scripted stub, every road to a
+# model client raises `_NetworkReached` (a BaseException, so no `except Exception`
+# anywhere can swallow it), and the module-level `_no_socket` fixture
+# (`tests/conftest.py`) refuses every socket address that leaves this machine with
+# an `AssertionError`. The control test proves each road fires.
 
 # Captured at import, before the autouse fixture swaps it, for the control test.
 _REAL_CALL_LLM = ce._call_llm
@@ -640,7 +652,13 @@ class _NetworkReached(BaseException):
 
 @pytest.fixture
 def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Make every road to a model client or a socket raise; remove every key."""
+    """Make every road to a model client raise; remove every key.
+
+    The socket itself is not patched here. `_no_socket` (`tests/conftest.py`) is
+    applied to every test in this module by the `pytestmark` above, and it is the
+    one definition of that rule. The model-client patches below are the guard;
+    the socket patch was only ever the backstop.
+    """
 
     def _block(*args: object, **kwargs: object) -> Any:
         raise _NetworkReached("a network road was taken")
@@ -649,8 +667,6 @@ def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setattr(ce, "_call_gemini", _block)
     monkeypatch.setattr(genai.Client, "__init__", _block)
-    monkeypatch.setattr(socket.socket, "connect", _block)
-    monkeypatch.setattr(socket, "create_connection", _block)
 
 
 def _nri_financials() -> FinancialStatements:
@@ -776,13 +792,26 @@ def test_pass2_readable_empty_list_is_no_items_on_the_first_call(
 
 
 def test_the_network_guard_fires(no_network: None) -> None:
-    # Control: the guard the three tests above use does stop each road.
+    """Control: each road out of this module is closed, and by whom.
+
+    The two model-client roads are closed by `no_network` above and raise
+    `_NetworkReached`. The socket road is closed by `_no_socket`
+    (`tests/conftest.py`), applied to this module by `pytestmark`, and raises
+    `AssertionError` naming the address it refused. The expected type and the
+    expected text are the fixture's stated contract (`tests/conftest.py:88`,
+    `:93`), not anything this run printed.
+    """
     with pytest.raises(_NetworkReached):
         _REAL_CALL_LLM("system", "user", _NRI_RESOLUTION)
     with pytest.raises(_NetworkReached):
         genai.Client(api_key="not-a-key")
-    with pytest.raises(_NetworkReached):
+    # 192.0.2.1 is TEST-NET-1 (RFC 5737) and example.invalid is .invalid
+    # (RFC 2606): neither can resolve to anything real, so a refusal here is the
+    # fixture's and no packet can leave on a regression.
+    with pytest.raises(AssertionError, match="example.invalid"):
         socket.create_connection(("example.invalid", 443))
-    with socket.socket() as sock, pytest.raises(_NetworkReached):
+    with socket.socket() as sock, pytest.raises(AssertionError, match="192.0.2.1"):
         sock.connect(("192.0.2.1", 443))
+    with socket.socket() as sock, pytest.raises(AssertionError, match="192.0.2.1"):
+        sock.connect_ex(("192.0.2.1", 443))
 

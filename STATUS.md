@@ -444,7 +444,8 @@ the headline. Re-ranked at `622262b`.
 | 22 | `analysis/wacc.py:37` — zero debt balance gives a 0% cost of debt | missing data read as a measurement |
 | 23 | `analysis/fcff.py` holds **no `raise` at all** | wholly empty statements return a well-formed result with `fcff = 0.0` |
 | 10 | D&A subtraction buried in the parser, `ingestion/claude_extractor.py:479` | an accounting decision taken inside a parser, on two zero-defaulted values |
-| 93, 94, 95, 96, 97 | two more no-network copies that refuse the loopback address; `_parse_files_param`'s bare `int()` message; a now-unreachable third copy of the fiscal-year rule; `ValuationRun.latest_balance_sheet` read by no production code; two templates that render a multi-line error as one paragraph | **new, `P1b` and `P3b`.** Each is small and each is recorded in the backlog with its evidence |
+| 101 | A `skipif` guard names `10K_filings/Walmart/` and the folder is `10K_filings/WMT/` | **new, my review of `P1c`.** Check B1's only real-filing test skips on a machine that holds the filing. **A test that skips reports neither pass nor fail** |
+| 94, 95, 96, 97, 102 | `_parse_files_param`'s bare `int()` message; a now-unreachable third copy of the fiscal-year rule; `ValuationRun.latest_balance_sheet` read by no production code; two templates that render a multi-line error as one paragraph; a fixture comment that names two contract tests when there are three | **new, `P3b` and `P1c`.** Each is small and each is recorded in the backlog with its evidence |
 | 5 | `api/routes_valuation.py:31` — module-global extraction cache, `pop`ped on read | shared across users; a page refresh re-runs the paid extraction |
 | 11 | **10** type errors, down from 33 | one is a live crash path. Every removal so far was a real defect, never an annotation |
 | 23 | `analysis/fcff.py` holds no `raise` for empty statements, and `calculate_fcff_projected` has **seven** unguarded float parameters | wholly empty statements return a well-formed result with `fcff = 0.0` |
@@ -502,6 +503,7 @@ the headline. Re-ranked at `622262b`.
 | 83 | The Pass 1 schema did not say whether a finance lease obligation is debt | `78d21c4` (`P14d-finance-leases`), locked at `9e49bef` |
 | 7 | `cli.py` and `api/` duplicated the valuation sequence | `dc81088` (`P3a-one-pipeline`), locked at `ac736e7` |
 | 49 | Several PDFs, one with no year: the filing was dropped silently | `2c4f69d` (`P3b-pipeline-stops`), locked in the same commit |
+| 93 | Two more copies of the no-network rule refused the loopback address | `P1c-test-network-copies` |
 | 72 | `cli.py`'s conditional zeros, the census does not search that file | `2c4f69d`: the `shares` half at `dc81088`, the `total_debt` half here |
 
 **At `a64818b` these tables hold 24 closed items and 37 open ones** (item 23 appears twice above). They are the headline, not the whole list: items 55, 57, 58, 60 and 61 are open in the backlog and not shown here. Items 19 to 28 did not exist when this build
@@ -561,6 +563,23 @@ red, exactly the 12 the tester lists, and the file was restored byte-identical.
 New items: 98, 99, 100. Items 87, 89, 90 and 92 are corrected in the backlog with facts
 measured on 2026-10-05, and **item 90's correction changes its fix**: the constant
 `config.DEFAULT_TERMINAL_GROWTH_RATE` already exists and is read by nothing.
+
+**`P1c-test-network-copies` is accepted, 2026-10-05.** It closes item 93. The two copies
+of the no-network rule that survived `P1b` are folded onto the one `_no_socket` fixture,
+so a socket patch now exists in `tests/conftest.py` and nowhere else. `--setup-show`
+counts 34 setups against 34 tests in `test_claude_extractor.py` and 31 against 31 tests
+that run in `test_p14b_note_figures.py`, against 0 and 1 before. Gate **1137 passed, 5
+skipped, 0 failed**; the one extra pass is a control test that goes red when the fixture
+is made a no-op.
+
+**Its review found something the unit was not looking for, and it is a trap worth
+reading.** The tester reported four skipped tests as "real 10-K PDFs absent". Two of them
+are: this machine holds ABBV, LHX and WMT only, nine PDFs. **Walmart's is not.**
+`tests/unit/test_p14b_note_figures.py:80` names
+`10K_filings/Walmart/Walmart Inc._10-K_2026-01-31_English.pdf`, and the folder on this
+machine is `10K_filings/WMT/`, which holds that exact file name. So check B1's only
+real-filing evidence skips on a machine that holds the filing, and a skip reports neither
+pass nor fail. Backlog item 101.
 
 **Phase 13 (silent defects first, the user's decision of 2026-10-03) is complete at `98b908e`.** Wave 1: `P13a` (`47b8b09`) closes items 25 and 38, `P13b` (`aa6f80d`) closes items 15, 32, 39 and 42, each reviewed and tested. `P13c` (`5b03600`) closes item 46 after three review rounds, and `P13c-tests` locks the key order and both labels without reading the real `.env`. Wave 1 is done. **Wave 2 is done at `bce6fae`**: `P13d` item 65, `P13e` items 66 and 67, `P13f` item 69 and 38b part (b), `P13g` item 50, each reviewed and tested. **Wave 3, on the user's option 1 of 2026-10-04:** `P13h` (`bc30be4`) closes item 38b part (a) with `--confirm-zero-debt` and a "Confirm zero debt" checkbox; `P13h-tests` (`98b908e`) locked all 53 cases.
 
