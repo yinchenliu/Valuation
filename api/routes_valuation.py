@@ -19,6 +19,7 @@ from ingestion.claude_extractor import (
     extract_multi_year,
     resolve_provider,
 )
+from ingestion.filings import require_fiscal_year_per_filing
 from ingestion.session_extraction import load_session_extraction
 from models.financial_statements import FinancialStatements, NonRecurringItem
 from models.valuation import (
@@ -118,14 +119,12 @@ def _extract_from_files(
         _, pdf_path = filings[0]
         return extract_financials(pdf_path, ticker, company_name, provider=provider)
 
-    # For multi-file, filter out entries with year=0 (couldn't guess year)
-    valid = [(y, p) for y, p in filings if y > 0]
-    if not valid:
-        # Fallback: use the first file as a single extraction
-        _, pdf_path = filings[0]
-        return extract_financials(pdf_path, ticker, company_name, provider=provider)
-
-    return extract_multi_year(valid, ticker, company_name, provider=provider)
+    # Every filing here has a fiscal year: `_run_extraction` called
+    # `require_fiscal_year_per_filing` before it reached this function, and that
+    # stops and names every yearless one. Until backlog item 49 this branch
+    # filtered out every filing whose year was not above 0, and, when no filing
+    # had a year, extracted the first file alone — both without a word (rule 3).
+    return extract_multi_year(filings, ticker, company_name, provider=provider)
 
 
 @dataclass(frozen=True)
@@ -166,9 +165,11 @@ def _run_extraction(
 
     Raises:
         ValueError: when none of the three names a filing, when `files` names
-            none, or when a session file is combined with PDFs (rule 3: an input
-            is never silently ignored). Backlog item 29: `POST /valuation` with
-            no filing used to extract the empty string.
+            none, when `files` names several filings and any of them has no
+            fiscal year (backlog item 49), or when a session file is combined
+            with PDFs (rule 3: an input is never silently ignored). Backlog
+            item 29: `POST /valuation` with no filing used to extract the empty
+            string.
     """
     if session_file:
         if files or file_path:
@@ -187,6 +188,13 @@ def _run_extraction(
         filings = _parse_files_param(files)
         if not filings:
             raise ValueError(f"files: {files!r} names no filing.")
+        # Backlog item 49, rule 3. Here, and not in `_extract_from_files`,
+        # because this is the one place both pages extract through, and because
+        # the stop must happen before any PDF is opened. The web upload sends a
+        # yearless PDF on as year 0 on purpose (`api/routes_upload.py`); this is
+        # what happens to it next. Route B stops on the same input
+        # (`ingestion/session_extraction.py`), so the two routes now agree.
+        require_fiscal_year_per_filing(filings)
     elif file_path:
         filings = [(0, file_path)]
     else:

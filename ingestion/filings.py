@@ -336,6 +336,73 @@ def _year_mismatch(
     )
 
 
+def require_fiscal_year_per_filing(filings: list[tuple[int, str]]) -> None:
+    """With more than one filing, stop unless every filing has a fiscal year.
+
+    A year of 0 means "a bare path: every year this filing presents"
+    (`parse_pdf_args`). With one filing that is exactly what the extraction
+    does, so a 0 is allowed and this returns.
+
+    With several it is not. `plan_filings` routes years by the fiscal year: the
+    oldest filing gives every year it presents, each middle one gives its own
+    year, and the newest gives its own year and the balance sheet. A filing with
+    no year has no place in that order, and both entry points used to filter it
+    out — keeping only the filings whose year was above 0 — and print nothing,
+    so a year the user supplied a filing for went missing from the valuation,
+    silently (backlog item 49, rule 3). Route B already stops on the
+    same input and names the offending entry
+    (`ingestion/session_extraction.py`), so this is also what makes the two
+    routes agree.
+
+    The rule lives in this one function because item 49 says: "Make the change
+    in both entry points, or after item 7 in one place."
+
+    Each remedy in the message names the entry point it works on, because the
+    two entry points that reach this stop take their years from different
+    places and one remedy is false on the other's path (review finding F1):
+
+    * On the command line a path given on its own is year 0, and the file name
+      is never read for a year (`parse_pdf_args`, the loop below this function).
+      Renaming the file changes nothing there, so the remedy is YEAR:PATH. The
+      name is read only when a ticker folder is the single argument, and
+      `discover_filings` then stops on a name with no year with its own
+      message, so a folder never reaches this stop.
+    * On the web upload page the year comes from the file name
+      (`api/routes_upload.py`, `_guess_fiscal_year` -> `fiscal_year_from_filename`),
+      and a name with no year is sent on as year 0. There the remedy is to
+      rename and upload again; that page offers no way to type a year.
+
+    Raises:
+        ValueError: naming EVERY filing that has no fiscal year, not only the
+            first, and saying what the reader can do about them on the entry
+            point that raised.
+    """
+    if len(filings) <= 1:
+        return
+    yearless = [pdf_path for year, pdf_path in filings if year <= 0]
+    if not yearless:
+        return
+    named = "\n".join(f"  - {Path(path).name} (given as {path!r})" for path in yearless)
+    raise ValueError(
+        f"{len(yearless)} of {len(filings)} filings have no fiscal year:\n"
+        f"{named}\n"
+        "With more than one filing every filing needs its fiscal year, because "
+        "the plan routes years by it. What to do depends on where the filings "
+        "were given:\n"
+        "  - on the command line: give each filing as YEAR:PATH, with the "
+        "fiscal year that filing covers. A path given on its own counts as no "
+        "year whatever the file is called, so renaming it changes nothing "
+        "here; a file name is read for a year only when a ticker folder is the "
+        "single argument.\n"
+        "  - on the web upload page: rename the file so its name carries the "
+        "fiscal year after the '10-K' marker, and upload it again. That page "
+        "takes each year from the file name and offers no way to type one.\n"
+        "No year is guessed here: the year a filing covers is checked against "
+        "its content before anything is extracted (verify_filing_years). "
+        "Nothing was extracted."
+    )
+
+
 def verify_filing_years(filings: list[tuple[int, str]], remedy: Remedy) -> None:
     """Check every (year, path) whose year is given against the filing's content.
 
@@ -441,6 +508,11 @@ def parse_pdf_args(
     'extract all years automatically', and is not verified. Every 'YEAR:path'
     is verified against the filing's content (`verify_filing_years`), as a
     folder's filings are in `discover_filings`.
+
+    With more than one input, a bare path is not allowed:
+    `require_fiscal_year_per_filing` stops and names every one of them
+    (backlog item 49). It is called first, before any PDF is opened, so the
+    stop costs no file read.
     """
     if len(pdf_strings) == 1 and Path(pdf_strings[0]).is_dir():
         directory = Path(pdf_strings[0])
@@ -456,6 +528,7 @@ def parse_pdf_args(
             filings.append((int(m.group(1)), m.group(2)))
         else:
             filings.append((0, s))
+    require_fiscal_year_per_filing(filings)
     verify_filing_years(filings, "year_path")
     return filings
 

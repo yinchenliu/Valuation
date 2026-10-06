@@ -888,26 +888,20 @@ def _extract_via_api(
                 debug=True,
             )
         else:
-            # Filter out year=0 entries, fall back to single if needed
-            valid = [(y, p) for y, p in filings if y > 0]
-            if not valid:
-                financials, adjustments = extract_financials(
-                    pdf_path=filings[0][1],
-                    ticker=args.ticker,
-                    company_name=args.company_name,
-                    provider=args.provider,
-                    model=args.model,
-                    debug=True,
-                )
-            else:
-                financials, adjustments = extract_multi_year(
-                    filings=valid,
-                    ticker=args.ticker,
-                    company_name=args.company_name,
-                    provider=args.provider,
-                    model=args.model,
-                    debug=True,
-                )
+            # Every filing here has a fiscal year: `parse_pdf_args` called
+            # `require_fiscal_year_per_filing` above, which stops and names
+            # every yearless one. Until backlog item 49 this branch filtered
+            # out every filing whose year was not above 0, and, when no filing
+            # had a year, extracted the first file alone — both without a word
+            # (rule 3).
+            financials, adjustments = extract_multi_year(
+                filings=filings,
+                ticker=args.ticker,
+                company_name=args.company_name,
+                provider=args.provider,
+                model=args.model,
+                debug=True,
+            )
 
         cache_label = "live extraction of " + ", ".join(
             Path(fp.path).name for fp in current_key.inputs
@@ -1055,12 +1049,13 @@ def main() -> None:
 
     # ===== STAGE 8: WACC ====================================================
     _step(8, "Calculating WACC")
-    latest_bs = run.latest_balance_sheet
-
-    market_cap = run.market_cap
-    total_debt = latest_bs.total_debt if latest_bs else 0
-
-    print_wacc(wacc_result, market_cap, total_debt)
+    # The debt balance WACC was computed from, read from the run rather than
+    # re-derived here. Until backlog item 72 this stage read the balance sheet
+    # itself through a conditional zero, which printed a company whose balance
+    # sheet was missing as a debt-free one (rule 3). `value_company` now stops
+    # when the latest year has no balance sheet, so the figure read here is
+    # always the one `calculate_wacc` weighted the capital with.
+    print_wacc(wacc_result, run.market_cap, run.total_debt)
 
     # ===== STAGE 9: PROJECT FCFFs ===========================================
     _step(9, "Projecting future FCFFs")

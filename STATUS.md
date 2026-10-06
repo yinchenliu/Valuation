@@ -527,6 +527,37 @@ the branch.
 
 **`P3a-one-pipeline` (Phase 3, part 1) is accepted at `ac736e7`.** It closes item 7. A new root module, `pipeline.py`, holds the valuation sequence once: `adjust_financials` (partition the items, normalise) and `value_company` (assumptions, market data, CAPM, share count, WACC, projection, DCF). `cli.py` and both web routes call it. Walmart does not move: the CLI gives $28.02 with only the "ERP from history" line moved (item 89), and the web pages are byte-identical with the market data held fixed. **One behaviour changed, on the user's rules:** the yfinance share count fallback is deleted, so a filing with no diluted share count now stops and names `diluted_shares` in both entry points, with no market call (rules 3 and 5). The review's rule 2 finding on the `assumptions` dict is accepted until item 88, on the user's decision "Accept until item 88". New items: 87 (the web form rounds its defaults, $27.01 against $28.02), 88, 89, 90, 91. `P3b-pipeline-stops` (items 49 and 72) is next; its assignment is not written.
 
+**`P3b-pipeline-stops` (Phase 3, part 2) is accepted, with its tests, 2026-10-05.** It
+closes items 49 and 72. `ingestion/filings.require_fiscal_year_per_filing` holds the rule
+"with more than one filing, every filing needs a fiscal year above 0" once;
+`parse_pdf_args` and `_run_extraction` both call it, and both
+`valid = [(y, p) for y, p in filings if y > 0]` filters are gone. **A yearless filing now
+stops both entry points and the message names every offender, before any PDF is opened.**
+`pipeline.ValuationRun` carries a required `total_debt`, a missing latest balance sheet
+stops the run before any market call, and `cli.py` stage 8 prints `run.total_debt`. The
+code reviewer approved round 1 after re-executing all 17 criteria; round 2 answered its
+F1 (the stop message's "rename the file" remedy was false on the command line) and F4.
+
+**Its tester had to be run twice, and the second run is why the unit is trustworthy.**
+Round 1 wrote 825 lines of passing tests and measured nothing. Round 2 audited them and
+found that the CLI stop test ran `cli.py` through `runpy.run_path`, which executes the
+file into a fresh namespace: the patch on the `cli` module object was never the name the
+fresh copy bound, so the assertion "neither extractor was called" **could not fail**. A
+test that cannot fail is worse than no test, because the gate reports it green. Two more
+weaknesses were found and fixed the same way.
+
+**Measured by the overall lead at the commit, on the Windows machine
+(`.venv/Scripts/python.exe`, Python 3.14.4), with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`:**
+gate `1136 passed, 5 skipped, 0 failed`; full suite `2 failed, 1136 passed, 5 skipped`,
+the 2 red on purpose; lint 4, every one `BLE001`; types **5 errors in 2 files**; census
+64; `GET /` 200; write guard 48/48. **Mutation 16 re-run by the overall lead**, not read:
+`require_fiscal_year_per_filing` made to return without raising turns **12** named tests
+red, exactly the 12 the tester lists, and the file was restored byte-identical.
+80 of 80 assertions are hand-sourced, 0 from the code's output.
+New items: 98, 99, 100. Items 87, 89, 90 and 92 are corrected in the backlog with facts
+measured on 2026-10-05, and **item 90's correction changes its fix**: the constant
+`config.DEFAULT_TERMINAL_GROWTH_RATE` already exists and is read by nothing.
+
 **Phase 13 (silent defects first, the user's decision of 2026-10-03) is complete at `98b908e`.** Wave 1: `P13a` (`47b8b09`) closes items 25 and 38, `P13b` (`aa6f80d`) closes items 15, 32, 39 and 42, each reviewed and tested. `P13c` (`5b03600`) closes item 46 after three review rounds, and `P13c-tests` locks the key order and both labels without reading the real `.env`. Wave 1 is done. **Wave 2 is done at `bce6fae`**: `P13d` item 65, `P13e` items 66 and 67, `P13f` item 69 and 38b part (b), `P13g` item 50, each reviewed and tested. **Wave 3, on the user's option 1 of 2026-10-04:** `P13h` (`bc30be4`) closes item 38b part (a) with `--confirm-zero-debt` and a "Confirm zero debt" checkbox; `P13h-tests` (`98b908e`) locked all 53 cases.
 
 **Phase 12 (every printed line is found on its page) is done at `1888ccb`.** `P12a`

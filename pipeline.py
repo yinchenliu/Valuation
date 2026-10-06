@@ -72,9 +72,16 @@ class ValuationRun:
     filing prints it. It is never taken from market data (rule 5): when the filing
     gives none, `value_company` stops instead.
 
-    `latest_balance_sheet` is the balance sheet of the latest fiscal year, or `None`
-    when the extraction holds none. `calculate_wacc` decides what a missing one
-    means; the CLI reads it for its stage 8 display.
+    `latest_balance_sheet` is the balance sheet of the latest fiscal year. It is
+    never `None`: `value_company` stops when the extraction holds none, so a run
+    that exists was valued on a balance sheet.
+
+    `total_debt` is that balance sheet's debt balance, in millions — the figure
+    `calculate_wacc` weighted the capital with, and the one the CLI prints as
+    "Total debt" in stage 8. It is carried here rather than re-read by each
+    caller because the CLI used to re-derive it from a balance sheet it only
+    tested for presence, printing zero when there was none — a missing balance
+    sheet shown as a debt-free company (backlog item 72, rule 3).
 
     Every field is required. None is defaulted.
     """
@@ -84,7 +91,8 @@ class ValuationRun:
     capm_result: CAPMResult
     shares: float
     market_cap: float
-    latest_balance_sheet: BalanceSheet | None
+    latest_balance_sheet: BalanceSheet
+    total_debt: float
     wacc_result: WACCResult
     projected: list[ProjectedFCFF]
     dcf_result: DCFResult
@@ -121,7 +129,8 @@ def value_company(
 
     Raises:
         ValueError: when the latest fiscal year's diluted share count is not a
-            finite number above 0. Raised before any market data is fetched.
+            finite number above 0, or when that year has no balance sheet.
+            Both are raised before any market data is fetched.
     """
     assumptions = derive_assumptions(adjusted, overrides)
 
@@ -159,6 +168,30 @@ def value_company(
             f"share count is taken from market data (rule 5); supply the count "
             f"printed in the filing."
         )
+
+    # The debt balance is read from the filing's balance sheet and from nothing
+    # else, so a missing balance sheet stops the run here (rule 3, backlog item
+    # 72). `calculate_wacc` already stops on the same input, but only after the
+    # market data has been fetched, and the CLI read the balance sheet a second
+    # time for its stage 8 display, testing it for presence and printing zero
+    # when there was none — a missing balance sheet shown as a debt-free
+    # company. This stop sits beside the share-count stop and for the same
+    # reason: a filing figure that stops the run should not wait on the
+    # network. `calculate_wacc` keeps its own stop; it guards every other
+    # caller.
+    if latest_bs is None:
+        raise ValueError(
+            f"balance_sheet is None for {ticker!r} in fiscal year {latest_year}, "
+            f"the latest year: the debt balance "
+            f"(BalanceSheet.short_term_debt + "
+            f"BalanceSheet.current_portion_lt_debt + "
+            f"BalanceSheet.long_term_debt) cannot be read, so the capital "
+            f"weights, the cost of debt and the net debt in the equity bridge "
+            f"are not computed. The debt balance is not set to 0: a missing "
+            f"balance sheet is not a debt-free company. Supply the balance "
+            f"sheet for the year being valued."
+        )
+    total_debt = latest_bs.total_debt
 
     price_data = fetch_price_data(
         ticker,
@@ -202,6 +235,7 @@ def value_company(
         shares=shares,
         market_cap=market_cap,
         latest_balance_sheet=latest_bs,
+        total_debt=total_debt,
         wacc_result=wacc_result,
         projected=projected,
         dcf_result=dcf_result,

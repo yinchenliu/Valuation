@@ -83,6 +83,7 @@ import math
 import os
 import re
 import textwrap
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from fractions import Fraction
 from pathlib import Path
@@ -2755,8 +2756,13 @@ class FilingPlan:
     include_bs: bool
 
 
-def plan_filings(filings: list[tuple[int, str | Path]]) -> list[FilingPlan]:
+def plan_filings(filings: Sequence[tuple[int, str | Path]]) -> list[FilingPlan]:
     """Decide which years and which balance sheet come from which filing.
+
+    `Sequence`, not `list`: `list` is invariant in its element type, so a
+    caller holding a `list[tuple[int, str]]` — which both entry points do —
+    could not pass it without a cast. `Sequence` is covariant, and nothing
+    here mutates the argument.
 
     One filing: every year it presents, and its balance sheet. Several, sorted
     ascending by fiscal year: the oldest gives every year it presents and no
@@ -3242,7 +3248,7 @@ def extract_financials(
 
 
 def extract_multi_year(
-    filings: list[tuple[int, str | Path]],
+    filings: Sequence[tuple[int, str | Path]],
     ticker: str = "",
     company_name: str = "",
     provider: Provider = config.DEFAULT_EXTRACTION_PROVIDER,
@@ -3265,7 +3271,11 @@ def extract_multi_year(
         → 2025 10-K: extract [2025] only                   — with B/S
 
     Args:
-        filings:       List of (fiscal_year, pdf_path) tuples.
+        filings:       Sequence of (fiscal_year, pdf_path) tuples. `Sequence`,
+                       not `list`, for the reason `plan_filings` gives: `list`
+                       is invariant, so a `list[tuple[int, str]]` — what both
+                       entry points hold — would not satisfy `list[tuple[int,
+                       str | Path]]`. Nothing here mutates it.
         ticker:        Stock ticker.
         company_name:  Company name.
         provider:      "claude" or "gemini". Defaults to
