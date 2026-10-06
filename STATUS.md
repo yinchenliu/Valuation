@@ -4,9 +4,10 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `ac736e7` (`P3a-one-pipeline-tests`, committed in one-team mode), 2026-10-05, by the overall lead**, in the working tree, on branch `main`, **on the macOS machine**
-(`.venv/bin/python`, Python 3.11.6). Every figure before `cde33cb` was measured on the
-Windows machine. **Forty-seven work units accepted by `69436d9`, twelve more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes`, `P14b-note-figures`, `P14d-finance-leases`, `P3a-one-pipeline` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
+**Measured at `2c4f69d` (`P3b-pipeline-stops` and its tests, one-team mode), 2026-10-05, by the overall lead**, on branch `main`, **on the Windows machine**
+(`.venv/Scripts/python.exe`, Python 3.14.4), with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`.
+The build moved back to the Windows machine at `0a8ea54`; the figures from `cde33cb` to
+`ac736e7` were measured on the macOS machine. **Forty-seven work units accepted by `69436d9`, fourteen more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes`, `P14b-note-figures`, `P14d-finance-leases`, `P3a-one-pipeline`, `P1b-windows-gate`, `P3b-pipeline-stops` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; **five** times a reviewer or a
 programmer overturned a claim — twice against a programmer, **three times against the
 orchestrator**. The journal is [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
@@ -23,15 +24,15 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `ac736e7` (macOS) |
+| Gate | Command | Result at `2c4f69d` (Windows) |
 |---|---|---|
-| Tests | `.venv/bin/python -m pytest -q` | **1111 tests. 1109 pass, 2 fail**: the 2 red on purpose |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **1109 passed, 0 failed**, with or without the empty-key prefix: `tests/conftest.py` empties both API keys for every test |
-| Lint | `.venv/bin/python -m ruff check .` | **4 errors**, every one `BLE001`. `P13g` removed the one in `_run_nri_pass` |
-| Types | `.venv/bin/python -m mypy models analysis ingestion api config.py app.py pipeline.py --ignore-missing-imports` | **6 errors in 3 files**, 21 files checked, 0 in `pipeline.py`. `P3a` removed two in `api/routes_valuation.py` (the share count lines moved into `pipeline.py`, which stops on a missing income statement); `P15a` removed one before that |
+| Tests | `.venv/Scripts/python.exe -m pytest -q` | **1138 tests. 1136 pass, 2 fail**, plus 5 skipped: the 2 red on purpose |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **1136 passed, 5 skipped, 0 failed**, with or without the empty-key prefix: `tests/conftest.py` empties both API keys for every test |
+| Lint | `.venv/Scripts/python.exe -m ruff check .` | **4 errors**, every one `BLE001`. `P13g` removed the one in `_run_nri_pass` |
+| Types | `.venv/Scripts/python.exe -m mypy models analysis ingestion api config.py app.py pipeline.py --ignore-missing-imports` | **5 errors in 2 files**, 21 files checked, 0 in `pipeline.py`. `P3b` removed one by widening `plan_filings` and `extract_multi_year` to `Sequence`. `P3a` removed two in `api/routes_valuation.py`; `P15a` removed one before that |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
-| **Rule 3 census** | the grep at [rules.md:65](docs/2-rules/rules.md), with `pipeline.py` added | **64**. `P3a` deleted the yfinance share count fallback's `.get("sharesOutstanding", 0)`; `pipeline.py` holds 0 sites. `P13b` removed two conditional zeros (`latest_year`, `implied_share_price`). `P11a` replaced the Pass 1 parser's `.get(field, 0)` reads (114 at `24a9a90`). Under zsh, quote `'--include=*.py'` or the count reads 0 |
-| **Write guard** | `.venv/bin/python .claude/check_guard.py` | **48/48** |
+| **Rule 3 census** | the grep at [rules.md:65](docs/2-rules/rules.md), with `pipeline.py` added | **64**. `P3b` deleted `cli.py`'s `latest_bs.total_debt if latest_bs else 0`, which the census grep never searched (`cli.py` is outside its four directories), so the figure does not move. `P3a` deleted the yfinance share count fallback's `.get("sharesOutstanding", 0)`; `pipeline.py` holds 0 sites. `P13b` removed two conditional zeros (`latest_year`, `implied_share_price`). `P11a` replaced the Pass 1 parser's `.get(field, 0)` reads (114 at `24a9a90`). Under zsh, quote `'--include=*.py'` or the count reads 0 |
+| **Write guard** | `.venv/Scripts/python.exe .claude/check_guard.py` | **48/48** |
 
 **There is a fourth gate now, and it is stricter than `import app` ever was.**
 
@@ -413,14 +414,15 @@ the headline. Re-ranked at `622262b`.
 | # | Item | Cost |
 |---|---|---|
 | 68 | The CLI prints no assumption label | **new, the `P13b` review.** `SUBSTITUTED`, `REPEATED` and `DROPPED` show on the web page only (rule 6) |
-| 72 | `cli.py:1035` and `:1043` hold conditional zeros the census does not search | **new, found by `P13f`** |
+| 98 | `runpy.run_path` defeats a patch on the module it re-executes | **new, the `P3b` tester.** One test could not fail. Fixed in `tests/`; the one other `runpy` site is sound |
+| 99 | `api/routes_valuation.py:199`, the legacy `file_path` branch, is reached by no test | **new, the `P3b` tester.** Correct as written; nothing would report it if it broke |
+| 100 | A filing citation gives one page number, sometimes the PDF index and sometimes the printed page | **new, the `P3b` tester.** Walmart's balance sheet is PDF page 22 and printed page 54 |
 | 70 | Walmart stage 10 differs by 1M between runs on one tree | **new, the `P13e` review.** Cause not measured |
 | 73 | Some bad first Pass 2 replies stop with no retry and no filing name | **new, the `P13g` review** |
 | 71, 74, 75, 76 | census grep blind to two-line zeros; retry `OverflowError`; the guard's false denials; the form's `projection_years` bound | **new, minor**; see the backlog |
 | 62 | No failed reading check reaches the web page, for either route | **new at `P12a`.** Route A prints to the server console; route B's failures print in `check` and the CLI. Only the balance `FAIL` shows on the page |
 | 64 | The page check lets a label written across two printed rows take either row's figure | **new, `P12a` round 2 review's F6.** Needs a label the filing does not print; stated in the docs |
 | 63 | A filing with no text layer uses up route A's two retries | **new, `P12a` review's F5.** Not live: all 16 filings have a text layer |
-| 49 | Given several PDFs, the API route drops one with no year, silently | **new.** Route B stops on the same input |
 | 78 | The "already converted" guard sees balance sheets only | **new, the `P14a` review's F5.** No call site converts twice today |
 | 79 | Route A's unit stop does not name the PDF | **new, the `P14a` programmer.** The same shape as item 73 |
 | 80 | The arithmetic check table and route B's failed-check messages are in printed units, with no label | **new, the `P14a` programmer.** For a filing in thousands, `printed=11,313,853` shows beside statements in $M |
@@ -442,7 +444,7 @@ the headline. Re-ranked at `622262b`.
 | 22 | `analysis/wacc.py:37` — zero debt balance gives a 0% cost of debt | missing data read as a measurement |
 | 23 | `analysis/fcff.py` holds **no `raise` at all** | wholly empty statements return a well-formed result with `fcff = 0.0` |
 | 10 | D&A subtraction buried in the parser, `ingestion/claude_extractor.py:479` | an accounting decision taken inside a parser, on two zero-defaulted values |
-| 7 | `cli.py` and `api/` duplicate the pipeline | a fix must be made twice or it is made once |
+| 93, 94, 95, 96, 97 | two more no-network copies that refuse the loopback address; `_parse_files_param`'s bare `int()` message; a now-unreachable third copy of the fiscal-year rule; `ValuationRun.latest_balance_sheet` read by no production code; two templates that render a multi-line error as one paragraph | **new, `P1b` and `P3b`.** Each is small and each is recorded in the backlog with its evidence |
 | 5 | `api/routes_valuation.py:31` — module-global extraction cache, `pop`ped on read | shared across users; a page refresh re-runs the paid extraction |
 | 11 | **10** type errors, down from 33 | one is a live crash path. Every removal so far was a real defect, never an annotation |
 | 23 | `analysis/fcff.py` holds no `raise` for empty statements, and `calculate_fcff_projected` has **seven** unguarded float parameters | wholly empty statements return a well-formed result with `fcff = 0.0` |
@@ -499,6 +501,8 @@ the headline. Re-ranked at `622262b`.
 | 81 | The Pass 2 summary line miscounted the items not confirmed | `49cf0f5` (`P14b-reasoning`), locked at `158f25d` |
 | 83 | The Pass 1 schema did not say whether a finance lease obligation is debt | `78d21c4` (`P14d-finance-leases`), locked at `9e49bef` |
 | 7 | `cli.py` and `api/` duplicated the valuation sequence | `dc81088` (`P3a-one-pipeline`), locked at `ac736e7` |
+| 49 | Several PDFs, one with no year: the filing was dropped silently | `2c4f69d` (`P3b-pipeline-stops`), locked in the same commit |
+| 72 | `cli.py`'s conditional zeros, the census does not search that file | `2c4f69d`: the `shares` half at `dc81088`, the `total_debt` half here |
 
 **At `a64818b` these tables hold 24 closed items and 37 open ones** (item 23 appears twice above). They are the headline, not the whole list: items 55, 57, 58, 60 and 61 are open in the backlog and not shown here. Items 19 to 28 did not exist when this build
 started — **every one of them was found by running the code**, not by reading it. So were
@@ -616,7 +620,14 @@ Things that have already misled a reader of this repository.
    form that excludes it is `pytest -q --ignore-glob="*_rule3_red.py"`.
 5. **A green test inside `*_rule3_red.py` is invisible to the gate.** That happened
    once, at `38b903c`. Move a test out of the pattern the day it goes green.
-6. **A tester's `fail` is a verdict about the code, not about its own work.** All four
+6. **A test can pass because it cannot fail.** `P3b`'s first CLI stop test ran `cli.py`
+   through `runpy.run_path(..., run_name="__main__")` and then asserted that
+   `cli.extract_financials` was never called. `runpy` executes the file into a **fresh
+   namespace**, so `monkeypatch.setattr(cli, "extract_financials", ...)` patched a name
+   that namespace never bound, and the assertion was true whatever the code did. The
+   gate reported it green. A patch on a module that `cli` imports **from** still holds,
+   which is why `tests/unit/test_pipeline.py:465` is sound. Backlog item 98.
+7. **A tester's `fail` is a verdict about the code, not about its own work.** All four
    units so far returned `fail` or `partial` in their own entries and all four were
    approved by review. Read the verdict line at the top of an entry before reading the
    word alone.
