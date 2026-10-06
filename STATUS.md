@@ -4,13 +4,21 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `2e2eb2f` (`P3c-one-number` and its tests, one-team mode), 2026-10-06, by the overall lead**, on branch `main`, **on the Windows machine**
+**Measured at `5567b39` (`P14e-nri-dedupe` and its tests, one-team mode), 2026-10-06, by the overall lead**, on branch `main`, **on the Windows machine**
 (`.venv/Scripts/python.exe`, Python 3.14.4), with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`.
 The build moved back to the Windows machine at `0a8ea54`; the figures from `cde33cb` to
-`ac736e7` were measured on the macOS machine. **Forty-seven work units accepted by `69436d9`, seventeen more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes`, `P14b-note-figures`, `P14d-finance-leases`, `P3a-one-pipeline`, `P1b-windows-gate`, `P3b-pipeline-stops`, `P1c-test-network-copies`, `P1d-skipped-filings`, `P3c-one-number` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
-re-ran the measurements rather than reading them; **six** times a reviewer or a
-programmer overturned a claim — twice against a programmer, **three times against the
-orchestrator**, and once against a tester. The journal is [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
+`ac736e7` were measured on the macOS machine. **Forty-seven work units accepted by `69436d9`, seventeen more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes`, `P14b-note-figures`, `P14d-finance-leases`, `P3a-one-pipeline`, `P1b-windows-gate`, `P3b-pipeline-stops`, `P1c-test-network-copies`, `P1d-skipped-filings`, `P3c-one-number`, `P14e-nri-dedupe` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
+re-ran the measurements rather than reading them; **eight** times a reviewer, a
+programmer or a tester overturned a claim — twice against a programmer, **four times
+against the orchestrator**, once against a tester, and once by a tester against its own
+first attempt. The journal is [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
+
+**The `P14e-nri-dedupe` round is the one to read if you read only one.** The assignment
+stated the defect's cost through the wrong mechanism, and both the programmer and its
+reviewer disproved it by execution. The assignment's own step 1 then created a second
+defect, which the round 1 reviewer found and a round 2 answered. And the tester overturned
+its own first compound-case test, which had a shape that let a mutant survive the whole
+suite. **Four claims, three of them mine, none of them caught by reading.**
 
 **The newest overturn is the cheapest lesson in the file, and it cost one message.**
 `P3c-one-number-tests` reported the lint gate as "4 `BLE001`" and, beside it, "`All
@@ -34,10 +42,10 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `2e2eb2f` (Windows) |
+| Gate | Command | Result at `5567b39` (Windows) |
 |---|---|---|
-| Tests | `.venv/Scripts/python.exe -m pytest -q` | **1179 tests. 1175 pass, 2 fail**, plus 2 skipped: the 2 red on purpose. **Item 101 is closed**, so the only skips left are the Chipotle and Okta filings, which this machine does not hold |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **1175 passed, 2 skipped, 0 failed**, with or without the empty-key prefix: `tests/conftest.py` empties both API keys for every test |
+| Tests | `.venv/Scripts/python.exe -m pytest -q` | **1211 tests. 1207 pass, 2 fail**, plus 2 skipped: the 2 red on purpose. **Item 101 is closed**, so the only skips left are the Chipotle and Okta filings, which this machine does not hold |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **1207 passed, 2 skipped, 0 failed**, with or without the empty-key prefix: `tests/conftest.py` empties both API keys for every test |
 | Lint | `.venv/Scripts/python.exe -m ruff check .` | **4 errors**, every one `BLE001`: `api/routes_valuation.py:451` and `:733`, `cli.py:1204`, `tests/test_e2e_all_googl.py:106`. **Count them with `ruff check .`, never with a run over a subset of files** — see the overturn above |
 | Types | `.venv/Scripts/python.exe -m mypy models analysis ingestion api config.py app.py pipeline.py --ignore-missing-imports` | **5 errors in 2 files**, 21 files checked, 0 in `pipeline.py`. `P3b` removed one by widening `plan_filings` and `extract_multi_year` to `Sequence`. `P3a` removed two in `api/routes_valuation.py`; `P15a` removed one before that |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
@@ -510,10 +518,12 @@ the headline. Re-ranked at `622262b`.
 | 31 | `discount_cash_flows`' `wacc` is unguarded on a **direct** call | **latent.** The `run_dcf` chain stops two lines later, so no current path reaches it |
 | 1 | **114** silent zero-default sites — `models/` 60, `ingestion/` 49, `analysis/` 3, `api/` 2 | **worse than its original description.** It does not produce zeros; it produces a signed, correctly-scaled figure that tracks the filing and reads as a measurement |
 | 8 | Blanket `except Exception` at five sites | **it swallowed the web outage for the life of the repository**, because the error page rendered through the same broken call |
-| 112 | **Two different non-recurring items with the same year, amount and direction: the second is dropped in silence** | **new, the route B Walmart extraction of 2026-10-06.** The merge key is `(year, amount, direction)` with no `else`. Walmart's two fiscal 2022 divestiture losses of $0.2 billion, Asda on page 66 and Seiyu on page 67, become one. 14 written, 13 merged. **200 $M of add-back leaves fiscal 2022 and nothing says so.** Assigned to `P14e-nri-dedupe`, `ready` |
+| 119 | **Two filings that re-report one item in different words are counted twice, and nothing says so** | **new, `P14e`'s programmer and its round 1 reviewer.** Item 112's defect failing the other way. **Left open on purpose**: deciding two texts mean one charge is a judgement rule 1 gives to the model, not to Python. Measured as rarer than the mode just closed: `plan_filings` gives every filing after the oldest its own fiscal year alone, and the real Walmart file has zero cross-filing overlap |
+| 121 | Five Pass 2 fields stop with a bare `KeyError` naming the field and not the item; five others name the year and the description | **new, the `P14e` tester.** The stop is right in both cases. On a filing with fourteen items, `KeyError: 'direction'` does not say which one |
+| 120 | A row repeated three times in one filing prints two identical `[MERGE]` blocks, each saying "listed twice" | **new, the `P14e` round 2 review's F5.** The counts are right and the words are not |
 | 116 | A year with no income statement is invisible in every table, and the branch written to report it cannot run | **new, the `P3c` tester's T1.** `FinancialStatements.years` is built from the income statements alone. **Do not delete the dead branch**: the branch is right and the set it iterates is wrong |
 | 117 | The only test of a real route B file is `skipif`-guarded on a git-ignored file | **new, the `P3c` tester's T3.** Eleven assertions run on no clean checkout. **That skip is how item 115 reached `main`** |
-| 113, 114 | `prompt --pass 2` exits 2 on a Windows console; the two unit-scale checks disagree about where a unit statement may sit | **new, the route B extraction of 2026-10-06.** Both reproduced by the overall lead |
+| 113, 114 | `prompt --pass 2` exits 2 on a Windows console; the two unit-scale checks disagree about where a unit statement may sit | **new, the route B extraction of 2026-10-06.** Both reproduced by the overall lead. 113 is `P14f-prompt-encoding`, `ready`; 114 is `P14g-unit-statement-pages` |
 | 103, 104, 105, 106, 108, 109, 110, 111, 118 | nine findings from the `P3c-one-number` review and its tester | **new.** A stop that does not name the field; the basis sentence in four places; a conditional with two identical branches; a tense; a fixture that cannot see item 87; six copies of one sentence per row; two `step="0.1"` fields; a ratio shown at one decimal place everywhere; coverage blind to a continuation-line diff |
 | 22 | `analysis/wacc.py:37` — zero debt balance gives a 0% cost of debt | missing data read as a measurement |
 | 23 | `analysis/fcff.py` holds **no `raise` at all** | wholly empty statements return a well-formed result with `fcff = 0.0` |
@@ -585,6 +595,7 @@ the headline. Re-ranked at `622262b`.
 | 97 | Two templates rendered a multi-line error as one paragraph | `2e2eb2f` |
 | 107 | `error_text` returned `None` for any error box that carried an attribute | `2e2eb2f` |
 | 115 | The real route B test read the balance sheet from `filings[0]` | `2e2eb2f` |
+| 112 | Two different non-recurring items with one year, amount and direction: the second was dropped in silence | `5567b39` (`P14e-nri-dedupe`) |
 
 **At `a64818b` these tables hold 24 closed items and 37 open ones** (item 23 appears twice above). They are the headline, not the whole list: items 55, 57, 58, 60 and 61 are open in the backlog and not shown here. Items 19 to 28 did not exist when this build
 started — **every one of them was found by running the code**, not by reading it. So were
@@ -702,6 +713,51 @@ margin of 4/21 = 19.047619…%, chosen because **backlog item 108's fixture cann
 regression test built on it is green before the fix and after it. 124 of 124 assertions are
 hand-sourced, 0 from the code's output, and 22 of 22 mutations were killed in a scratch
 copy with every repository file's sha256 printed before and after.
+
+**`P14e-nri-dedupe` and its tests are accepted at `5567b39`, 2026-10-06.** They close item
+112. `merge_filing_extractions` deduplicated non-recurring items on
+`(year, amount, direction)` with no `else`, so an item whose key was already present was
+discarded and nothing reported it. Walmart's fiscal 2024 10-K prints two different
+incremental divestiture losses for fiscal 2022, each $0.2 billion, Asda on PDF page 66 and
+Seiyu on page 67. 14 written, 13 merged. **It is 14 of 14 now**, and every drop prints the
+year, amount, direction, description, filing and page of the item kept and the item
+dropped, from the one function both routes call, without stopping the run.
+
+There are two keys. `nri_identity` is `(year, amount, direction, description)` and governs
+the across-filing case. `nri_identity_within_filing` adds `page` and governs one filing's
+own answer. **`page` is out of the across-filing key for a reason read off the file**: the
+same Walmart disclosure is `page 52` in the FY2024 10-K and `page 51` in the FY2025, so a
+key holding it could never match across filings and every overlapping item would be
+double-counted. Inside one PDF, `page` is what separates Asda from Seiyu.
+
+**The cost was measured, and it is not where the assignment said.** The fiscal 2022
+operating margin does not move: all four Walmart fiscal 2022 items carry
+`line_item: "other_non_operating"`, which the normalizer applies below EBIT, so
+`operating_margin` is `0.045293441861602016` and `ebit` is `25942.0` either way. The
+fiscal 2022 **effective tax rate** moves: `ebt` `23706.0 → 23906.0`, exactly 200 apart,
+against an unchanged `tax_expense` of `4756.0`, so the rate goes
+`0.20062431451953092 → 0.19894587132937339`. The implied price moves about **+$0.02**. Its
+absolute level drifts with the market between runs, by ±$0.01 on a pair taken minutes
+apart, so compare a pair taken in one sitting and never two figures from different days.
+
+**One measurement in this unit is worth more than the unit, and three agents took it
+independently.** The unit's code, and three one-line mutants of it, **all** give
+`MERGED 14` on `extractions/WMT.json` with Asda and Seiyu present. Only the commit before
+gives 13.
+
+```
+before the unit                        ->  MERGED 13, Seiyu absent
+the unit                               ->  MERGED 14
+mutant: page out of within-filing key  ->  MERGED 14
+mutant: page into across-filing key    ->  MERGED 14
+mutant: a dropped row registers as kept->  MERGED 14
+```
+
+**A tester measuring this unit against the real Walmart filing alone would pass three
+broken versions of it.** The boundary is visible only in hand-built cases. The tester
+assignment carried that as three criteria, the tests are hand-built, and the real file
+appears once, labelled a regression guard. **This is the sharpest example in the
+repository of a real input proving less than a constructed one.**
 
 **Phase 13 (silent defects first, the user's decision of 2026-10-03) is complete at `98b908e`.** Wave 1: `P13a` (`47b8b09`) closes items 25 and 38, `P13b` (`aa6f80d`) closes items 15, 32, 39 and 42, each reviewed and tested. `P13c` (`5b03600`) closes item 46 after three review rounds, and `P13c-tests` locks the key order and both labels without reading the real `.env`. Wave 1 is done. **Wave 2 is done at `bce6fae`**: `P13d` item 65, `P13e` items 66 and 67, `P13f` item 69 and 38b part (b), `P13g` item 50, each reviewed and tested. **Wave 3, on the user's option 1 of 2026-10-04:** `P13h` (`bc30be4`) closes item 38b part (a) with `--confirm-zero-debt` and a "Confirm zero debt" checkbox; `P13h-tests` (`98b908e`) locked all 53 cases.
 
