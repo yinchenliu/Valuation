@@ -363,10 +363,64 @@ def label_rows(body: str) -> dict[str, str] | None:
     return rows
 
 
+ERROR_BOX_CLASS = 'class="alert alert-error"'
+
+# `[^>]*` after the class attribute, not a bare `>`. Backlog item 97 put
+# `style="white-space: pre-line"` on the error div of `assumptions.html` and
+# `valuation_result.html`, and `upload.html` has carried it since before
+# `19fe831` — so the literal `<div class="alert alert-error">` this pattern used
+# to be could never read the upload page at all, and stopped reading the other
+# two the day a stop message was made readable. Twenty tests in four files went
+# red on one regex while not one message, status code or stop had moved.
+_ERROR_BOX = re.compile(rf'<div {ERROR_BOX_CLASS}[^>]*>(.*?)</div>', re.DOTALL)
+
+
+class UnreadableErrorBox(AssertionError):
+    """The page HAS an `alert-error` box and this helper could not parse it."""
+
+
 def error_text(body: str) -> str | None:
-    """The text of the page's `alert-error` box, or None if there is none."""
-    match = re.search(r'<div class="alert alert-error">(.*?)</div>', body, re.DOTALL)
-    return strip_tags(match.group(1)) if match else None
+    """The text of the page's `alert-error` box, or None when the page has none.
+
+    **None means one thing only: the page carries no error box.** Until
+    `P3c-one-number-tests` it meant that *or* "the box is there and I could not
+    read it", and the two are different faults — the first is a page reporting
+    success, the second is this helper being out of date with the template. One
+    return value for both is backlog item 107, and it is how twenty tests failed
+    with `assert None is not None`, a message that names neither the page nor the
+    box nor the regex.
+
+    So the unreadable case now RAISES, naming the fragment it could not parse.
+
+    Use `require_error_text` when the test's requirement is that a stop reached
+    the reader: it fails by name instead of handing back a None to compare.
+    """
+    if ERROR_BOX_CLASS not in body:
+        return None
+    match = _ERROR_BOX.search(body)
+    if match is None:
+        start = body.index(ERROR_BOX_CLASS)
+        raise UnreadableErrorBox(
+            "the page carries an alert-error box that this helper cannot parse. "
+            f"Pattern: {_ERROR_BOX.pattern!r}. The box begins: "
+            f"{body[max(0, start - 60) : start + 200]!r}"
+        )
+    return strip_tags(match.group(1))
+
+
+def require_error_text(body: str) -> str:
+    """The text of the page's `alert-error` box. Fails by name when there is none.
+
+    The stop-path tests want "the reader was told"; `assert error_text(...) is not
+    None` states that in a form whose failure message is `assert None is not None`.
+    This states it so the failure names the page instead.
+    """
+    text = error_text(body)
+    assert text is not None, (
+        "no alert-error box on the page: the run did not stop, or it stopped "
+        f"somewhere this page does not render. Page begins: {body[:400]!r}"
+    )
+    return text
 
 
 def hidden_value(body: str, name: str) -> str:

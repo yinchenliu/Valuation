@@ -72,6 +72,8 @@ from models.financial_statements import (
     IncomeStatement,
 )
 from tests.unit._fiscal_year_stub import stub_evidence_reader
+from tests.unit._html_form import parse_form, placeholders
+from tests.unit._session_route_helpers import error_text
 from tests.unit._text_pdf import write_10k_pdf
 
 # ---------------------------------------------------------------------------
@@ -113,6 +115,35 @@ def _rows_under(body: str, heading: str) -> dict[str, str]:
         if len(cells) == 2:
             rows[cells[0]] = cells[1]
     return rows
+
+
+def _derived_default_column(body: str) -> dict[str, str]:
+    """Row label -> "Derived Default" cell of the "Assumptions Used" table.
+
+    The table has four columns, so `_rows_under` (which keeps two-cell rows)
+    cannot read it. Holds no expected value; it only slices HTML.
+    """
+    start = body.index("<h2>Assumptions Used</h2>")
+    end = body.index("</table>", start)
+    rows: dict[str, str] = {}
+    for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", body[start:end], re.DOTALL):
+        cells = [_strip_tags(c) for c in re.findall(r"<td[^>]*>(.*?)</td>", tr, re.DOTALL)]
+        if len(cells) == 4:
+            rows[cells[0]] = cells[1]
+    return rows
+
+
+# Form field -> the row label the "Derived Default" column shows it under. The
+# labels are the template's own `<td>` text; the field names are the route's
+# `Form(...)` parameter names. Neither is a computed figure.
+DERIVED_DEFAULT_LABELS = {
+    "revenue_growth": "Revenue Growth Rates",
+    "operating_margin": "Operating Margin",
+    "tax_rate": "Tax Rate",
+    "da_pct": "D&A (% of Revenue)",
+    "capex_pct": "CapEx (% of Revenue)",
+    "nwc_pct": "NWC (% of Revenue)",
+}
 
 
 def _projection_row(body: str) -> list[str]:
@@ -564,14 +595,33 @@ def test_post_upload_stops_and_names_a_missing_required_field(
 # ===========================================================================
 
 
-def test_get_assumptions_puts_the_derived_defaults_into_the_form(
+def test_get_assumptions_shows_the_derived_defaults_without_prefilling_the_form(
     client: TestClient, extraction_calls: list[tuple]
 ) -> None:
-    """The derived defaults reach the form, and each one is hand-computed above.
+    """Each derived default is SHOWN twice and SUBMITTED never.
 
     Expected values: `EXPECTED_DEFAULTS`, derived by hand from
     `_two_year_financials()` — see the arithmetic written out beside it. Both
     years carry the same ratio, so every average is that ratio.
+
+    What changed, and why this test is not the one it replaces. Until
+    `P3c-one-number` the six figures were rendered into each input's `value`
+    attribute, so a reader who changed nothing posted them back — rounded to the
+    one decimal place the display string uses — and the route labelled them
+    "supplied by the caller" (backlog items 87 and 6, rule 6). The user's
+    decision of 2026-10-05, option "1a", moved them to `placeholder`, which no
+    browser submits. So the requirement is now three-sided and all three sides
+    are asserted here:
+
+      1. the figure is in the "Derived Default" column, where a reader reads it;
+      2. the figure is in the field's `placeholder`, where a reader reads it
+         again, inside the box they would type into;
+      3. the field carries **no `value` attribute at all**, so the form an
+         untouched browser submits carries `""` for every one of the six.
+
+    (3) is asserted against what `_html_form.parse_form` says a browser would
+    send, not against a POST body written out here: a hand-written body posts
+    whatever this file types and would stay green if the prefill came back.
     """
     response = client.get(
         "/assumptions",
@@ -591,12 +641,30 @@ def test_get_assumptions_puts_the_derived_defaults_into_the_form(
     assert "Valuation Assumptions: TESTCO" in body
     assert 'action="/valuation"' in body
 
+    # 1. Shown in the table.
+    column = _derived_default_column(body)
     for field, expected in EXPECTED_DEFAULTS.items():
-        assert _field_value(body, field) == expected, field
+        label = DERIVED_DEFAULT_LABELS[field]
+        assert column[label] == f"{expected}%", field
+
+    # 2. Shown again in the field the reader would type into.
+    shown = placeholders(body, "/valuation")
+    for field, expected in EXPECTED_DEFAULTS.items():
+        assert shown[field] == expected, field
+
+    # 3. And submitted by none of them. No `value` attribute on the tag at all,
+    #    which is the only state in which a browser sends the empty string.
+    for field in EXPECTED_DEFAULTS:
+        assert "value=" not in _input_tag(body, field), field
+
+    submitted = parse_form(body, "/valuation")
+    for field in EXPECTED_DEFAULTS:
+        assert field in submitted, f"{field} is not submitted by the form at all"
+        assert submitted[field] == "", field
 
     # The filing the user named is carried forward to the POST, unchanged.
-    assert _field_value(body, "files") == "2024:c:/tmp/p5b-never-opened.pdf"
-    assert _field_value(body, "ticker") == "TESTCO"
+    assert submitted["files"] == "2024:c:/tmp/p5b-never-opened.pdf"
+    assert submitted["ticker"] == "TESTCO"
 
     # And it is the file the extractor was handed. Outcome, not branch.
     assert extraction_calls == [
@@ -626,8 +694,16 @@ def test_get_assumptions_reads_two_filings_with_the_multi_year_extractor(
     assert response.status_code == 200
     body = response.text
     assert "alert-error" not in body
+
+    # Shown in the column, shown again in the placeholder, submitted by neither
+    # — the same three-sided requirement as the single-filing case above.
+    column = _derived_default_column(body)
+    shown = placeholders(body, "/valuation")
+    submitted = parse_form(body, "/valuation")
     for field, expected in EXPECTED_DEFAULTS.items():
-        assert _field_value(body, field) == expected, field
+        assert column[DERIVED_DEFAULT_LABELS[field]] == f"{expected}%", field
+        assert shown[field] == expected, field
+        assert submitted[field] == "", field
 
     assert extraction_calls == [
         (
@@ -1210,11 +1286,17 @@ def _post_zero_debt(client: TestClient, **fields: str) -> str:
 
 
 def _error_text(body: str) -> str:
-    """The text of the error block, unescaped, or "" when there is none."""
-    import html
+    """The text of the error block, unescaped, or "" when there is none.
 
-    match = re.search(r'<div class="alert alert-error">(.*?)</div>', body, re.DOTALL)
-    return html.unescape(_strip_tags(match.group(1))) if match else ""
+    Delegates to the one definition of "read the error box", in
+    `tests/unit/_session_route_helpers.py`. It used to be a second copy of that
+    regex here, and the copy went stale the same day the original did: backlog
+    item 97 put an attribute on the div and both literals stopped matching. Two
+    copies of a pattern are two chances to be out of date with the template, and
+    a helper is not the place to keep either. `strip_tags` already unescapes.
+    """
+    text = error_text(body)
+    return "" if text is None else text
 
 
 def test_get_assumptions_shows_the_confirm_zero_debt_checkbox_inside_the_valuation_form(

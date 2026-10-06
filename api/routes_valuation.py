@@ -529,11 +529,31 @@ async def run_valuation(
     projection_years: int = Form(5),
     terminal_growth_rate: float = Form(2.5),
     revenue_growth: str = Form(""),  # Comma-separated percentages
-    operating_margin: float = Form(0),
-    tax_rate: float = Form(0),
-    da_pct: float = Form(0),
-    capex_pct: float = Form(0),
-    nwc_pct: float = Form(0),
+    # `str`, not `float`, and empty rather than 0 — backlog items 87 and 6,
+    # rules 3 and 6. The SAME shape as `risk_free_rate` below, for the same
+    # reason the comment there gives, applied to the five projection ratios.
+    #
+    # These were `float = Form(0)` and `templates/assumptions.html` posted the
+    # derived default back in each field's `value` attribute, ROUNDED to one
+    # decimal place by the `:.1f` display strings in `assumptions_page`. Two
+    # things followed and both were wrong. A reader who changed nothing got a
+    # share price built from rounded ratios while the CLI, deriving the same
+    # ratios at full precision, got another one — Walmart was $27.01 on the
+    # page and $28.02 in the CLI (backlog item 87). And the route could not
+    # tell a figure the reader typed from one the form had filled in, so
+    # `derive_assumptions` labelled every run "supplied by the caller" for a
+    # figure this platform had produced (rule 6).
+    #
+    # The six ratio fields now render EMPTY, with the derived figure shown in
+    # the "Derived Default" column and in the field's placeholder. A blank
+    # field arrives as "" and reaches `derive_assumptions` as None, which is
+    # the only test it makes (`analysis/projector.py:226`), so an untouched
+    # form derives at full precision and the two entry points agree.
+    operating_margin: str = Form(""),
+    tax_rate: str = Form(""),
+    da_pct: str = Form(""),
+    capex_pct: str = Form(""),
+    nwc_pct: str = Form(""),
     # `str`, not `float`, and empty rather than 4.0 — rule 6, backlog item 34.
     #
     # This used to be a `float` form field defaulting to a literal 4.0, and
@@ -618,16 +638,20 @@ async def run_valuation(
             projection_years=projection_years,
             terminal_growth_rate=terminal_growth_rate / 100,
             revenue_growth_rates=rev_growth_list if rev_growth_list else [],
-            operating_margin=operating_margin / 100 if operating_margin else None,
-            tax_rate=tax_rate / 100 if tax_rate else None,
-            da_pct_revenue=da_pct / 100 if da_pct else None,
-            capex_pct_revenue=capex_pct / 100 if capex_pct else None,
-            nwc_pct_revenue=nwc_pct / 100 if nwc_pct else None,
             # `.strip()` on the STRING, not a falsy test on the number. A user
             # who types 0 sends "0", which is a non-empty string and survives
-            # as 0.0; only a genuinely blank field becomes None. (The five
-            # `x / 100 if x else None` conversions above are backlog item 6 and
-            # are not this unit's.)
+            # as 0.0; only a genuinely blank field becomes None.
+            #
+            # The five ratios below used to read `x / 100 if x else None` on a
+            # `float` field, so a reader who deliberately typed 0 was told
+            # nothing and silently got the derived value instead — backlog
+            # item 6, closed here for all five by giving them the same string
+            # shape as the four CAPM/WACC fields under them.
+            operating_margin=float(operating_margin) / 100 if operating_margin.strip() else None,
+            tax_rate=float(tax_rate) / 100 if tax_rate.strip() else None,
+            da_pct_revenue=float(da_pct) / 100 if da_pct.strip() else None,
+            capex_pct_revenue=float(capex_pct) / 100 if capex_pct.strip() else None,
+            nwc_pct_revenue=float(nwc_pct) / 100 if nwc_pct.strip() else None,
             risk_free_rate=float(risk_free_rate) / 100 if risk_free_rate.strip() else None,
             equity_risk_premium=float(equity_risk_premium) / 100 if equity_risk_premium.strip() else None,
             beta_override=float(beta_override) if beta_override.strip() else None,

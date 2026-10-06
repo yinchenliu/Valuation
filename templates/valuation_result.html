@@ -7,9 +7,13 @@
     <h1>DCF Valuation: {{ ticker }}{% if company_name %} — {{ company_name }}{% endif %}</h1>
 
     {% if error %}
-    <div class="alert alert-error">
-        <strong>Error:</strong> {{ error }}
-    </div>
+    {# `white-space: pre-line`, matching upload.html, and on ONE source line so
+       that the template's own indentation does not become blank lines once
+       newlines are preserved. A stop message can be several lines — a yearless
+       filing prints a file list and two remedies — and HTML collapsed every
+       newline into a space, so the whole stop arrived as one wrapped
+       paragraph. Backlog item 97. #}
+    <div class="alert alert-error" style="white-space: pre-line"><strong>Error:</strong> {{ error }}</div>
     <a href="/" class="btn">Start Over</a>
     {% elif dcf %}
 
@@ -245,6 +249,14 @@
     </div>
     {% endif %}
 
+    {# Rule 6, backlog item 92: name the basis of the "Historical Free Cash
+       Flow to Firm" table rendered below. The sentence is word for word the
+       one `cli.py` prints under its HISTORICAL FCFF banner
+       (`cli.HISTORICAL_FCFF_BASIS`) and the one `templates/assumptions.html`
+       prints at its own include site, so both entry points say the same thing
+       about the same table. It sits here because `_statements.html`, which
+       draws the table, is outside this unit's file scope. #}
+    <p class="provenance">Historical Free Cash Flow to Firm: Computed from the normalised statements, the same statements the valuation used.</p>
     {% set statements_open = false %}
     {% include "_statements.html" %}
 

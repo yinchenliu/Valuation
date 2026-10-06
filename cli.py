@@ -67,6 +67,27 @@ W = 70  # output width
 TOTAL_STEPS = 10
 _t0 = 0.0  # set in main()
 
+# Rule 6, backlog item 92: the historical FCFF table says which statements it
+# was built from. Before `P3c-one-number` neither entry point said, and the two
+# did not agree — stage 5 printed the statements as EXTRACTED while the web
+# built the same table from the NORMALISED ones, which is also what the DCF
+# runs on. Walmart showed 17,109 / 12,854 / 16,985 in the CLI and
+# 17,192 / 12,873 / 16,952 on the page, and nothing on either named a basis.
+#
+# ASCII only: this reaches a Windows console, which is not UTF-8 by default.
+#
+# The same sentence is printed by the web pages, at the `_statements.html`
+# include site in `templates/assumptions.html` and
+# `templates/valuation_result.html`. It is a literal in three places and not
+# one constant because the module both entry points share, `pipeline.py`, is
+# outside this unit's file scope, and neither entry point may import the
+# other's (a web route importing `cli`, or `cli` importing FastAPI). Recorded
+# as a finding in the unit's journal entry.
+HISTORICAL_FCFF_BASIS = (
+    "Computed from the normalised statements, "
+    "the same statements the valuation used."
+)
+
 
 def _step(n: int, label: str) -> None:
     """Print a progress banner with step number and elapsed time."""
@@ -671,8 +692,32 @@ def print_normalization(
 # Print: Historical FCFF
 # ---------------------------------------------------------------------------
 
-def print_historical_fcff(financials: FinancialStatements) -> None:
+def print_historical_fcff(financials: FinancialStatements, basis: str) -> None:
+    """Print one row per extracted year, computed or explicitly not computable.
+
+    Takes whichever `FinancialStatements` the caller hands it. Stage 5 hands it
+    the NORMALISED statements, the same object `value_company` is given: until
+    `P3c-one-number` it was handed the statements as extracted, so within one
+    CLI run the FCFF table and the DCF were built on two different sets of
+    statements (backlog item 92). The figures differ because
+    `analysis/normalizer.apply_adjustments` replaces income-statement expense
+    fields, so `ebit` and `ebt` move while the stored `tax_expense` does not,
+    which moves `effective_tax_rate`, which `calculate_fcff_historical` reads
+    for `after_tax_interest` (`analysis/fcff.py:78`).
+
+    `basis` is the sentence printed under the banner, naming which statements
+    these figures came from (rule 6). It is a REQUIRED argument and not a
+    constant inside this function, because this function cannot see which
+    statements it was handed: a sentence asserted here would read "normalised"
+    for a caller that passed the raw ones. The caller knows, so the caller
+    states it. Stage 5 passes `HISTORICAL_FCFF_BASIS`, which is word for word
+    the sentence both web pages print above the same table.
+
+    The web's `_historical_fcff_by_year` (`api/routes_valuation.py`) builds the
+    same rows from the same statements.
+    """
     _section("HISTORICAL FCFF (CFO-based, $M)")
+    print(f"  {basis}")
     years = financials.years
     print(f"  {'Year':>4}  {'Revenue':>9}  {'CFO':>8}  {'Int*(1-t)':>9}  "
           f"{'CapEx':>7}  {'FCFF':>8}  {'FCFF%':>6}")
@@ -681,8 +726,22 @@ def print_historical_fcff(financials: FinancialStatements) -> None:
     for y in years:
         is_ = financials.get_income_statement(y)
         cf_ = financials.get_cash_flow(y)
+
+        # Rule 3. `calculate_fcff_historical` needs both statements of the
+        # year; where either is absent the year still gets a row that names
+        # what was missing. Until `P3c-one-number` this was a bare `continue`,
+        # so a year the CLI could not compute vanished from the table with no
+        # word, while the web page printed "not extracted" and the missing
+        # statement for the same year. No figure is invented for it.
+        missing: list[str] = []
+        if is_ is None:
+            missing.append("income statement")
+        if cf_ is None:
+            missing.append("cash flow statement")
         if is_ is None or cf_ is None:
+            print(f"  {y:>4}  not extracted: {', '.join(missing)}")
             continue
+
         h = calculate_fcff_historical(is_, cf_)
         print(f"  {y:>4}  {h.revenue:>9,.0f}  {h.cfo:>8,.0f}  "
               f"{h.after_tax_interest:>9,.0f}  {h.capital_expenditures:>7,.0f}  "
@@ -1018,7 +1077,13 @@ def main() -> None:
 
     # ===== STAGE 5: HISTORICAL FCFF =========================================
     _step(5, "Computing historical FCFF")
-    print_historical_fcff(financials)
+    # `adjusted`, not `financials`. The table beside a valuation is built from
+    # the statements the valuation used — the same object handed to
+    # `value_company` below, and the same one the web route builds its table
+    # from. Backlog item 92. This moves the printed figures: the effective tax
+    # rate of an adjusted year differs from the extracted year's, and
+    # `calculate_fcff_historical` reads it for `after_tax_interest`.
+    print_historical_fcff(adjusted, HISTORICAL_FCFF_BASIS)
 
     # ===== STAGES 6-10: THE VALUATION =======================================
     # One call, `pipeline.value_company`, runs the assumptions, the market

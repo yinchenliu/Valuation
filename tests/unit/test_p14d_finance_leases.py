@@ -33,6 +33,7 @@ runs on any machine. No paid API call and no network socket.
 from __future__ import annotations
 
 import io
+import itertools
 import json
 import pickle
 import re
@@ -504,6 +505,35 @@ def test_walmart_absent_debt_field_stops_and_names_it(field: str) -> None:
 # ===========================================================================
 
 
+def _latest_balance_sheet(raw: dict) -> dict:
+    """The one `latest_balance_sheet` in a session file, found by its `year`.
+
+    **Never by index.** `cmd_plan` gives the balance sheet to the filing with the
+    NEWEST fiscal year and writes `{}` for every other filing
+    (`docs/3-architecture/extraction.md`, the routing table), and the filings are
+    stored oldest-first. This test read `filings[0]` and passed only while the
+    file held one filing; the moment `extractions/WMT.json` grew to three it
+    raised `KeyError: 'short_term_debt'` on an empty dict — backlog item 115. An
+    index encodes how many filings happen to be in the file, which is not the
+    contract; "the filing that carries the balance sheet" is.
+
+    Raises, naming the key, when no filing carries one or more than one does:
+    either means the file is not the shape this test reads, and a silent `{}`
+    would make every assertion below fail on a missing key instead.
+    """
+    carrying = [
+        f["pass1"]["latest_balance_sheet"]
+        for f in raw["filings"]
+        if "year" in f.get("pass1", {}).get("latest_balance_sheet", {})
+    ]
+    assert len(carrying) == 1, (
+        f"expected exactly one filing whose latest_balance_sheet carries a "
+        f"'year'; {len(carrying)} of {len(raw['filings'])} filings do. "
+        f"`cmd_plan` gives the balance sheet to the newest fiscal year only."
+    )
+    return carrying[0]
+
+
 def _wmt_pdf_paths() -> list[Path]:
     if not WMT_SESSION_PATH.is_file():
         return []
@@ -514,6 +544,46 @@ def _wmt_pdf_paths() -> list[Path]:
 _WMT_REAL_FILES_PRESENT = WMT_SESSION_PATH.is_file() and all(
     p.is_file() for p in _wmt_pdf_paths()
 )
+
+
+def test_the_balance_sheet_is_found_by_its_year_and_never_by_an_index() -> None:
+    """Backlog item 115, locked on a hand-built file so every machine runs it.
+
+    The test below reads `extractions/WMT.json`, which is git-ignored, so it
+    skips on a machine that has no copy — and it was that skip which let the
+    index selector survive. This test needs no file at all.
+
+    Expected values: `cmd_plan`'s documented routing — the balance sheet goes to
+    the filing with the NEWEST fiscal year and every other filing gets `{}`
+    (`docs/3-architecture/extraction.md`). So "the filing that carries a balance
+    sheet" is a property of the data, and "filings[0]" is a property of how many
+    filings happen to be in the file. Three filings in each of the six possible
+    orders: the selector must give the same answer six times.
+    """
+    def filing(year: int, *, with_bs: bool) -> dict:
+        return {
+            "fiscal_year": year,
+            "pass1": {
+                "latest_balance_sheet": {"year": year, "cash": [7.0]} if with_bs else {}
+            },
+        }
+
+    filings = [filing(2024, with_bs=False), filing(2025, with_bs=False),
+               filing(2026, with_bs=True)]
+
+    for order in itertools.permutations(range(3)):
+        raw = {"filings": [filings[i] for i in order]}
+        assert _latest_balance_sheet(raw) == {"year": 2026, "cash": [7.0]}, order
+
+    # And it says so rather than handing back an empty dict whose every lookup
+    # would then fail on a missing key — which is how item 115 presented, as
+    # `KeyError: 'short_term_debt'` forty lines from its cause.
+    with pytest.raises(AssertionError, match="exactly one filing"):
+        _latest_balance_sheet({"filings": [filing(2024, with_bs=False)]})
+    with pytest.raises(AssertionError, match="exactly one filing"):
+        _latest_balance_sheet(
+            {"filings": [filing(2025, with_bs=True), filing(2026, with_bs=True)]}
+        )
 
 
 @pytest.mark.skipif(
@@ -533,7 +603,7 @@ def test_real_route_b_walmart_file_maps_page_22_rows_by_the_rule() -> None:
     assert ret == 0, buf.getvalue()
 
     raw = json.loads(WMT_SESSION_PATH.read_text(encoding="utf-8"))
-    bs_raw = raw["filings"][0]["pass1"]["latest_balance_sheet"]
+    bs_raw = _latest_balance_sheet(raw)
 
     def rows(field: str) -> dict[str, float]:
         return {line["label"]: line["value"] for line in bs_raw[field]}

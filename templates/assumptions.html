@@ -7,7 +7,11 @@
     <h1>Valuation Assumptions: {{ ticker }}{% if company_name %} — {{ company_name }}{% endif %}</h1>
 
     {% if error %}
-    <div class="alert alert-error">{{ error }}</div>
+    {# `white-space: pre-line`, matching upload.html. A stop message can be
+       several lines — `require_fiscal_year_per_filing` prints a file list and
+       two remedies — and HTML collapses every newline into a space, so the
+       whole stop arrived as one wrapped paragraph. Backlog item 97. #}
+    <div class="alert alert-error" style="white-space: pre-line">{{ error }}</div>
     {% endif %}
 
     <p>Review and adjust the projection assumptions below. Defaults are derived from historical financials.</p>
@@ -149,28 +153,66 @@
         </div>
 
         <h2>Revenue & Margins</h2>
+
+        {# Rule 6, backlog items 87 and 6. These six fields used to be PREFILLED
+           with the derived default, rounded to one decimal place by the
+           `:.1f` display strings in `assumptions_page`. Accepting the form
+           therefore posted a rounded ratio back as if the reader had chosen
+           it: the result page said "supplied by the caller" for a figure this
+           platform produced, and the web share price differed from the CLI's
+           for the same filing (Walmart, $27.01 against $28.02).
+
+           They are empty now. The derived figure stays in the "Derived
+           Default" column above and is repeated in each field's placeholder,
+           so the reader still sees it without the form posting it back. #}
         <div class="form-row">
             <div class="form-group">
-                <label for="revenue_growth">Revenue Growth Rates (%, comma-separated per year)</label>
-                <input type="text" id="revenue_growth" name="revenue_growth"
-                       placeholder="e.g., 8, 7, 6, 5, 4"
-                       value="{% if defaults.revenue_growth_display %}{{ defaults.revenue_growth_display | join(', ') }}{% endif %}">
-                <small>Leave blank to use historical CAGR</small>
+                <p class="provenance">
+                    <strong>A blank field means "derive it".</strong> Left blank, the ratio is
+                    derived from this filing's statements at full precision, and the result page
+                    labels it <em>derived</em> and says how many filing-years produced it. The share
+                    price then equals the one <code>cli.py</code> reports for the same filing and the
+                    same market data.
+                    <br>
+                    <strong>A value you type is used exactly as typed</strong>, and the result page
+                    labels it <em>supplied</em>: nothing in this platform checks a figure you typed
+                    against the filing.
+                    <br>
+                    <strong>Typing the grey figure shown inside a field is not the same as leaving
+                    the field blank.</strong> That figure is the derived value rounded to one decimal
+                    place, shown so you can read it; the derivation itself is not rounded, so typing
+                    it back gives a different share price. For Walmart that rounding moved the price
+                    by about 3%.
+                </p>
             </div>
         </div>
 
         <div class="form-row">
             <div class="form-group">
+                <label for="revenue_growth">Revenue Growth Rates (%, comma-separated per year)</label>
+                <input type="text" id="revenue_growth" name="revenue_growth"
+                       placeholder="{% if defaults.revenue_growth_display %}{{ defaults.revenue_growth_display | join(', ') }}{% else %}e.g., 8, 7, 6, 5, 4{% endif %}">
+                <small>Blank = derive from the filing's revenue history.</small>
+            </div>
+        </div>
+
+        {# `step="any"`, not `step="0.1"`. A browser enforces the step as a grid
+           and would have refused 4.25 on a field whose own derived default is
+           4.2537 — the rounding this unit removed, applied a second time by the
+           browser. `terminal_growth_rate` above keeps its own attributes; they
+           are backlog item 90's, not this unit's. #}
+        <div class="form-row">
+            <div class="form-group">
                 <label for="operating_margin">Operating Margin (%)</label>
                 <input type="number" id="operating_margin" name="operating_margin"
-                       value="{{ defaults.operating_margin_display or '' }}" step="0.1">
-                <small>0 = use historical average</small>
+                       placeholder="{{ defaults.operating_margin_display or '' }}" step="any">
+                <small>Blank = derive from the filing. A typed 0 is a 0% margin, not "derive".</small>
             </div>
             <div class="form-group">
                 <label for="tax_rate">Tax Rate (%)</label>
                 <input type="number" id="tax_rate" name="tax_rate"
-                       value="{{ defaults.tax_rate_display or '' }}" step="0.1">
-                <small>0 = derive from financials</small>
+                       placeholder="{{ defaults.tax_rate_display or '' }}" step="any">
+                <small>Blank = derive from the filing. A typed 0 is a 0% tax rate, not "derive".</small>
             </div>
         </div>
 
@@ -179,17 +221,20 @@
             <div class="form-group">
                 <label for="da_pct">D&A %</label>
                 <input type="number" id="da_pct" name="da_pct"
-                       value="{{ defaults.da_pct_display or '' }}" step="0.1">
+                       placeholder="{{ defaults.da_pct_display or '' }}" step="any">
+                <small>Blank = derive from the filing. A typed 0 is 0%, not "derive".</small>
             </div>
             <div class="form-group">
                 <label for="capex_pct">CapEx %</label>
                 <input type="number" id="capex_pct" name="capex_pct"
-                       value="{{ defaults.capex_pct_display or '' }}" step="0.1">
+                       placeholder="{{ defaults.capex_pct_display or '' }}" step="any">
+                <small>Blank = derive from the filing. A typed 0 is 0%, not "derive".</small>
             </div>
             <div class="form-group">
                 <label for="nwc_pct">NWC %</label>
                 <input type="number" id="nwc_pct" name="nwc_pct"
-                       value="{{ defaults.nwc_pct_display or '' }}" step="0.1">
+                       placeholder="{{ defaults.nwc_pct_display or '' }}" step="any">
+                <small>Blank = derive from the filing. A typed 0 is 0%, not "derive".</small>
             </div>
         </div>
 
@@ -259,6 +304,14 @@
     </form>
 
     {% if not error and financials %}
+    {# Rule 6, backlog item 92: name the basis of the "Historical Free Cash
+       Flow to Firm" table rendered below. The sentence is word for word the
+       one `cli.py` prints under its HISTORICAL FCFF banner
+       (`cli.HISTORICAL_FCFF_BASIS`), so the two entry points say the same
+       thing about the same table. It sits at the include site because
+       `_statements.html`, which draws the table, is outside this unit's file
+       scope. #}
+    <p class="provenance">Historical Free Cash Flow to Firm: Computed from the normalised statements, the same statements the valuation used.</p>
     {% set statements_open = true %}
     {% include "_statements.html" %}
     {% endif %}
