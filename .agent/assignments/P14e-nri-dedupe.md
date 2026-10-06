@@ -104,10 +104,10 @@ Measured by the overall lead on 2026-10-06, on the **Windows** machine
 
 - `ingestion/claude_extractor.py`
 
-**Nothing else.** `cli.py`, `api/routes_valuation.py`, `templates/assumptions.html` and
-`templates/valuation_result.html` are **another unit's in-flight files** (`P3c-one-number`),
-so a write to any of them collides with work in progress. If you believe the message
-belongs on a page, that is a finding: write it and stop.
+**Nothing else.** `P3c-one-number` landed at `2e2eb2f` and the tree is clean, so no file
+is in flight. The scope is still one file: the merge is the only place this defect lives,
+and a message printed from `ingestion/` reaches both routes. If you believe the message
+also belongs on a web page, that is a finding: write it and stop.
 
 ## Out of scope
 
