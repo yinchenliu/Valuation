@@ -579,28 +579,49 @@ def test_merge_prefers_the_filing_whose_fiscal_year_is_the_statement_year() -> N
     assert items == []
 
 
-def _nri(year: int, amount: float, direction: str, description: str) -> NonRecurringItem:
+def _nri(year: int, amount: float, direction: str, description: str,
+         page: int = 1) -> NonRecurringItem:
     return NonRecurringItem(year=year, description=description, amount=amount,
                             line_item="sga", direction=direction, category="other",
-                            confidence="high", page=1,
+                            confidence="high", page=page,
                             printed_units="(Amounts in millions)", units_page=1,
                             source="Note 1")
 
 
-def test_merge_keeps_one_item_per_year_amount_direction() -> None:
-    first = _nri(2023, 10.0, "add_back", "seen in the 2023 10-K")
-    duplicate = _nri(2023, 10.0, "add_back", "same item, seen again in the 2024 10-K")
-    opposite = _nri(2023, 10.0, "remove", "same year and amount, opposite direction")
+def test_merge_keeps_one_item_per_year_amount_direction_and_description() -> None:
+    """The across-filing key, `nri_identity`: (year, amount, direction, description).
+
+    Renamed from `test_merge_keeps_one_item_per_year_amount_direction`, which named
+    the three-field key P14e-nri-dedupe replaced (backlog item 112), and which built
+    its "duplicate" with a *different* description — not what a re-report looks like.
+    A later filing that re-reports an item copies the printed line, so the text is
+    the same; only the PDF page moves, and `page` is out of this key for exactly
+    that reason.
+
+    The expected list is read off the key's definition, not off a run:
+      - `repeat` agrees with `first` on all four fields (the page differs, and the
+        page is not in the key) -> the same item, first seen kept;
+      - `opposite` differs in `direction` -> a different key, kept;
+      - `differently_worded` differs in `description` -> a different key, kept.
+        This is backlog item 119's measured behaviour, recorded, not endorsed:
+        deciding that two texts mean one charge is the model's judgement (rule 1),
+        so Python keeps both;
+      - `other` differs in `year` and `amount` -> a different key, kept.
+    5 in, 4 out, in first-seen order.
+    """
+    first = _nri(2023, 10.0, "add_back", "Restructuring charges, Mexico segment", page=52)
+    repeat = _nri(2023, 10.0, "add_back", "Restructuring charges, Mexico segment", page=51)
+    opposite = _nri(2023, 10.0, "remove", "Restructuring charges, Mexico segment")
+    differently_worded = _nri(2023, 10.0, "add_back", "Charges for the Mexico reorganisation")
     other = _nri(2024, 4.0, "add_back", "only in the 2024 10-K")
     extractions = [
         (_plan(2023), _fin([]), [first]),
-        (_plan(2024), _fin([]), [duplicate, opposite, other]),
+        (_plan(2024), _fin([]), [repeat, opposite, differently_worded, other]),
     ]
     _, items = merge_filing_extractions(extractions, "TST", "Test Co")
-    # Key (year, amount, direction), first seen kept (P9a step 3):
-    #   (2023, 10, add_back) twice -> once, the first; (2023, 10, remove) is a
-    #   different key and stays; (2024, 4, add_back) stays. 4 in, 3 out.
-    assert items == [first, opposite, other]
+    assert items == [first, opposite, differently_worded, other]
+    # The repeat was dropped, not the first: the kept item still carries page 52.
+    assert items[0].page == 52
 
 
 # ===========================================================================

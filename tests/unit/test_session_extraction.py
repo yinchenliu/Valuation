@@ -46,6 +46,8 @@ import ingestion.claude_extractor as ce
 from ingestion.claude_extractor import (
     PASS1_BALANCE_SHEET_FIELDS,
     PASS1_YEAR_FIELDS,
+    REPEAT_ACROSS_FILINGS,
+    REPEAT_WITHIN_ONE_FILING,
     FilingPlan,
     ProviderResolution,
     describe_resolution,
@@ -229,12 +231,24 @@ def one_filing(directory: Path) -> dict[str, Any]:
 # Plan, from the routing table: 2022 oldest -> every year, no B/S; 2023 middle ->
 # [2023], no B/S; 2024 newest -> [2024], with B/S.
 #
-#   2022 10-K: years 2020, 2021, 2022; items A (2022, 5, add_back) and B (2021, 2)
-#   2023 10-K: year 2023;              items A again (same key) and C (2023, 7, low)
+#   2022 10-K: years 2020, 2021, 2022; items A (2022, 5, add_back, page 50) and
+#                                      B (2021, 2)
+#   2023 10-K: year 2023;              item  A re-reported — the SAME printed line,
+#                                      so the same year, amount, direction and
+#                                      description, on page 51 of its own PDF — and
+#                                      C (2023, 7, low)
 #   2024 10-K: year 2024 + B/S 2024;   item  D (2024, 9, source "")
 #
+# A re-report copies the printed line, so the description is the same text and only
+# the page moves: the same Walmart note is page 52 in the FY2024 10-K and page 51 in
+# the FY2025. The across-filing key `nri_identity` is (year, amount, direction,
+# description), with `page` deliberately out of it, so A and its re-report are one
+# item (P14e-nri-dedupe, backlog item 112). Before P14e this fixture wrote the
+# repeat as `description="A, read again"`, a different text, which is not what a
+# re-report looks like and which asserted the three-field key P14e replaced.
+#
 # Expected after the merge, by hand: years [2020, 2021, 2022, 2023, 2024]; one
-# balance sheet, 2024; items A, B, C, D, in that order: 5 in, A's duplicate dropped.
+# balance sheet, 2024; items A, B, C, D, in that order: 5 in, A's repeat dropped.
 
 def three_filings(directory: Path) -> dict[str, Any]:
     p1s = {
@@ -246,7 +260,7 @@ def three_filings(directory: Path) -> dict[str, Any]:
     p2s = {
         2022: {"non_recurring_items": [item_a, nri(2021, 2.0, "Impairment B",
                                                     category="impairment")]},
-        2023: {"non_recurring_items": [dict(item_a, description="A, read again"),
+        2023: {"non_recurring_items": [dict(item_a, page=51),
                                         nri(2023, 7.0, "Settlement C", confidence="low")]},
         2024: {"non_recurring_items": [nri(2024, 9.0, "Severance D", source="")]},
     }
@@ -254,6 +268,44 @@ def three_filings(directory: Path) -> dict[str, Any]:
     return session([
         filing(pdfs[2022], 2022, None, False, p1s[2022], p2s[2022]),
         filing(pdfs[2023], 2023, [2023], False, p1s[2023], p2s[2023]),
+        filing(pdfs[2024], 2024, [2024], True, p1s[2024], p2s[2024]),
+    ])
+
+
+# --- two filings, one of which lists the same printed line twice --------------
+#
+# Plan, from the routing table: 2023 oldest -> every year, no B/S; 2024 newest ->
+# [2024], with B/S.
+#
+#   2023 10-K: years 2022, 2023;     items G (2022, 3, add_back, page 50)
+#   2024 10-K: year 2024 + B/S 2024; items E (2024, 6, add_back, page 50) written
+#                                    TWICE, byte for byte, and F (2024, 8, page 50)
+#
+# E's two rows agree on year, amount, direction, description AND page, so they are
+# one printed line the model wrote out twice, not two charges: the within-filing
+# key `nri_identity_within_filing` collapses them and the merge reports the drop
+# (P14e-nri-dedupe). Nothing else collides: F differs in amount and description,
+# G in year, and the two filings report disjoint years.
+#
+# Expected after the merge, by hand: 4 rows written, 3 items out, in plan order —
+# G from the 2023 filing first, then E and F from the 2024 filing; one balance
+# sheet, 2024; one drop reported, of the within-filing kind.
+
+def two_filings_with_a_doubled_row(directory: Path) -> dict[str, Any]:
+    p1s = {
+        2023: pass1([year_entry(2022, 1), year_entry(2023, 2)], {}),
+        2024: pass1([year_entry(2024, 3)], balance_sheet(2024)),
+    }
+    item_e = nri(2024, 6.0, "Restructuring E")
+    p2s = {
+        2023: {"non_recurring_items": [nri(2022, 3.0, "Impairment G",
+                                           category="impairment")]},
+        2024: {"non_recurring_items": [item_e, dict(item_e),
+                                       nri(2024, 8.0, "Settlement F")]},
+    }
+    pdfs = {y: make_pdf(directory, y, p1s[y], p2s[y]) for y in (2023, 2024)}
+    return session([
+        filing(pdfs[2023], 2023, None, False, p1s[2023], p2s[2023]),
         filing(pdfs[2024], 2024, [2024], True, p1s[2024], p2s[2024]),
     ])
 
@@ -345,6 +397,7 @@ def test_one_filing_both_routes_give_equal_statements_and_items(
 
 def test_three_filings_both_routes_give_equal_statements_and_items(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     data = three_filings(tmp_path)
     route_b = load_session_extraction(write(tmp_path, data))
@@ -363,6 +416,49 @@ def test_three_filings_both_routes_give_equal_statements_and_items(
     # Revenue = 1000 * k, where k is the year's multiplier in three_filings.
     assert [s.revenue for s in route_b.financials.income_statements] == [
         1000.0, 2000.0, 3000.0, 4000.0, 5000.0]
+    # The repeat was reported, not swallowed, and it was reported as the
+    # CROSS-filing repeat it is, not as one filing printing a line twice.
+    assert REPEAT_ACROSS_FILINGS in capsys.readouterr().out
+
+
+@pytest.mark.usefixtures("_no_socket")
+def test_a_filing_that_lists_one_row_twice_gives_one_item_on_both_routes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The within-filing key, `nri_identity_within_filing`, through both routes.
+
+    The merge is the one function route A and route B share, and P14e-nri-dedupe
+    gave it a second key for one filing's own answer: the four fields of the
+    across-filing key plus `page`. Two rows identical in all five are one printed
+    line written twice.
+
+    By hand, from `two_filings_with_a_doubled_row` below: the 2024 filing lists
+    E twice, byte for byte, and F once. 2 + 2 = 4 rows written; E's second copy
+    is the only collision under either key, so 3 survive — E, F, G — and one drop
+    is reported. The two routes must agree, because they merge through the same
+    function.
+    """
+    data = two_filings_with_a_doubled_row(tmp_path)
+    route_b = load_session_extraction(write(tmp_path, data))
+    fin_a, items_a, calls = run_route_a(monkeypatch, data, [2024, 2023])
+
+    assert route_b.financials == fin_a
+    assert route_b.non_recurring == items_a
+    # Two calls per filing, two filings, no retry: 4. No network call is possible:
+    # the stub answers only the prompts it was given and raises on anything else.
+    assert len(calls) == 4
+    # By hand (comment above two_filings_with_a_doubled_row).
+    assert [i.description for i in route_b.non_recurring] == [
+        "Impairment G", "Restructuring E", "Settlement F"]
+    assert route_b.financials.years == [2022, 2023, 2024]
+    # A drop does not stop the run: the loader returned a usable extraction and
+    # recorded no problem, because a line printed twice is not a problem.
+    assert route_b.validation_errors == []
+    # And it was reported, as the WITHIN-filing repeat it is.
+    out = capsys.readouterr().out
+    assert REPEAT_WITHIN_ONE_FILING in out
+    assert REPEAT_ACROSS_FILINGS not in out
 
 
 def test_a_changed_figure_makes_the_routes_differ(

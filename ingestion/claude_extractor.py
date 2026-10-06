@@ -2805,6 +2805,132 @@ def _plan_target_years(plan: FilingPlan) -> list[int] | None:
     return list(plan.target_years)
 
 
+# The four fields `nri_identity` returns, named once so the merge's two
+# dictionaries cannot drift from it. See `nri_identity` for why each is there.
+NriIdentity = tuple[int, float, str, str]
+
+# The five fields `nri_identity_within_filing` returns, named once for the same
+# reason. See that function for why `page` is in this key and not in the one
+# above.
+NriIdentityWithinFiling = tuple[int, float, str, str, int]
+
+
+def nri_identity(item: NonRecurringItem) -> NriIdentity:
+    """What makes one non-recurring item the same item as another, ACROSS filings.
+
+    The merge uses two keys, and this is the one it applies between filings.
+    `nri_identity_within_filing` is the one it applies inside a single filing's
+    answer; the difference between them is `page`, and the reason is below.
+
+    Four fields, and each is here for a reason:
+
+    - `year`: an item belongs to one fiscal year, and the same charge in two
+      years is two charges.
+    - `amount`: the figure, in millions by the time the merge runs
+      (`convert_filing_to_millions` has run per filing). Two different figures
+      are two different items.
+    - `direction`: `add_back` or `remove` decides the sign of the adjustment, so
+      the same figure in opposite directions is not the same item.
+    - `description`: the text the model copied from the page. **This is the one
+      field that tells two different items of the same size apart**, and it is
+      the field the old key left out. Walmart fiscal 2022 prints two $0.2
+      billion incremental divestiture losses, Asda and Seiyu; without the
+      description they are one item and 200 $M of add-back disappears
+      (backlog item 112).
+
+    Two fields the model also wrote are deliberately NOT here:
+
+    - `page`: a 1-based PDF page of ONE filing. The same item re-reported by a
+      later filing is printed on another page of another PDF, so a key holding
+      the page could never match across filings, and every overlapping item
+      would be counted twice. That is the case the dedupe exists for. Measured:
+      the same Walmart disclosure is "Note 1 - Summary of Significant Accounting
+      Policies, Investments, page 52" in the FY2024 10-K and "... page 51" in
+      the FY2025 10-K.
+    - `source`: the model's note reference, which carries a page number
+      ("Note 12 ... page 66"), so it moves between filings for the same reason.
+
+    The match is exact equality on all four. There is no tolerance, no
+    normalisation and no similarity rule: a judgement about whether two
+    differently-worded descriptions mean one item is not Python's to make.
+    """
+    return (item.year, item.amount, item.direction, item.description)
+
+
+def nri_identity_within_filing(item: NonRecurringItem) -> NriIdentityWithinFiling:
+    """What makes one row the same row as another INSIDE one filing's answer.
+
+    The four fields of `nri_identity`, plus `page`.
+
+    `page` is here, and it is absent from the across-filing key, because the two
+    comparisons ask different questions and the page answers only one of them:
+
+    - Across filings, the question is "did a later filing re-report the item an
+      earlier one already gave us?" Two filings are two PDFs, and the same
+      disclosure moves page between them, so a key holding `page` could never
+      match and every overlap would be double-counted.
+    - Within one filing, the question is "did the model write one printed line
+      twice?" There is one PDF, so the page is stable, and it is what separates
+      two real items of the same size: Walmart's fiscal 2024 10-K prints the
+      incremental loss on the Asda divestiture on PDF page 66 and the one on the
+      Seiyu divestiture on page 67, each $0.2 billion, both fiscal 2022, both
+      add_back. Two rows that agree on the year, the amount, the direction, the
+      description AND the page are one printed line written twice, not two
+      charges; the merge keeps the first and reports the second.
+
+    Two rows alike in every field but the page are therefore two items here, and
+    nothing is dropped.
+
+    `source` stays out of both keys: it carries a page number too, so it adds
+    nothing the page does not already give within one filing, and it moves
+    between filings for the reason above.
+
+    The match is exact equality on all five, with no tolerance, no normalisation
+    and no similarity rule, for the reason given in `nri_identity`.
+    """
+    return (item.year, item.amount, item.direction, item.description, item.page)
+
+
+# The one line that opens a drop report. One per comparison, because the two
+# comparisons drop for different reasons and a reader is owed the right one: the
+# first is a later filing re-reporting an item, the second is one filing's answer
+# carrying the same printed line twice. The rows under either are the same.
+REPEAT_ACROSS_FILINGS = ("Non-recurring item already reported by an earlier filing "
+                         "- counted once, not twice:")
+REPEAT_WITHIN_ONE_FILING = ("Non-recurring item listed twice by one filing - same "
+                            "year, amount, direction, description and page, so one "
+                            "printed line written twice - counted once, not twice:")
+
+
+def _print_repeated_item(
+    kept_item: NonRecurringItem,
+    kept_filing: str,
+    dropped_item: NonRecurringItem,
+    dropped_filing: str,
+    headline: str,
+) -> None:
+    """Report one non-recurring item dropped by the merge as a repeat.
+
+    `headline` is `REPEAT_ACROSS_FILINGS` or `REPEAT_WITHIN_ONE_FILING`, naming
+    which of the merge's two comparisons dropped the item. Neither direction is
+    silent, and both print the same two rows.
+
+    Printed where the merge's and `check`'s other messages are printed, so both
+    routes show it. It is not an error and it does not stop the run: two filings
+    that present the same fiscal year can both flag the same item, and the merge
+    must count it once.
+    """
+    print(f"  [MERGE] {headline}")
+    for label, item, filing in (
+        ("kept   ", kept_item, kept_filing),
+        ("dropped", dropped_item, dropped_filing),
+    ):
+        # `$M`: both callers run `convert_filing_to_millions` on each filing
+        # before the merge, so an item's amount is in millions here.
+        print(f"    {label}: {item.year}  {item.amount:,} $M  {item.direction}  "
+              f"{item.description!r}  [{filing}, page {item.page}]")
+
+
 def merge_filing_extractions(
     extractions: list[tuple[FilingPlan, FinancialStatements, list[NonRecurringItem]]],
     ticker: str,
@@ -2815,14 +2941,34 @@ def merge_filing_extractions(
     `extractions` is in plan order (ascending fiscal year), as `plan_filings`
     returns it. For each statement year, the statement from the filing whose
     `fiscal_year` equals that year is preferred; otherwise the first one seen is
-    kept. Non-recurring items are deduplicated on (year, amount, direction),
-    first seen kept.
+    kept.
+
+    Non-recurring items are deduplicated by two keys, each for one comparison,
+    first seen kept in both:
+
+    - ACROSS filings, on `nri_identity` — (year, amount, direction,
+      description). `page` is out of this key because the same disclosure sits
+      on a different page of a different PDF in a later filing.
+    - WITHIN one filing's answer, on `nri_identity_within_filing` — the same
+      four fields plus `page`. One PDF's page numbers are stable, so `page` is
+      what tells two real items of the same size apart (Asda on page 66 from
+      Seiyu on page 67); only a row identical in all five is one printed line
+      written twice. Two rows differing in any field, the page included, are
+      two items.
+
+    Every item dropped by either comparison is printed by
+    `_print_repeated_item`, naming the item kept and the item dropped with the
+    filing and page each came from, and saying which comparison dropped it. A
+    drop never stops the run, because two filings reporting one item is normal
+    (backlog item 112).
     """
     all_income: dict[int, IncomeStatement] = {}
     all_balance: dict[int, BalanceSheet] = {}
     all_cashflow: dict[int, CashFlowStatement] = {}
     all_nri: list[NonRecurringItem] = []
-    nri_keys: set[tuple[int, float, str]] = set()
+    # key -> (the item kept under it, the filing that item came from). A dict,
+    # not a set: the message naming a drop has to name what was kept.
+    kept_by_key: dict[NriIdentity, tuple[NonRecurringItem, str]] = {}
 
     for plan, fin, nri in extractions:
         fiscal_year = plan.fiscal_year
@@ -2841,12 +2987,50 @@ def merge_filing_extractions(
             if y not in all_cashflow or y == fiscal_year:
                 all_cashflow[y] = cashflow
 
-        # Dedupe NRIs by (year, amount, direction)
+        # Dedupe non-recurring items by the two keys, each inside its own
+        # comparison. See this function's docstring and the two identity
+        # functions for why `page` is in one key and not the other.
+        #
+        # One filing's Pass 2 answer is one list, and two rows in it that differ
+        # anywhere are two items: the model wrote each with its own printed
+        # description and its own page. Walmart's fiscal 2024 10-K prints an
+        # incremental loss on the Asda divestiture (PDF page 66) and one on the
+        # Seiyu divestiture (page 67), each $0.2 billion, both fiscal 2022, both
+        # add_back. They are two losses, not one. So this filing's own
+        # across-filing keys join `kept_by_key` only after all of its rows have
+        # been handled.
+        filing_name = Path(plan.pdf_path).name
+        from_this_filing: dict[NriIdentity, tuple[NonRecurringItem, str]] = {}
+        # The rows this filing contributed, by the five-field key. A dict, not a
+        # set, because the message naming a drop has to name what was kept —
+        # and only rows actually kept go in, so the item it names is one that
+        # really is in the merged list.
+        kept_rows_this_filing: dict[NriIdentityWithinFiling, NonRecurringItem] = {}
         for item in nri:
-            key = (item.year, item.amount, item.direction)
-            if key not in nri_keys:
+            # The within-filing comparison runs first, against this filing's own
+            # kept rows: a row identical to one of them in all five fields is
+            # the same printed line written twice.
+            row_key = nri_identity_within_filing(item)
+            repeated_row = kept_rows_this_filing.get(row_key)
+            if repeated_row is not None:
+                _print_repeated_item(repeated_row, filing_name, item, filing_name,
+                                     REPEAT_WITHIN_ONE_FILING)
+                continue
+
+            key = nri_identity(item)
+            repeated = kept_by_key.get(key)
+            if repeated is None:
                 all_nri.append(item)
-                nri_keys.add(key)
+                kept_rows_this_filing[row_key] = item
+                # setdefault: if this filing wrote two rows that differ only in
+                # the page, both are kept above, and the first is the one a
+                # later filing's repeat is reported against.
+                from_this_filing.setdefault(key, (item, filing_name))
+            else:
+                kept_item, kept_filing = repeated
+                _print_repeated_item(kept_item, kept_filing, item, filing_name,
+                                     REPEAT_ACROSS_FILINGS)
+        kept_by_key.update(from_this_filing)
 
     merged = FinancialStatements(
         ticker=ticker,
