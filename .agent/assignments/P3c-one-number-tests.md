@@ -68,17 +68,27 @@ on the working tree that holds `P3c`'s four uncommitted files:
 
 | Fact | Command | Result |
 |---|---|---|
-| gate | `-m pytest -q --ignore-glob="*_rule3_red.py" -p no:randomly` | **22 failed, 1124 passed, 3 skipped** |
+| gate | `-m pytest -q --ignore-glob="*_rule3_red.py" -p no:randomly` | **23 failed, 1124 passed, 2 skipped**. 22 are `P3c`'s, named below. The 23rd is backlog item 115, step 9 |
 | lint | `-m ruff check .` | 4 errors, every one `BLE001` |
 | types | `-m mypy models analysis ingestion api config.py app.py pipeline.py --ignore-missing-imports` | 5 errors in 2 files, 21 files checked |
 | census | the grep at `docs/2-rules/rules.md:102` | 64 |
 | route | `TestClient(app.app, raise_server_exceptions=False).get('/')` | 200 |
 | guard | `.claude/check_guard.py` | 48/48 |
 
-**The skip count may be 2, not 3, when you run.** A route B extraction agent wrote
-`extractions/WMT.json` on 2026-10-06. `tests/unit/test_p14d_finance_leases.py:519` skips
-while that file is absent and runs when it is present. **Take your own baseline before you
-write anything, and compare failing sets by name, never counts.**
+**`extractions/WMT.json` exists since 2026-10-06**, written by a route B extraction agent
+in a Claude Code session. `tests/unit/test_p14d_finance_leases.py:519` skipped while that
+file was absent and runs now, which is why the skip count is 2 and not 3, and why the
+failing count is 23 and not 22. **Take your own baseline before you write anything, and
+compare failing sets by name, never by count.**
+
+**The file holds three filings and five fiscal years, 2022 to 2026.** `check` exits 0 on
+it: 129 printed lines checked and 129 found, 6 unit statements found, total assets
+284,668 equal to total liabilities and equity 284,668. The overall lead re-read it through
+`load_session_extraction` and every figure equals the one the macOS run recorded
+independently: revenue 2026 713,163, EBIT 29,825, interest expense 2,799, diluted shares
+8,022, short-term debt 10,994, long-term debt 40,529, total debt 51,523, net debt 40,796.
+**You may rely on those eight figures.** They were measured twice, on two machines, from
+the printed pages.
 
 The code reviewer's own measurements, each re-run rather than read from the programmer:
 
@@ -162,8 +172,20 @@ identical text and status in both trees, and only the attribute on the `div` dif
    code wrong in a **scratch copy** of the repository, run the test, and record which tests
    went red by name. **Never mutate a file in this repository.** Restore nothing by hand:
    work in the copy and confirm the repository file's sha256 is unchanged at both ends.
-9. **Record what you find, do not widen your scope.** A defect outside this list goes in
-   your entry under "Found". The overall lead puts it in the backlog.
+9. **Repair the real route B test, backlog item 115.** This is not `P3c`'s doing and it is
+   in your scope because criterion 2 cannot pass while it is red.
+   `tests/unit/test_p14d_finance_leases.py:536` reads
+   `raw["filings"][0]["pass1"]["latest_balance_sheet"]`. `cmd_plan` gives the balance
+   sheet to the filing with the **newest** fiscal year and writes `{}` for every other
+   filing. The new `extractions/WMT.json` holds three filings, so the balance sheet is on
+   `filings[2]` and the test raises `KeyError: 'short_term_debt'` at `:539`. **Select the
+   filing whose `latest_balance_sheet` carries a `year`. Never an index.** Its four
+   loader-level assertions (`short_term_debt == 10994.0`, `long_term_debt == 40529.0`,
+   `total_debt == 51523.0`, `net_debt == 40796.0`) are correct against the new file and I
+   measured that myself: **do not change one of them.** Change only how the test finds the
+   filing.
+10. **Record what you find, do not widen your scope.** A defect outside this list goes in
+    your entry under "Found". The overall lead puts it in the backlog.
 
 ## Files in scope
 
@@ -212,6 +234,8 @@ two runs.
 | 15 | The repository's implementation files are untouched | `git diff --stat -- . ':(exclude)tests'` holds only `P3c`'s four approved files, with the same line counts as when you started | `git diff --stat`, before and after |
 | 16 | Lint | 4 errors, every one `BLE001`; and `All checks passed!` for your own files | `-m ruff check .` |
 | 17 | Accuracy and coverage, with their units | "N of N assertions hand-sourced, 0 from the code's output", and the coverage of what you added | `--cov` on the modules your tests name |
+| 18 | Item 115: the real route B test finds the balance sheet by its `year`, not by an index | the test passes, and its four loader-level assertions are **unchanged** | `-m pytest -q tests/unit/test_p14d_finance_leases.py`, and `git diff` on the four assertion lines |
+| 19 | Item 115 proved, not assumed | the repaired test **fails** when the balance sheet moves to another filing index | copy `extractions/WMT.json` to a scratch path, reorder its `filings` list, and point the test at the copy |
 
 **Every criterion is a measurement, never an opinion.**
 
