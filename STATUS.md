@@ -4,7 +4,7 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `5567b39` (`P14e-nri-dedupe` and its tests, one-team mode), 2026-10-06, by the overall lead**, on branch `main`, **on the Windows machine**
+**Measured at `c9cb45e` (`P14f-prompt-encoding` and its tests, one-team mode), 2026-10-07, by the overall lead**, on branch `main`, **on the Windows machine**
 (`.venv/Scripts/python.exe`, Python 3.14.4), with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`.
 The build moved back to the Windows machine at `0a8ea54`; the figures from `cde33cb` to
 `ac736e7` were measured on the macOS machine. **Forty-seven work units accepted by `69436d9`, seventeen more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes`, `P14b-note-figures`, `P14d-finance-leases`, `P3a-one-pipeline`, `P1b-windows-gate`, `P3b-pipeline-stops`, `P1c-test-network-copies`, `P1d-skipped-filings`, `P3c-one-number`, `P14e-nri-dedupe` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
@@ -42,10 +42,10 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `5567b39` (Windows) |
+| Gate | Command | Result at `c9cb45e` (Windows) |
 |---|---|---|
-| Tests | `.venv/Scripts/python.exe -m pytest -q` | **1211 tests. 1207 pass, 2 fail**, plus 2 skipped: the 2 red on purpose. **Item 101 is closed**, so the only skips left are the Chipotle and Okta filings, which this machine does not hold |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **1207 passed, 2 skipped, 0 failed**, with or without the empty-key prefix: `tests/conftest.py` empties both API keys for every test |
+| Tests | `.venv/Scripts/python.exe -m pytest -q` | **1228 tests. 1224 pass, 2 fail**, plus 2 skipped: the 2 red on purpose. **Item 101 is closed**, so the only skips left are the Chipotle and Okta filings, which this machine does not hold |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **1224 passed, 2 skipped, 0 failed**, with or without the empty-key prefix: `tests/conftest.py` empties both API keys for every test |
 | Lint | `.venv/Scripts/python.exe -m ruff check .` | **4 errors**, every one `BLE001`: `api/routes_valuation.py:451` and `:733`, `cli.py:1204`, `tests/test_e2e_all_googl.py:106`. **Count them with `ruff check .`, never with a run over a subset of files** — see the overturn above |
 | Types | `.venv/Scripts/python.exe -m mypy models analysis ingestion api config.py app.py pipeline.py --ignore-missing-imports` | **5 errors in 2 files**, 21 files checked, 0 in `pipeline.py`. `P3b` removed one by widening `plan_filings` and `extract_multi_year` to `Sequence`. `P3a` removed two in `api/routes_valuation.py`; `P15a` removed one before that |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
@@ -77,6 +77,15 @@ Every drop came from fixing a defect the checker had been reporting all along, a
 was a live outage. **Treat a type error here as a defect report until proven
 otherwise.** Three times now the checker named one while the prose beside it called the
 error a nicety.
+
+**`-p no:randomly` is a no-op here, and several assignments and `docs/8-build/environment.md`
+carry it as though it were a guard.** `importlib.metadata` lists exactly two pytest
+distributions, `pytest` and `pytest-cov`. `-m pytest -p randomly` raises
+`ImportError: No module named 'randomly'`, and pytest accepts **disabling** an absent
+plugin in silence. So every command carrying the flag runs and the flag asserts nothing.
+**Test order is fixed, so order dependence between files is untested on this machine**,
+and backlog item 124 is exactly that class of defect. Backlog item 126, found by the
+`P14f` tester and reproduced by the overall lead on 2026-10-07.
 
 **Use the `--ignore-glob` form as the gate.** It excludes every deliberately red test by
 pattern, so it keeps working as more are written. An earlier revision of this file named
@@ -521,7 +530,10 @@ the headline. Re-ranked at `622262b`.
 | 120 | A row repeated three times in one filing prints two identical `[MERGE]` blocks, each saying "listed twice" | **new, the `P14e` round 2 review's F5.** The counts are right and the words are not |
 | 116 | A year with no income statement is invisible in every table, and the branch written to report it cannot run | **new, the `P3c` tester's T1.** `FinancialStatements.years` is built from the income statements alone. **Do not delete the dead branch**: the branch is right and the set it iterates is wrong |
 | 117 | The only test of a real route B file is `skipif`-guarded on a git-ignored file | **new, the `P3c` tester's T3.** Eleven assertions run on no clean checkout. **That skip is how item 115 reached `main`** |
-| 113, 114 | `prompt --pass 2` exits 2 on a Windows console; the two unit-scale checks disagree about where a unit statement may sit | **new, the route B extraction of 2026-10-06.** Both reproduced by the overall lead. 113 is `P14f-prompt-encoding`, `ready`; 114 is `P14g-unit-statement-pages` |
+| 126 | **`-p no:randomly` is in every documented gate command and does nothing**, because `pytest-randomly` is not installed | **new, the `P14f` tester, reproduced by the overall lead.** Test order is fixed, so order dependence between files is untested here. **Item 124 is exactly that class.** Two fixes, not equivalent: install the plugin, or delete the flag |
+| 114 | The two unit-scale checks disagree about where a unit statement may sit, so a correct reading can stop the run | **new, the route B extraction of 2026-10-06**, confirmed by the overall lead against the code. `P14g-unit-statement-pages` |
+| 124 | `main()` changes a process-global stream handler and never restores it, and a test calls `main()` in-process | **new, the `P14f` review's F2.** `_pytest.capture.CaptureIO` is an `io.TextIOWrapper` subclass, so the handler leaks into every later test in the process. Harmless today; it cost the tester three subprocesses |
+| 123, 125 | A `bool` the docstring says a caller can use, discarded at the call site; the inherited `surrogateescape` replaced rather than composed, with no text saying so | **new, the `P14f` review's F1 and F3.** Neither is a rule break. **F1 can be closed with no code change**: three of the tester's tests now read that `bool` |
 | 103, 104, 105, 106, 108, 109, 110, 111, 118 | nine findings from the `P3c-one-number` review and its tester | **new.** A stop that does not name the field; the basis sentence in four places; a conditional with two identical branches; a tense; a fixture that cannot see item 87; six copies of one sentence per row; two `step="0.1"` fields; a ratio shown at one decimal place everywhere; coverage blind to a continuation-line diff |
 | 10 | D&A subtraction buried in the parser, `ingestion/claude_extractor.py:479` | an accounting decision taken inside a parser, on two zero-defaulted values |
 | 94, 95, 96 | `_parse_files_param`'s bare `int()` message; a now-unreachable third copy of the fiscal-year rule; `ValuationRun.latest_balance_sheet` read by no production code | **new, `P3b`.** Each is small and each is recorded in the backlog with its evidence |
@@ -592,6 +604,7 @@ the headline. Re-ranked at `622262b`.
 | 107 | `error_text` returned `None` for any error box that carried an attribute | `2e2eb2f` |
 | 115 | The real route B test read the balance sheet from `filings[0]` | `2e2eb2f` |
 | 112 | Two different non-recurring items with one year, amount and direction: the second was dropped in silence | `5567b39` (`P14e-nri-dedupe`) |
+| 113 | `session_extraction prompt --pass 2` exited 2 on a Windows console | `c9cb45e` (`P14f-prompt-encoding`) |
 
 **At `a64818b` these tables hold 24 closed items and 37 open ones** (item 23 appears twice above). They are the headline, not the whole list: items 55, 57, 58, 60 and 61 are open in the backlog and not shown here. Items 19 to 28 did not exist when this build
 started — **every one of them was found by running the code**, not by reading it. So were
@@ -754,6 +767,40 @@ broken versions of it.** The boundary is visible only in hand-built cases. The t
 assignment carried that as three criteria, the tests are hand-built, and the real file
 appears once, labelled a regression guard. **This is the sharpest example in the
 repository of a real input proving less than a constructed one.**
+
+**`P14f-prompt-encoding` and its tests are accepted at `c9cb45e`, 2026-10-07.** They close
+item 113. `-m ingestion.session_extraction prompt extractions/WMT.json --filing 0 --pass 2`
+exited **2** after 19 lines with `'charmap' codec can't encode character '→'`, so route B's
+reader could not see the Pass 2 prompt on this machine, and the `extract-filing` skill
+sends a session to that command. `main()` now sets one thing on `sys.stdout` and
+`sys.stderr` before it parses argv: the error handler, to `namereplace`. **The encoding is
+left alone**, so a UTF-8 console is not degraded and the em dash and ellipsis that `plan`
+and `check` already print are untouched. The command exits **0** with **82** lines, and the
+two `direction` rules render as `\N{RIGHTWARDS ARROW}`.
+
+**No prompt byte moved, and three agents checked it separately.** The two arrows sit inside
+the Pass 2 prompt that route A sends the model, so a fix that edited the text would change
+what every future extraction asks for. The programmer, the reviewer and the tester each
+computed the digests: `pass2_system` length 3317, `843ce6e7…`, two arrows, in both trees.
+
+**The choice of handler is what the unit turns on, and the tester proved it by
+mutation rather than asserting it.** Five scratch trees, each `git archive` plus one
+`session_extraction.py` written as bytes so the control is byte-identical to the
+repository's:
+
+```
+before the unit                   ->  12 red of 17
+the unit (control)                ->  17 passed
+handler = "replace"               ->   8 red, and the command still exits 0
+handler = "ignore"                ->   8 red, and the command still exits 0
+the two calls deleted             ->   5 red
+```
+
+**An exit-code-only suite would have been green on two of the three mutants, and `ignore`
+deletes the character outright.** Both end-to-end tests cleared their `returncode == 0`
+assertion and died on the next one. The overall lead re-ran the `ignore` mutation rather
+than the obvious one, because deleting the fix only restores a stop while `ignore` loses
+the character: one line, and the tester's file gives 8 failed, 9 passed.
 
 **Phase 13 (silent defects first, the user's decision of 2026-10-03) is complete at `98b908e`.** Wave 1: `P13a` (`47b8b09`) closes items 25 and 38, `P13b` (`aa6f80d`) closes items 15, 32, 39 and 42, each reviewed and tested. `P13c` (`5b03600`) closes item 46 after three review rounds, and `P13c-tests` locks the key order and both labels without reading the real `.env`. Wave 1 is done. **Wave 2 is done at `bce6fae`**: `P13d` item 65, `P13e` items 66 and 67, `P13f` item 69 and 38b part (b), `P13g` item 50, each reviewed and tested. **Wave 3, on the user's option 1 of 2026-10-04:** `P13h` (`bc30be4`) closes item 38b part (a) with `--confirm-zero-debt` and a "Confirm zero debt" checkbox; `P13h-tests` (`98b908e`) locked all 53 cases.
 
