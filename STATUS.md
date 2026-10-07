@@ -4,14 +4,36 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `c9cb45e` (`P14f-prompt-encoding` and its tests, one-team mode), 2026-10-07, by the overall lead**, on branch `main`, **on the Windows machine**
+**Measured at `e5d8f0a` (`P3d-invisible-year` and its tests, one-team mode), 2026-10-07, by the overall lead**, on branch `main`, **on the Windows machine**
 (`.venv/Scripts/python.exe`, Python 3.14.4), with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`.
 The build moved back to the Windows machine at `0a8ea54`; the figures from `cde33cb` to
-`ac736e7` were measured on the macOS machine. **Forty-seven work units accepted by `69436d9`, seventeen more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes`, `P14b-note-figures`, `P14d-finance-leases`, `P3a-one-pipeline`, `P1b-windows-gate`, `P3b-pipeline-stops`, `P1c-test-network-copies`, `P1d-skipped-filings`, `P3c-one-number`, `P14e-nri-dedupe` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
-re-ran the measurements rather than reading them; **eight** times a reviewer, a
-programmer or a tester overturned a claim — twice against a programmer, **four times
+`ac736e7` were measured on the macOS machine. **Forty-seven work units accepted by `69436d9`, nineteen more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes`, `P14b-note-figures`, `P14d-finance-leases`, `P3a-one-pipeline`, `P1b-windows-gate`, `P3b-pipeline-stops`, `P1c-test-network-copies`, `P1d-skipped-filings`, `P3c-one-number`, `P14e-nri-dedupe`, `P14f-prompt-encoding`, `P3d-invisible-year` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
+re-ran the measurements rather than reading them; **nine** times a reviewer, a
+programmer or a tester overturned a claim — **three times against a programmer**, **four times
 against the orchestrator**, once against a tester, and once by a tester against its own
 first attempt. The journal is [.agent/journal/INDEX.md](.agent/journal/INDEX.md).
+
+**`P3d-invisible-year` is the newest, and it is the one to read for what a unit's named
+trap is worth.** `FinancialStatements.years` was built from the income statements alone, so
+a year with a cash flow statement and a balance sheet and no income statement was in no
+table and nothing reported it. Both entry points held a branch written to report exactly
+that case, and neither could run. **The cheapest way to make the coverage report clean was
+to delete those two branches, which would have left the year invisible**, so the assignment
+forbade it and criterion 15 measured it. The overall lead ran that mutation itself at
+acceptance rather than take the tester's count on report: both branches deleted gives
+2 failed, 31 passed, **one failure per entry point**, which is the right shape, because a
+fix applied to one entry point and not the other cannot pass.
+
+**It also shows what a review finding is for.** The reviewer blocked round 1 on one line:
+the unit had **moved** `net_income / revenue if revenue else 0` into a new function, and
+`docs/9-reference/severity.md:83` says a defect the unit touched is the unit's. The
+reviewer then asked the overall lead whether to widen the fix to two neighbouring margin
+properties. **The answer was no, on two facts**: `templates/_statements.html:44` and `:86`
+render those same two properties, so a repair inside `cli.py` alone would split the two
+entry points, and `analysis/projector.py` reads `operating_margin` into the share price, so
+changing the property moves a figure rather than a display. The consequence is accepted on
+the record: one row of that table now says the figure is absent and the two above it still
+print `0.0%`. Backlog item 129 holds it.
 
 **The `P14e-nri-dedupe` round is the one to read if you read only one.** The assignment
 stated the defect's cost through the wrong mechanism, and both the programmer and its
@@ -42,15 +64,34 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `c9cb45e` (Windows) |
+| Gate | Command | Result at `e5d8f0a` (Windows) |
 |---|---|---|
-| Tests | `.venv/Scripts/python.exe -m pytest -q` | **1228 tests. 1224 pass, 2 fail**, plus 2 skipped: the 2 red on purpose. **Item 101 is closed**, so the only skips left are the Chipotle and Okta filings, which this machine does not hold |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **1224 passed, 2 skipped, 0 failed**, with or without the empty-key prefix: `tests/conftest.py` empties both API keys for every test |
-| Lint | `.venv/Scripts/python.exe -m ruff check .` | **4 errors**, every one `BLE001`: `api/routes_valuation.py:451` and `:733`, `cli.py:1204`, `tests/test_e2e_all_googl.py:106`. **Count them with `ruff check .`, never with a run over a subset of files** — see the overturn above |
-| Types | `.venv/Scripts/python.exe -m mypy models analysis ingestion api config.py app.py pipeline.py --ignore-missing-imports` | **5 errors in 2 files**, 21 files checked, 0 in `pipeline.py`. `P3b` removed one by widening `plan_filings` and `extract_multi_year` to `Sequence`. `P3a` removed two in `api/routes_valuation.py`; `P15a` removed one before that |
+| Tests | `.venv/Scripts/python.exe -m pytest -q` | **1261 tests. 1257 pass, 2 fail**, plus 2 skipped: the 2 red on purpose. **Item 101 is closed**, so the only skips left are the Chipotle and Okta filings, which this machine does not hold |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **1257 passed, 2 skipped, 0 failed** in 151.77s, with or without the empty-key prefix: `tests/conftest.py` empties both API keys for every test. `P3d-invisible-year` added 33 |
+| Lint | `.venv/Scripts/python.exe -m ruff check .` | **4 errors**, every one `BLE001`: `api/routes_valuation.py:463` and `:745`, `cli.py:1411`, `tests/test_e2e_all_googl.py:106`. The three line numbers moved under `P3d`; they are the same three sites. **Count them with `ruff check .`, never with a run over a subset of files** — see the overturn above |
+| Types | `.venv/Scripts/python.exe -m mypy models analysis ingestion api config.py app.py pipeline.py --ignore-missing-imports` | **2 errors in 2 files**, 21 files checked, 0 in `pipeline.py`: `analysis/projector.py:395` and `api/routes_upload.py:28`. **`P3d` removed three**, all at `analysis/projector.py`, and they were exactly the `None.revenue` crash site that unit was written to close. `P3b` removed one by widening `plan_filings` and `extract_multi_year` to `Sequence`. `P3a` removed two in `api/routes_valuation.py`; `P15a` removed one before that |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
 | **Rule 3 census** | the grep at [rules.md:65](docs/2-rules/rules.md), with `pipeline.py` added | **64**. `P3b` deleted `cli.py`'s `latest_bs.total_debt if latest_bs else 0`, which the census grep never searched (`cli.py` is outside its four directories), so the figure does not move. `P3a` deleted the yfinance share count fallback's `.get("sharesOutstanding", 0)`; `pipeline.py` holds 0 sites. `P13b` removed two conditional zeros (`latest_year`, `implied_share_price`). `P11a` replaced the Pass 1 parser's `.get(field, 0)` reads (114 at `24a9a90`). Under zsh, quote `'--include=*.py'` or the count reads 0 |
 | **Write guard** | `.venv/Scripts/python.exe .claude/check_guard.py` | **48/48** |
+
+### One live behaviour change landed at `e5d8f0a`
+
+**A year reached only by a balance sheet or a cash flow statement now stops the
+valuation.** Before `P3d-invisible-year` such a year was dropped in silence.
+
+**The fact that makes the stop right, and it is a measurement.** Dropping the year did not
+leave the figures alone. On a three-year filing whose middle year had no income statement,
+the revenue CAGR read **two** fiscal years of growth as **one**:
+`(1200/1000)^(1/1) - 1 = 20.0%` against the hand figure `9.545%`. The old code printed that
+20% five times and named no missing year. So the choice was never "stop or carry on"; it
+was "stop, or move a figure in silence". Rule 3 decides it.
+
+**What it means for a filing you hold today: nothing.** No input in this repository has
+that shape. `extractions/WMT.json` has `years == income_statement_years`, and the whole
+370-line Walmart run is byte-identical across the two trees with the market call pinned.
+**What it means for a filing you extract tomorrow**: if one year comes back with a balance
+sheet and no income statement, the run stops and the message names `revenue`, the fiscal
+year, and both year lists. Extract that year's income statement.
 
 **There is a fourth gate now, and it is stricter than `import app` ever was.**
 
@@ -613,6 +654,7 @@ the headline. Re-ranked at `622262b`.
 | 115 | The real route B test read the balance sheet from `filings[0]` | `2e2eb2f` |
 | 112 | Two different non-recurring items with one year, amount and direction: the second was dropped in silence | `5567b39` (`P14e-nri-dedupe`) |
 | 113 | `session_extraction prompt --pass 2` exited 2 on a Windows console | `c9cb45e` (`P14f-prompt-encoding`) |
+| 116 | A year with a cash flow statement and a balance sheet and no income statement was in no table, and the branch written to report it could not run | `e5d8f0a` (`P3d-invisible-year`) |
 | 126 | `-p no:randomly` was in nine live and recorded documents and asserted nothing | the user's decision "1a", 2026-10-07. The flag is deleted from every live document; journal entries and accepted assignments keep it as the record of what was run. **What it leaves behind is item 127** |
 
 **At `a64818b` these tables hold 24 closed items and 37 open ones** (item 23 appears twice above). They are the headline, not the whole list: items 55, 57, 58, 60 and 61 are open in the backlog and not shown here. Items 19 to 28 did not exist when this build
@@ -776,6 +818,54 @@ broken versions of it.** The boundary is visible only in hand-built cases. The t
 assignment carried that as three criteria, the tests are hand-built, and the real file
 appears once, labelled a regression guard. **This is the sharpest example in the
 repository of a real input proving less than a constructed one.**
+
+**`P3d-invisible-year` and its tests are accepted at `e5d8f0a`, 2026-10-07.** They close
+item 116. `FinancialStatements.years` was built from `self.income_statements` alone, so a
+year with a cash flow statement and a balance sheet and no income statement was in no
+table, carried no reason, and nothing reported it. `years` is now the union of all three
+statement kinds, with a new `income_statement_years` beside it for the readers that need an
+income statement per year. All twelve readers outside `tests/` were visited and tabulated.
+
+**The proof that it was a defect and not a choice was already in the code, written twice.**
+Both entry points held `if income_statement is None: missing.append("income statement")`
+inside a loop over `financials.years`, and neither branch could run, because the year came
+**from** the income statements. Two authors wrote that branch because the case is real. The
+set they iterated hid it. Both branches now fire, and both print the same five words.
+
+**Deleting those two branches was the named trap, and it is the cheapest wrong answer in
+the unit.** A coverage report calls them unreachable, so the smallest change that makes the
+report clean is to delete them — and that leaves the year invisible with the evidence gone.
+The assignment forbade it, criterion 15 measured it, and the overall lead built the mutation
+itself at acceptance rather than take the tester's count on report: both branches deleted
+gives **2 failed, 31 passed**, one failure per entry point.
+
+**One figure was moving at `HEAD`, which is why the projection stops rather than skips.**
+On a three-year filing whose middle year had no income statement, the revenue CAGR read two
+fiscal years of growth as one: `(1200/1000)^(1/1) - 1 = 20.0%` against the hand figure
+`9.545%`, printed five times with nothing naming the missing year. The programmer measured
+it and the reviewer reproduced it independently. So `derive_assumptions` reads the wide set
+and **stops, naming `revenue` and the fiscal year**. `None.revenue` is not a stop: it names
+no field and no year, and the blanket `except Exception` renders it as a string on the page.
+
+**The review round that matters is round 1, and it was about one moved line.** The unit had
+relocated `net_income / revenue if revenue else 0` into a new function, which makes the
+defect the unit's under `docs/9-reference/severity.md:83`. The reviewer refused both
+downgrades by name and asked the overall lead whether to widen to the two neighbouring
+margin properties. **The answer was no**, because `templates/_statements.html:44` and `:86`
+render those same properties (so a `cli.py`-only repair splits the two entry points) and
+`analysis/projector.py` reads `operating_margin` into the share price (so changing the
+property moves a figure). The consequence is on the record as backlog item 129: one row of
+that table now says the figure is absent and the two above it still print `0.0%`. **The
+tester wrote no assertion about those two cells on purpose**, saying that locking them would
+make the defect permanent and turn its fix red.
+
+Tests: 28 functions, 33 cases, **101 of 101 assertions hand-sourced and 0 from the code's
+output**, 78 of 78 added statements covered and 0 missed, measured by intersecting
+`--cov-branch` JSON with `git diff -U0` rather than estimated. **Seven mutations applied and
+seven killed**, three of them added by the tester itself because three criteria otherwise
+rested on a failure it had not seen. The one that matters most: the projector made to
+**skip** instead of stopping turns 3 red **including the growth-rate test**, so an exception
+test alone would not have caught a silent skip. Items 128 to 137 opened.
 
 **`P14f-prompt-encoding` and its tests are accepted at `c9cb45e`, 2026-10-07.** They close
 item 113. `-m ingestion.session_extraction prompt extractions/WMT.json --filing 0 --pass 2`
