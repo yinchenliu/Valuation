@@ -84,6 +84,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import io
 import json
 import math
 import re
@@ -1146,7 +1147,53 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+# The error handler this module puts on its own output streams.
+#
+# `prompt --pass 2` prints the Pass 2 prompt, and that prompt holds two U+2192
+# RIGHTWARDS ARROW (`claude_extractor.py:412-413`). A redirected stdout on this
+# Windows machine encodes in cp1252, which has no such character, so the write raised
+# `UnicodeEncodeError` and the command stopped after 19 of its 82 lines (backlog item
+# 113). **The prompt is the text route A sends to the model, so no byte of it may
+# change** (`docs/2-rules/llm-boundary.md`, and AGENTS.md makes a change to the
+# boundary an escalation). The stream changes instead.
+#
+# `namereplace` writes every character the console's encoding holds exactly as it is,
+# so a UTF-8 console still prints U+2192 as the arrow itself; any other character is
+# written as its Unicode name, `\N{RIGHTWARDS ARROW}`. That is why it is this handler
+# and not `replace`, which prints `?`, or `ignore`, which prints nothing: both lose
+# the fact that a character was there, and a reader cannot tell a dropped arrow from a
+# prompt that never had one.
+#
+# This comment is written in ASCII on purpose. A file about a console that cannot hold
+# a character should not need that console to hold one to be read.
+UNENCODABLE_CHARACTER_HANDLER = "namereplace"
+
+
+def name_unencodable_characters(stream: object) -> bool:
+    """Make `stream` write a character its encoding cannot hold as its Unicode name.
+
+    A stream that encodes text to bytes — `sys.stdout` and `sys.stderr`, on a console
+    or down a pipe — is an `io.TextIOWrapper`. Its error handler is reconfigured in
+    place, and its encoding is left alone: this changes nothing about a character the
+    console can already hold.
+
+    Any other object performs no encode step at all (an `io.StringIO` a caller put in
+    `sys.stdout`'s place keeps `str`), so no character can be lost in it and there is
+    nothing to set. Returns True when the handler was set and False when the stream
+    does not encode, so a caller can tell the two apart.
+    """
+    if not isinstance(stream, io.TextIOWrapper):
+        return False
+    stream.reconfigure(errors=UNENCODABLE_CHARACTER_HANDLER)
+    return True
+
+
 def main(argv: list[str] | None = None) -> int:
+    # Every subcommand prints through these two streams, so one call each covers
+    # `plan`, `locate`, `text`, `prompt` and `check`. stderr is included because
+    # `cmd_prompt` sends `parse_pass1`'s arithmetic table there.
+    name_unencodable_characters(sys.stdout)
+    name_unencodable_characters(sys.stderr)
     args = _build_parser().parse_args(argv)
     try:
         if args.command == "plan":
