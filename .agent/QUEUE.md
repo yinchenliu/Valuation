@@ -26,6 +26,17 @@ the programmer, code reviewer and tester as Claude subagents, by the loop in `AG
 **One unit is `ready`, `building` or `rework` at a time**, unless the Notes column says
 that two units may run in parallel.
 
+**No unit is `ready` as of 2026-10-07, and that is the handoff state, not a stall.** Every
+unit through `P14f-prompt-encoding` is `accepted` and committed, the working tree is
+clean, and the queue waits for the user to choose what comes next. The overall lead's
+recommendation is `P3d-invisible-year` (row 6i, item 116): a year with no income statement
+is in no table and nothing reports it. `P1e-test-order` (row 6j) cannot start at all until
+the user answers, because its two fixes are not equivalent.
+
+**One lesson from 2026-10-05 holds the one-unit rule in place.** Two units shared this
+working tree and the failing count moved between two runs eight minutes apart, so neither
+unit's gate figure meant anything. Serialise, or give each unit a worktree.
+
 **The user confirmed one-team mode on 2026-10-05** ("I want the one team framework where
 you are the main agent, and will dispatch subagents to finish the build"). The overall
 lead writes every assignment, dispatches the programmer, code reviewer and tester as
@@ -47,6 +58,8 @@ Claude subagents, and reports to the user only.
 | 6f | `P14e-nri-dedupe` | [P14e-nri-dedupe.md](assignments/P14e-nri-dedupe.md) | `accepted` | 112 | **the defect that moves a number.** `merge_filing_extractions` dedupes non-recurring items on `(year, amount, direction)` with no `else`, so Walmart's two fiscal 2022 divestiture losses of $0.2 billion, Asda on page 66 and Seiyu on page 67, become one. Measured on the real route B file: 14 written, 13 merged, 200 $M of add-back lost in silence. **Ready to start once `P3c-one-number` lands**: its file scope is `ingestion/claude_extractor.py` alone, which is disjoint from `P3c`'s four files |
 | 6g | `P14f-prompt-encoding` | [P14f-prompt-encoding.md](assignments/P14f-prompt-encoding.md) | `accepted` | 113 | `session_extraction prompt --pass 2` exits 2 on a Windows console: the two arrows in the Pass 2 direction rules hit the `charmap` codec. Measured 2026-10-06: exit 2 and 19 lines without `PYTHONIOENCODING=utf-8`, exit 0 and 82 lines with it, and **that one subcommand is the only one of six that fails**. The prompt text does not change: those two lines are what route A sends the model. **Assignment written. Not `ready` on purpose**: its file scope (`ingestion/session_extraction.py`) is disjoint from `P14e`'s, but one unit at a time keeps every gate figure meaningful |
 | 6h | `P14g-unit-statement-pages` | not written | `planned` | 114 | check B1 reads the row's page **and the page before**; `_unit_statement_pages_allowed` allows only pages an income statement row cites. Walmart's fiscal 2024 filing prints its income statement title and unit statement at the foot of PDF page 45 and every data row on page 46, so citing page 45 stops the run on a correct reading |
+| 6i | `P3d-invisible-year` | not written | `planned` | 116 | **the overall lead's recommendation for the next unit, 2026-10-07.** `FinancialStatements.years` is built from `self.income_statements` alone, so a year that has a cash flow statement and a balance sheet but no income statement is in no table, carries no reason, and nothing reports it. **A whole year can vanish.** Both entry points hold an `if income_statement is None` branch written to report exactly that, and neither branch can run. **Do not delete the dead branch**: the branch is right and the set it iterates is wrong. Touches `models/financial_statements.py`, `cli.py` and `api/routes_valuation.py`, so every consumer of `years` must be re-checked |
+| 6j | `P1e-test-order` | not written | `planned` | 126, 124 | **waits on a user decision.** `-p no:randomly` is in `docs/8-build/environment.md` and in every assignment's gate command, and it does nothing: only `pytest` and `pytest-cov` are installed, and pytest accepts disabling an absent plugin in silence. So test order is fixed and order dependence between files is untested. **The two fixes are not equivalent**: install `pytest-randomly`, which gives a real guard and may turn tests red the first time it runs, or delete the flag everywhere, which is honest and adds nothing. Item 124 is a live example of the defect class |
 | 7 | `P14c-layout-facts` | not written | `planned` | 10 | defect (item 10), through rule 1 option C: a layout fact the filing states, page-checked; the D&A decision moves into `analysis/` |
 | 8 | `P15b-gemini-flash` | [P15b-gemini-flash.md](assignments/P15b-gemini-flash.md) | `planned` | 82 | the user's decision of 2026-10-04: route A's default model becomes `gemini-3.8-flash`; the CLI cache key names the model ID. Assignment written. **Deferred by the user, 2026-10-04:** "focus on fixing the defects first before refine route A" |
 | 9 | `P14b-row-reasons` | not written | `planned` | — | feature, after the defects: rule 1 option A: a reason for each printed row, shown on both pages. A format change, and Walmart must be extracted again |
