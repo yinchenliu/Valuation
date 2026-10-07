@@ -26,13 +26,21 @@ the programmer, code reviewer and tester as Claude subagents, by the loop in `AG
 **One unit is `ready`, `building` or `rework` at a time**, unless the Notes column says
 that two units may run in parallel.
 
-**Start here, 2026-10-07. No unit is `ready`: `P14g-unit-statement-pages` (row 6g) is next
-and its assignment is not written yet.** Every unit through `P3d-invisible-year` is
-`accepted` and committed, the working tree is clean, and no subagent is in flight. Row 6g
-closes item 114, a **stopping** defect that fires on a correct reading of a real filing: the
-two unit-scale checks disagree about where a unit statement may be printed, so Walmart's
-fiscal 2024 income statement, whose title and unit statement sit at the foot of PDF page 45
-with every data row on page 46, stops the run.
+**Start here, 2026-10-07. `P14g-unit-statement-pages` (row 6h) is `ready`.** Every unit
+through `P3d-invisible-year` is `accepted` and committed at `0a9ed51`, and no subagent is in
+flight. Row 6h closes item 114, a **stopping** defect that fires on a correct reading of a
+real filing: the two unit-scale checks disagree about where a unit statement may be printed,
+so Walmart's fiscal 2024 income statement, whose title and unit statement sit at the foot of
+PDF page 45 with every data row on page 46, stops the run when the model cites page 45.
+
+**The overall lead measured one thing before writing it that the backlog did not hold, and
+it raises the item from a theory to a bent extraction.** `extractions/WMT.json` `filings[0]`
+cites `units` page **46** with the printed text `(Amounts in millions)`, which is the
+**Consolidated Statements of Comprehensive Income** header. The income statement's own unit
+statement is on page 45 and reads `(Amounts in millions, except per share data)`, and
+`filings[1]`, the same company's next filing, cites exactly that. So the check is already
+steering what the model cites, toward another statement's header. No figure moved and no
+scale word was invented: both texts say millions.
 
 **`P3d-invisible-year` (row 6i) was accepted on 2026-10-07**, built by the one team in three
 rounds. It closed item 116 and opened items 128 to 137. **It carries one live behaviour
@@ -69,7 +77,7 @@ Claude subagents, and reports to the user only.
 | 6e | `P1d-skipped-filings` | [P1d-skipped-filings.md](assignments/P1d-skipped-filings.md) | `accepted` | 101, 102 | a `skipif` guard named `10K_filings/Walmart/` and the folder is `10K_filings/WMT/`, so the real-filing check for check B1 skipped on a machine that holds the filing. A tester unit, `tests/` only |
 | 6f | `P14e-nri-dedupe` | [P14e-nri-dedupe.md](assignments/P14e-nri-dedupe.md) | `accepted` | 112 | **the defect that moves a number.** `merge_filing_extractions` dedupes non-recurring items on `(year, amount, direction)` with no `else`, so Walmart's two fiscal 2022 divestiture losses of $0.2 billion, Asda on page 66 and Seiyu on page 67, become one. Measured on the real route B file: 14 written, 13 merged, 200 $M of add-back lost in silence. **Ready to start once `P3c-one-number` lands**: its file scope is `ingestion/claude_extractor.py` alone, which is disjoint from `P3c`'s four files |
 | 6g | `P14f-prompt-encoding` | [P14f-prompt-encoding.md](assignments/P14f-prompt-encoding.md) | `accepted` | 113 | `session_extraction prompt --pass 2` exits 2 on a Windows console: the two arrows in the Pass 2 direction rules hit the `charmap` codec. Measured 2026-10-06: exit 2 and 19 lines without `PYTHONIOENCODING=utf-8`, exit 0 and 82 lines with it, and **that one subcommand is the only one of six that fails**. The prompt text does not change: those two lines are what route A sends the model. **Assignment written. Not `ready` on purpose**: its file scope (`ingestion/session_extraction.py`) is disjoint from `P14e`'s, but one unit at a time keeps every gate figure meaningful |
-| 6h | `P14g-unit-statement-pages` | not written | `planned` | 114 | check B1 reads the row's page **and the page before**; `_unit_statement_pages_allowed` allows only pages an income statement row cites. Walmart's fiscal 2024 filing prints its income statement title and unit statement at the foot of PDF page 45 and every data row on page 46, so citing page 45 stops the run on a correct reading |
+| 6h | `P14g-unit-statement-pages` | [P14g-unit-statement-pages.md](assignments/P14g-unit-statement-pages.md) | `ready` | 114 | check B1 reads the row's page **and the page before**; `_unit_statement_pages_allowed` allows only pages an income statement row cites. Walmart's fiscal 2024 filing prints its income statement title and unit statement at the foot of PDF page 45 and every data row on page 46, so citing page 45 stops the run on a correct reading |
 | 6i | `P3d-invisible-year` | [P3d-invisible-year.md](assignments/P3d-invisible-year.md) | `accepted` | 116 | **the overall lead's recommendation for the next unit, 2026-10-07.** `FinancialStatements.years` is built from `self.income_statements` alone, so a year that has a cash flow statement and a balance sheet but no income statement is in no table, carries no reason, and nothing reports it. **A whole year can vanish.** Both entry points hold an `if income_statement is None` branch written to report exactly that, and neither branch can run. **Do not delete the dead branch**: the branch is right and the set it iterates is wrong. Touches `models/financial_statements.py`, `cli.py` and `api/routes_valuation.py`, so every consumer of `years` must be re-checked |
 | 6j | `P1e-test-order` | not written | `planned` | 127, 124 | **the user's decision "1a" of 2026-10-07 is done and is not this unit**: `-p no:randomly` asserted nothing and is deleted from every live document (item 126, closed). Journal entries and accepted assignments keep it, because they record what was run. **What is left is item 127**: no test-order guard exists, so a test that passes only because another ran first passes forever. Item 124 is a live example. **Install `pytest-randomly`. It may turn tests red the first time it runs, which is the point**, so schedule it as a unit rather than folding it into a cleanup |
 | 7 | `P14c-layout-facts` | not written | `planned` | 10 | defect (item 10), through rule 1 option C: a layout fact the filing states, page-checked; the D&A decision moves into `analysis/` |
