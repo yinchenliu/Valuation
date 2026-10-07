@@ -433,11 +433,48 @@ class FinancialStatements:
 
     @property
     def years(self) -> list[int]:
-        """Available years sorted ascending."""
-        year_set = set()
-        for stmt in self.income_statements:
-            year_set.add(stmt.year)
+        """Every fiscal year ANY of the three statements covers, ascending.
+
+        The set is built from `income_statements`, `balance_sheets` AND
+        `cash_flow_statements`.
+
+        Until `P3d-invisible-year` it was built from `income_statements`
+        alone, so a year that had a cash flow statement and a balance sheet
+        but no income statement was in no table, carried no reason, and
+        nothing anywhere reported it — its figures were extracted and then
+        dropped without a word. Both entry points held a branch written to
+        report exactly that case (`cli.print_historical_fcff` and
+        `api/routes_valuation._historical_fcff_by_year`), and neither could
+        run, because both iterate this list. Backlog item 116.
+
+        **A year in this list is not a year with an income statement.** A
+        caller that needs one for every year reads `income_statement_years`
+        (`cli.print_extracted_financials`'s income statement table,
+        `claude_extractor._build_is_summary`), or reads this list and stops
+        naming the year it cannot serve
+        (`analysis/projector.derive_assumptions`). It never reads
+        `get_income_statement(y).<field>` off this list: that is `None.<field>`,
+        an `AttributeError` naming no field, which is the same silent omission
+        with a louder failure.
+        """
+        year_set: set[int] = set()
+        for income in self.income_statements:
+            year_set.add(income.year)
+        for balance in self.balance_sheets:
+            year_set.add(balance.year)
+        for cash_flow in self.cash_flow_statements:
+            year_set.add(cash_flow.year)
         return sorted(year_set)
+
+    @property
+    def income_statement_years(self) -> list[int]:
+        """The fiscal years that HAVE an income statement, ascending.
+
+        A subset of `years`, which covers every year any statement reaches.
+        `get_income_statement(y)` returns a statement, never `None`, for every
+        year in this list and for no other.
+        """
+        return sorted({income.year for income in self.income_statements})
 
     def get_income_statement(self, year: int) -> IncomeStatement | None:
         return next((s for s in self.income_statements if s.year == year), None)
@@ -456,8 +493,18 @@ class FinancialStatements:
         no latest year, and year 0 is not one: it would read as a fiscal year
         and every lookup keyed on it would quietly find nothing. Rule 3;
         backlog item 15.
+
+        **It reads `income_statement_years`, not `years`.** Since
+        `P3d-invisible-year`, `years` covers every year any statement reaches,
+        so a filing can hold a balance sheet and no income statement at all:
+        `years` would be non-empty while the message below says there are no
+        income statements. Reading the narrow set keeps the message true when
+        it prints, and keeps `get_income_statement(latest_year)` a statement
+        for every caller that follows this property with that call
+        (`pipeline.value_company`, `analysis/projector.project_fcffs`,
+        `analysis/dcf`). Backlog item 116, fact 4.
         """
-        years = self.years
+        years = self.income_statement_years
         if not years:
             raise ValueError(
                 f"FinancialStatements for {self.ticker!r} holds no income "

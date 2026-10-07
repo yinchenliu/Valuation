@@ -58,6 +58,7 @@ from ingestion.session_extraction import load_session_extraction
 from models.financial_statements import (
     BALANCE_CHECK_TOLERANCE,
     FinancialStatements,
+    IncomeStatement,
     NonRecurringItem,
 )
 from models.valuation import ProjectionAssumptions
@@ -416,54 +417,177 @@ def _pct(v: float, w: int = 7) -> str:
     return f"{v * 100:>{w}.1f}%"
 
 
+def _net_margin_cell(income: IncomeStatement, w: int) -> str:
+    """The net income margin cell, or a blank one when revenue is 0.
+
+    Rule 3. The margin is `net_income / revenue`; a year whose extracted
+    revenue is 0 has no margin, because the division has no value. This cell
+    read `… .net_income / … .revenue if … .revenue else 0` until round 2 of
+    `P3d-invisible-year`, so it printed `0.0%` — the same six characters a
+    company that really earned nothing on real revenue would show. A reader
+    could not tell a measured zero from an absent one.
+
+    A blank cell is what this file's cash flow table already prints for a
+    figure it does not have, and no figure is invented by it. The year is
+    then named under the table by `_print_net_margin_absences`, in the
+    vocabulary the rest of the table uses for something that is not there.
+    The reviewer's suggested `"not computable: revenue is 0"` is 29
+    characters and this column is 10 wide, so those words go on that line
+    instead of into the cell.
+
+    The blank is `w + 1` characters and not `w`, because `_pct` emits `w`
+    characters of number and then the `%` sign. A blank of `w` would pull
+    every later column of that one row a character to the left.
+
+    `income` is an `IncomeStatement` and never `None`: the caller builds the
+    table from `FinancialStatements.income_statement_years`, every year of
+    which has one.
+    """
+    if income.revenue == 0:
+        return " " * (w + 1)
+    return _pct(income.net_income / income.revenue, w)
+
+
 # ---------------------------------------------------------------------------
 # Print: Extracted Financial Statements (Pass 1)
 # ---------------------------------------------------------------------------
 
 def print_extracted_financials(financials: FinancialStatements) -> None:
+    # `years` covers every year ANY of the three statements reaches, since
+    # `P3d-invisible-year` (backlog item 116). The cash flow table below is
+    # built from it, so a year with a cash flow statement and no income
+    # statement now prints its cash flow figures instead of being dropped.
+    # The income statement table cannot be: every row below reads a field off
+    # `get_income_statement(y)`, which is `None` for such a year, so it is
+    # built from `income_statement_years` and the years it leaves out are
+    # named under it rather than passed over.
     years = financials.years
+    is_years = financials.income_statement_years
     if not years:
         print("  No financial data extracted.")
         return
 
     col = 10  # column width
+    label_col = 18
 
     # --- Income Statement ---
     _section("EXTRACTED FINANCIAL STATEMENTS — INCOME STATEMENT (GAAP, $M)")
-    label_col = 18
-    header = " " * label_col + "".join(f"{y:>{col}}" for y in years)
-    print(header)
+    if is_years:
+        _print_income_statement_table(financials, is_years, col, label_col)
+        _print_net_margin_absences(financials, is_years)
+    else:
+        # A table of twenty labels and no column states nothing. Every year
+        # is named below with its reason, and the other two tables print the
+        # figures that were extracted for it.
+        print("  No income statement extracted for any year.")
+
+    # Each year the other statements cover and this table has no column for,
+    # in the words both entry points use for the same case (backlog item 116).
+    # Its figures were extracted; the cash flow table below prints them.
+    for year in years:
+        if year not in set(is_years):
+            print(f"  {year:>4}  not extracted: income statement")
+
+    # --- Cash Flow Statement ---
+    _section("EXTRACTED FINANCIAL STATEMENTS — CASH FLOW ($M)")
+    print(" " * label_col + "".join(f"{y:>{col}}" for y in years))
     print(" " * label_col + "-" * (col * len(years)))
+    _print_cash_flow_table(financials, years, col, label_col)
+    for year in years:
+        if financials.get_cash_flow(year) is None:
+            print(f"  {year:>4}  not extracted: cash flow statement")
+
+    _print_latest_balance_sheet(financials)
+
+
+def _print_income_statement_table(
+    financials: FinancialStatements,
+    is_years: list[int],
+    col: int,
+    label_col: int,
+) -> None:
+    """The income statement table, one column per year in `is_years`.
+
+    Every row reads a field off `get_income_statement(y)`, so `is_years` is
+    `FinancialStatements.income_statement_years` and never `.years`, which
+    since `P3d-invisible-year` also covers years reached by a balance sheet or
+    a cash flow statement alone. For one of those, every read here would be
+    `None.revenue` (backlog item 116). The caller names such a year under the
+    table instead.
+    """
+    header = " " * label_col + "".join(f"{y:>{col}}" for y in is_years)
+    print(header)
+    print(" " * label_col + "-" * (col * len(is_years)))
 
     rows: list[tuple[str, ...]] = [
-        ("Revenue",        *[_fmt(financials.get_income_statement(y).revenue, col) for y in years]),
-        ("COGS",           *[_fmt(financials.get_income_statement(y).cost_of_revenue, col) for y in years]),
-        ("Gross Profit",   *[_fmt(financials.get_income_statement(y).gross_profit, col) for y in years]),
-        ("  Margin",       *[_pct(financials.get_income_statement(y).gross_margin, col) for y in years]),
-        ("SG&A",           *[_fmt(financials.get_income_statement(y).sga, col) for y in years]),
-        ("R&D",            *[_fmt(financials.get_income_statement(y).rd_expense, col) for y in years]),
-        ("D&A",            *[_fmt(financials.get_income_statement(y).depreciation_amortization, col) for y in years]),
-        ("Other OpEx",     *[_fmt(financials.get_income_statement(y).other_operating_expense, col) for y in years]),
-        ("EBIT",           *[_fmt(financials.get_income_statement(y).ebit, col) for y in years]),
-        ("  Margin",       *[_pct(financials.get_income_statement(y).operating_margin, col) for y in years]),
-        ("Interest Exp",   *[_fmt(financials.get_income_statement(y).interest_expense, col) for y in years]),
-        ("Other Non-Op",   *[_fmt(financials.get_income_statement(y).other_non_operating, col) for y in years]),
-        ("EBT",            *[_fmt(financials.get_income_statement(y).ebt, col) for y in years]),
-        ("Tax Expense",    *[_fmt(financials.get_income_statement(y).tax_expense, col) for y in years]),
-        ("Net Income",     *[_fmt(financials.get_income_statement(y).net_income, col) for y in years]),
-        ("  Margin",       *[_pct(financials.get_income_statement(y).net_income / financials.get_income_statement(y).revenue if financials.get_income_statement(y).revenue else 0, col) for y in years]),
-        ("  Tax Rate",     *[_pct(financials.get_income_statement(y).effective_tax_rate, col) for y in years]),
-        ("Dil. Shares",    *[_fmt(financials.get_income_statement(y).diluted_shares_outstanding, col) for y in years]),
-        ("EPS",            *[f"{financials.get_income_statement(y).eps:>{col}.2f}" for y in years]),
+        ("Revenue",        *[_fmt(financials.get_income_statement(y).revenue, col) for y in is_years]),
+        ("COGS",           *[_fmt(financials.get_income_statement(y).cost_of_revenue, col) for y in is_years]),
+        ("Gross Profit",   *[_fmt(financials.get_income_statement(y).gross_profit, col) for y in is_years]),
+        ("  Margin",       *[_pct(financials.get_income_statement(y).gross_margin, col) for y in is_years]),
+        ("SG&A",           *[_fmt(financials.get_income_statement(y).sga, col) for y in is_years]),
+        ("R&D",            *[_fmt(financials.get_income_statement(y).rd_expense, col) for y in is_years]),
+        ("D&A",            *[_fmt(financials.get_income_statement(y).depreciation_amortization, col) for y in is_years]),
+        ("Other OpEx",     *[_fmt(financials.get_income_statement(y).other_operating_expense, col) for y in is_years]),
+        ("EBIT",           *[_fmt(financials.get_income_statement(y).ebit, col) for y in is_years]),
+        ("  Margin",       *[_pct(financials.get_income_statement(y).operating_margin, col) for y in is_years]),
+        ("Interest Exp",   *[_fmt(financials.get_income_statement(y).interest_expense, col) for y in is_years]),
+        ("Other Non-Op",   *[_fmt(financials.get_income_statement(y).other_non_operating, col) for y in is_years]),
+        ("EBT",            *[_fmt(financials.get_income_statement(y).ebt, col) for y in is_years]),
+        ("Tax Expense",    *[_fmt(financials.get_income_statement(y).tax_expense, col) for y in is_years]),
+        ("Net Income",     *[_fmt(financials.get_income_statement(y).net_income, col) for y in is_years]),
+        ("  Margin",       *[_net_margin_cell(financials.get_income_statement(y), col) for y in is_years]),
+        ("  Tax Rate",     *[_pct(financials.get_income_statement(y).effective_tax_rate, col) for y in is_years]),
+        ("Dil. Shares",    *[_fmt(financials.get_income_statement(y).diluted_shares_outstanding, col) for y in is_years]),
+        ("EPS",            *[f"{financials.get_income_statement(y).eps:>{col}.2f}" for y in is_years]),
     ]
     for row in rows:
         print(f"{row[0]:<{label_col}}" + "".join(row[1:]))
 
-    # --- Cash Flow Statement ---
-    _section("EXTRACTED FINANCIAL STATEMENTS — CASH FLOW ($M)")
-    print(header)
-    print(" " * label_col + "-" * (col * len(years)))
 
+def _print_net_margin_absences(
+    financials: FinancialStatements,
+    is_years: list[int],
+) -> None:
+    """Name each year whose net income margin the table above cannot compute.
+
+    Rule 3, and the other half of `_net_margin_cell`: the cell is blank, and
+    this says why and for which year. A table build must not raise — a raise
+    here would cost the reader every row that was fine — so the absence is
+    reported instead of stopping.
+
+    **The two margin rows above the net one still print `0.0%` for the same
+    year.** `Gross Margin` and `EBIT Margin` read
+    `IncomeStatement.gross_margin` and `.operating_margin`, which carry the
+    same `if self.revenue else 0.0` at `models/financial_statements.py:108`
+    and `:132`. Those two are backlog item 1 and they are deliberately left:
+    `templates/_statements.html:44` and `:86` render the same two properties,
+    `templates/` is outside this unit's scope, and `analysis/projector.py`
+    reads `operating_margin` into the DCF, so changing the property is not a
+    display repair. Repairing them here alone would make the CLI and the page
+    print different things for one cell, which is this repository's third
+    standing trap. The overall lead's ruling on this unit's round 1 review,
+    2026-10-07, records that and accepts the within-table difference.
+    """
+    for year in is_years:
+        if financials.get_income_statement(year).revenue == 0:
+            print(f"  {year:>4}  not computable: net income margin, revenue is 0")
+
+
+def _print_cash_flow_table(
+    financials: FinancialStatements,
+    years: list[int],
+    col: int,
+    label_col: int,
+) -> None:
+    """The cash flow table, one column per year in `years`.
+
+    `years` is `FinancialStatements.years`: every year ANY statement covers,
+    since `P3d-invisible-year`. A year with a cash flow statement and no
+    income statement prints its figures here, where before it was in no column
+    of this table and in no other line of the CLI (backlog item 116). A year
+    with no cash flow statement keeps the blank column it always had, and the
+    caller names it under the table.
+    """
     cf_rows: list[tuple[str, ...]] = [
         ("Net Income",  *[_fmt(financials.get_cash_flow(y).net_income, col) if financials.get_cash_flow(y) else " " * col for y in years]),
         ("D&A",         *[_fmt(financials.get_cash_flow(y).depreciation_amortization, col) if financials.get_cash_flow(y) else " " * col for y in years]),
@@ -486,13 +610,46 @@ def print_extracted_financials(financials: FinancialStatements) -> None:
     for row in cf_rows:
         print(f"{row[0]:<{label_col}}" + "".join(row[1:]))
 
-    # --- Balance Sheet (latest year only) ---
-    latest = financials.latest_year
-    bs = financials.get_balance_sheet(latest)
-    _section(f"EXTRACTED BALANCE SHEET — FY{latest} ($M)")
-    if bs is None:
+
+def _print_latest_balance_sheet(financials: FinancialStatements) -> None:
+    """The balance sheet of the latest year that HAS one.
+
+    It picks the latest balance sheet, not the balance sheet of the latest
+    income-statement year. The second is the defect of backlog item 116 in
+    miniature: it chose a year out of a set built from the income statements
+    alone, so a filing whose only balance sheet sat on a year with no income
+    statement printed "No balance sheet extracted" with a balance sheet in
+    hand, and a filing with no income statement at all raised `ValueError` out
+    of `latest_year` here. For every filing in this repository the two years
+    are the same one, and no figure moves.
+
+    **When the two years differ, this says so under the heading.** The sheet
+    shown here is the latest one extracted; `pipeline.value_company` nets debt
+    and builds the capital weights from `get_balance_sheet(latest_year)`, and
+    `latest_year` is the latest year with an INCOME statement. So a filing
+    whose newest balance sheet sits on a year with no income statement would
+    otherwise print one sheet's `Net Debt` on this page while the valuation
+    below it used another's, with no line saying the two are different sheets.
+    The reader is left to notice the year in the heading. Round 2 of
+    `P3d-invisible-year`, review finding F3.
+    """
+    if not financials.balance_sheets:
+        _section("EXTRACTED BALANCE SHEET ($M)")
         print("  No balance sheet extracted.")
         return
+    bs = max(financials.balance_sheets, key=lambda sheet: sheet.year)
+    latest = bs.year
+    _section(f"EXTRACTED BALANCE SHEET — FY{latest} ($M)")
+    # `income_statement_years` and not `financials.latest_year`: that property
+    # raises when the filing holds no income statement, and such a filing is
+    # already told twice above that it has none. This is the same set the
+    # property reads, so the comparison is the property's comparison.
+    is_years = financials.income_statement_years
+    if is_years and max(is_years) != latest:
+        print(f"  Shown: FY{latest}, the latest balance sheet extracted. The "
+              f"valuation below reads FY{max(is_years)}'s balance sheet — the "
+              f"latest year with an income statement — for net debt and the "
+              f"capital weights, so the two are different sheets.")
 
     bw = 14  # value column width
     lw = 22  # label column width
@@ -666,23 +823,56 @@ def print_normalization(
     adjusted: FinancialStatements,
 ) -> None:
     _section("GAAP -> NON-GAAP RECONCILIATION ($M)")
+    # Every year any statement covers, since `P3d-invisible-year`. A year with
+    # no income statement on one side or the other has no EBIT delta to show,
+    # and saying nothing about it is the defect of backlog item 116: it names
+    # the missing statement instead, in the same words the web prints for the
+    # same year.
+    #
+    # **The words are the web's, and in round 1 of this unit they were not.**
+    # `api/routes_valuation._build_ebit_reconciliation` sets
+    # `missing_statement` to one of three phrases — `raw income statement`,
+    # `adjusted income statement`, `raw and adjusted income statement` — and
+    # `templates/_statements.html:455` renders it as
+    # `not extracted: {{ row.missing_statement }}`. Round 1 built the phrase
+    # by comma-joining a list, so for a year missing both sides the CLI said
+    # `not reconciled: raw income statement, adjusted income statement` where
+    # the page said `not extracted: raw and adjusted income statement`, and
+    # the comment here claimed they matched. Two entry points drifting apart
+    # over one cell is this repository's third standing trap and backlog item
+    # 92's shape, so the CLI takes the page's four cases rather than the
+    # comment being softened. Round 2, review finding F4.
     years = raw.years
     if not years:
         return
 
+    reconciled: list[tuple[IncomeStatement, IncomeStatement]] = []
     for y in years:
         r = raw.get_income_statement(y)
         a = adjusted.get_income_statement(y)
+        if r is None or a is None:
+            if r is None and a is None:
+                missing = "raw and adjusted income statement"
+            elif r is None:
+                missing = "raw income statement"
+            else:
+                missing = "adjusted income statement"
+            print(f"  {y}: not extracted: {missing}")
+            continue
+        reconciled.append((r, a))
         delta = a.ebit - r.ebit
         if delta == 0:
             continue
         print(f"  {y}: EBIT  GAAP={r.ebit:>10,.0f}  Adj={a.ebit:>10,.0f}  "
               f"Delta={delta:>+10,.0f}")
 
-    # Summary
+    # Summary. Over the years that WERE reconciled, and printed only when
+    # there was one: with no reconciled year the line would assert that no
+    # adjustment applied to years whose EBIT was never read.
+    if not reconciled:
+        return
     has_delta = any(
-        adjusted.get_income_statement(y).ebit != raw.get_income_statement(y).ebit
-        for y in years
+        adjusted_is.ebit != raw_is.ebit for raw_is, adjusted_is in reconciled
     )
     if not has_delta:
         print("  No adjustments applied (no non-recurring items, or none matched I/S fields).")
@@ -715,6 +905,13 @@ def print_historical_fcff(financials: FinancialStatements, basis: str) -> None:
 
     The web's `_historical_fcff_by_year` (`api/routes_valuation.py`) builds the
     same rows from the same statements.
+
+    It iterates `financials.years`, which since `P3d-invisible-year` covers
+    every year ANY of the three statements reaches, not the years with an
+    income statement alone. **That is what makes the `is_ is None` branch
+    below run.** It was written because the case is real and it could not be
+    reached: the list it iterates was built from the income statements, so
+    every year in it had one. Backlog item 116.
     """
     _section("HISTORICAL FCFF (CFO-based, $M)")
     print(f"  {basis}")
@@ -1052,9 +1249,19 @@ def main() -> None:
         financials, adjustments, cache_label = _extract_via_api(args)
         identified_by = args.provider.upper()
 
+    # Every year any of the three statements covers, since
+    # `P3d-invisible-year`. The line below is the first place a reader meets
+    # the years, so a year that was extracted and has no income statement
+    # belongs in it; it was absent before, and nothing else said so either
+    # (backlog item 116). The years with an income statement are named beside
+    # it when the two differ, because that is what the income statement table
+    # at stage 2 and the projection both work from.
     years = financials.years
+    is_years = financials.income_statement_years
     print(f"  Ticker: {financials.ticker}  |  Company: {financials.company_name}")
     print(f"  Years extracted: {years}")
+    if is_years != years:
+        print(f"  Years with an income statement: {is_years}")
 
     # ===== STAGE 2: EXTRACTED F/S (Pass 1 output) ===========================
     _step(2, "Displaying extracted financial statements")

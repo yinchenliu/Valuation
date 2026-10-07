@@ -1072,6 +1072,11 @@ def cmd_check(path: Path) -> int:
               f"share_units {record.units.shares.printed!r} (page "
               f"{record.units.shares.page}) -> share count in "
               f"{record.units.shares.scale.word}. Converted to millions.")
+    # `years` covers every year ANY of the three statements reaches, since
+    # `P3d-invisible-year`; the balance sheet years beside it are listed in
+    # full. This is the summary of what the session file holds, so a year with
+    # a cash flow statement and no income statement belongs in it — before
+    # that unit it was in no line of this command's output (backlog item 116).
     print(f"  Years: {session.financials.years}  |  "
           f"balance sheet(s): {[b.year for b in session.financials.balance_sheets]}  |  "
           f"non-recurring items: {len(session.non_recurring)}")

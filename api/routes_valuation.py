@@ -255,6 +255,13 @@ def _historical_fcff_by_year(
     Built from whichever `FinancialStatements` the caller hands it; both call
     sites hand it the NORMALISED statements, which is what every other figure
     on both pages is built from.
+
+    It iterates `financials.years`, which since `P3d-invisible-year` covers
+    every year ANY of the three statements reaches, not the years with an
+    income statement alone. **That is what makes the `income_statement is
+    None` branch below run.** It was written because the case is real and it
+    could not be reached: the list it iterates was built from the income
+    statements, so every year in it had one. Backlog item 116.
     """
     rows: list[HistoricalFCFFYear] = []
 
@@ -310,6 +317,11 @@ def _build_ebit_reconciliation(
 
     Rule 3: a year missing from either side carries a named field saying so,
     never a zero delta.
+
+    Both `.years` reads cover every year any of the three statements reaches
+    (`P3d-invisible-year`), so a year with a cash flow statement and no income
+    statement on either side reaches the last branch below and is reported as
+    "raw and adjusted income statement" instead of vanishing. Backlog item 116.
     """
     if raw is None or adjusted is None:
         return []

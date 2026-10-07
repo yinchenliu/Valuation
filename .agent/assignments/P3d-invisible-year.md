@@ -212,3 +212,167 @@ exists because the cheapest wrong answer here is an `AttributeError`.
 - **`extractions/WMT.json` is not in git.** Three filings, five fiscal years, 2022 to 2026,
   balance sheet on `filings[2]`. Do not edit it and do not delete it.
 - The suite takes about 135 seconds.
+
+---
+
+## Overall lead ruling on review round 1 (2026-10-07)
+
+The code reviewer returned `changes_requested` with one `major`, two `minor` and two
+`note` findings. Its entry is
+`.agent/journal/2026-10-07T1150-code_reviewer-p3d-invisible-year.md`. **Read it and answer
+every finding by number.** This section rules on the one question the reviewer put to the
+overall lead, and it binds: where it and the reviewer's text differ, this section wins.
+
+### The ruling: F1 is fixed in `cli.py` and nowhere else
+
+**The reviewer's F1 is correct and it blocks.** I read `cli.py:506` myself. The net-margin
+row holds `financials.get_income_statement(y).net_income / financials.get_income_statement(y).revenue
+if financials.get_income_statement(y).revenue else 0`. The unit deleted that line from
+`print_extracted_financials` and added it inside the new `_print_income_statement_table`.
+`docs/9-reference/severity.md:83` says a defect the unit touched is the unit's, backlog or
+not, and that moving a line makes it yours. The two downgrades the reviewer refused stay
+refused.
+
+**The reviewer then asked whether to widen F1 to `models/financial_statements.py:108`
+(`gross_margin`) and `:132` (`operating_margin`), which carry the identical
+`if self.revenue else 0.0`. The answer is no. Here are the two facts that decide it.**
+
+**Fact A.** `templates/_statements.html:44` and `:86` render those same two properties as
+`{{ "{:.1f}%".format(stmt.gross_margin * 100) }}` and the operating-margin equivalent,
+guarded only by `{% if stmt is not none %}`. So for a year whose revenue is 0 the **web
+page prints `0.0%` today**, exactly as the CLI does. `templates/` is out of this unit's
+scope. **What follows:** repairing those two rows inside `cli.py` alone would make the CLI
+say one thing and the page say another for the same cell. That is this repository's named
+third trap, two entry points drifting apart, and it would be a new defect that this unit
+created.
+
+**Fact B.** `analysis/projector.py` reads `income.operating_margin` into `op_margins`, and
+that average reaches the DCF and the share price. **What follows:** changing
+`operating_margin` at the property is not a display repair. It moves a figure, it needs
+its own tests and its own before-and-after measurement, and it belongs with the census
+unit for backlog item 1 that takes both entry points together.
+
+**So the within-table inconsistency the reviewer warns of is real and I accept it on
+purpose.** Today all three margin rows print a fabricated `0.0%`. After this round the
+net-margin row tells the truth and the two above it still do not. A reader who sees one
+row say the figure is absent learns something that today's table hides from them. That is
+a partial repair, not a contradiction, and the rest is recorded in the backlog by me.
+
+### What to do, by finding number
+
+1. **F1 (`major`, blocking).** In `cli.py`, make the net-margin cell stop printing a
+   fabricated `0.0%` when revenue is 0. Use the **same vocabulary this unit already
+   established** for a figure that is not there, so the table speaks one language. Do not
+   raise out of a table build: a table that raises prints nothing at all, and the reader
+   loses the twelve rows that were fine. **Do not touch `models/financial_statements.py:108`
+   or `:132`.** State in your entry what the cell now prints and what the other two print
+   beside it.
+2. **F2 (`minor`).** `ingestion/claude_extractor.py:2319`,
+   `target_years or financials.income_statement_years`. **First read every caller and say
+   in your entry whether any one of them passes an empty list and relies on it meaning
+   "every year".** If none does, fix the shape. If one does, leave the line, name that
+   caller, and say so. Do not change what any current caller receives.
+3. **F3 (`minor`).** `_print_latest_balance_sheet` prints the latest balance sheet, and
+   `pipeline.py` nets debt from `get_balance_sheet(latest_year)`. The two can differ with
+   nothing saying so. `pipeline.py` is out of scope and stays out. **In the CLI, when the
+   balance sheet year it prints is not `latest_year`, say so on the line.** A reader must
+   be able to see the divergence where it happens.
+4. **F4 (`note`).** The comment at `cli.py:748` says the CLI names an unreconciled year "in
+   the same words" as the web, and the reviewer measured that it does not: CLI
+   `raw income statement, adjusted income statement` against web
+   `raw and adjusted income statement`. **Make the comment true, or make the words
+   identical.** Say which you chose and why.
+5. **F5 (`note`).** A filing with no income statement at all reports the fact twice.
+   **Leave it.** I record it. Do not widen your diff for it.
+
+### What does not change
+
+- **The design is approved.** Widening `years` to the union, adding `income_statement_years`
+  beside it, pointing `latest_year` at the narrow set, and making `derive_assumptions` read
+  the wide set and stop by name: all four stand. The reviewer re-ran all fifteen criteria on
+  its own scratch trees and all fifteen agree.
+- **Neither dead branch may be deleted.** Criterion 15 still binds.
+- **Re-run every done-criterion after your last edit**, not beside the edit that prompted
+  it. `STATUS.md` records an overturn caused by a gate measured before the last write.
+  Criteria 8, 11, 12 and 14 are the ones a late edit moves.
+- **`tests/` stays untouched.** The tester is a separate assignment.
+
+---
+
+## Overall lead review: `accepted` (2026-10-07)
+
+**Re-run by me, not read.** Every figure below is from my own command on the Windows
+machine (`.venv/Scripts/python.exe`, Python 3.14.4), with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`.
+
+| Gate | Command | Result |
+|---|---|---|
+| gate form | `-m pytest -q --ignore-glob="*_rule3_red.py"` | **1257 passed, 2 skipped, 0 failed** in 151.77s. The baseline 1224 plus the tester's 33 |
+| full suite | `-m pytest -q` | **2 failed, 1257 passed, 2 skipped**, and the failing set is exactly the two red on purpose, by name: `test_projector_rule3_red.py::test_an_extraction_with_no_income_statements_stops_and_names_the_input` and `test_routes_session_rule3_red.py::test_valuation_with_session_file_and_files_on_a_cache_hit_stops` |
+| lint | `-m ruff check .` | **4 errors, every one `BLE001`**: `api/routes_valuation.py:463`, `:745`, `cli.py:1411`, `tests/test_e2e_all_googl.py:106` |
+| types | the mypy command above | **2 errors in 2 files**, 21 checked: `analysis/projector.py:395` and `api/routes_upload.py:28`. Three removed against the 5 at `HEAD`, and criterion 10 asked for 5 or fewer |
+| census | the grep at `docs/2-rules/rules.md:102` | **64**, unchanged |
+| route | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
+| write guard | `.claude/check_guard.py` | **48/48** |
+| scope | `git diff --stat -- . ':(exclude).agent' ':(exclude)docs'` | six files, 400 insertions, 45 deletions. No `tests/`, no `templates/`, no `pipeline.py`. The tester added one file, `tests/unit/test_p3d_invisible_year.py` |
+
+### I ran one mutation myself, and I chose the one the unit was written around
+
+**Criterion 15 is this unit's trap**: the cheapest way to make the coverage report clean
+was to delete the two branches, and that would have left the year invisible. The tester
+reports that mutation as caught by **2** tests, which is thin, so I built it myself rather
+than take the count on report.
+
+In a scratch copy at `C:\tmp\p3d_accept` I deleted `if is_ is None: missing.append("income
+statement")` from `cli.py` and `if income_statement is None: missing.append("income
+statement")` from `api/routes_valuation.py` — the exact edit a programmer who fell into the
+trap would make, and one that leaves the surrounding `if is_ is None or cf_ is None:` in
+place, so the year still gets a row and the row has no reason.
+
+```
+control   33 passed
+mutant     2 failed, 31 passed
+          FAILED … ::test_the_cli_fcff_table_prints_a_row_for_the_year_with_no_income_statement
+          FAILED … ::test_the_web_fcff_rows_hold_a_row_for_the_year_with_no_income_statement
+```
+
+**One failure per entry point, which is the right shape**: a fix applied to one entry point
+and not the other cannot pass. The repository's `cli.py` carries sha256
+`f87e2915…` before and after the run, unchanged.
+
+### What I verified for myself beyond the gates
+
+**`cli.py:845` is unchanged context, so finding 128 is not this unit's.** Both the code
+reviewer and the tester found that `cli.py` iterates `raw.years` where
+`api/routes_valuation.py:329` iterates the union, and both refused to charge it to this
+unit. I checked the claim rather than accept it: `git diff -U0 -- cli.py` matches that line
+with neither `+` nor `-`. `docs/9-reference/severity.md:83` makes a defect the unit's only
+when the unit touched it, and this unit did not. Recorded as item 128.
+
+### The three rounds, and what each one changed
+
+1. **Programmer round 1.** The design: widen `years`, add `income_statement_years`, point
+   `latest_year` at the narrow set, make `derive_assumptions` read the wide set and stop by
+   name. All twelve readers visited and tabulated.
+2. **Code reviewer round 1, `changes_requested`.** F1 `major`: the unit moved a line holding
+   `net_income / revenue if revenue else 0` into a new function, which makes the defect the
+   unit's under `severity.md:83`. F2 and F3 `minor`, F4 and F5 `note`.
+3. **My ruling**, above. F1 is fixed in `cli.py` and nowhere else, on two facts: the page
+   renders the same two properties, so a repair here alone splits the entry points, and the
+   projector reads `operating_margin` into the share price, so changing the property moves a
+   figure.
+4. **Programmer round 2.** F1 to F4 answered, F5 left as ruled.
+5. **Code reviewer round 2, `approved`.** All fifteen criteria re-run on its own scratch
+   trees after the late edit. Four `note` findings, none citing a rule.
+6. **Tester, `pass`.** 101 of 101 assertions hand-sourced, 0 from the code's output. 78 of
+   78 added statements covered, 0 missed. Seven mutations, seven killed.
+
+### What this closes and what it opens
+
+**Backlog item 116 is closed.** Items **128 to 137** are opened for what the three agents
+found and this unit deliberately did not fix.
+
+**One live behaviour change, recorded in `STATUS.md`:** a year reached only by a balance
+sheet or a cash flow statement now **stops** the valuation, where it used to be dropped in
+silence. That is the rule 3 answer and it is right, because the silent drop moved the
+revenue CAGR. No input in this repository has that shape today: `extractions/WMT.json` has
+`years == income_statement_years`.

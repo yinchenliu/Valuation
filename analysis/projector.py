@@ -12,7 +12,7 @@ import numpy as np
 
 import config
 from analysis.fcff import calculate_fcff_projected
-from models.financial_statements import FinancialStatements
+from models.financial_statements import FinancialStatements, IncomeStatement
 from models.valuation import (
     ASSUMPTION_CLAMPED_CLAUSE_TEMPLATE,
     ASSUMPTION_ORIGIN_DERIVED,
@@ -92,6 +92,49 @@ def _historical_cagr(first: float, last: float, periods: int) -> _Derived:
     return _Derived(value=(last / first) ** (1 / periods) - 1, observations=2)
 
 
+def _income_statements_for_years(
+    financials: FinancialStatements,
+    years: list[int],
+) -> list[IncomeStatement]:
+    """The income statement of each year in `years`, in the order given.
+
+    Stops and names the field and the year when a year in `years` has none.
+
+    Since `P3d-invisible-year`, `FinancialStatements.years` covers every year
+    any of the three statements reaches, so a year in it can have a cash flow
+    statement and a balance sheet and no income statement (backlog item 116).
+    Three of this module's ratios read `revenue`, `operating_margin` and
+    `effective_tax_rate` off the income statement of EVERY year, and a
+    projection cannot be built from a year with no revenue.
+
+    The two cheap answers are both wrong and are both refused here:
+    `financials.get_income_statement(y).revenue` is `AttributeError:
+    'NoneType' object has no attribute 'revenue'`, which names no field and no
+    year and which the blanket `except Exception` in both entry points renders
+    as a string on the results page; and skipping the year silently drops a
+    year the filing covers out of the growth window, which moves the growth
+    rate with nothing saying so. Rule 3: stop, and name the field.
+    """
+    statements: list[IncomeStatement] = []
+    for year in years:
+        income = financials.get_income_statement(year)
+        if income is None:
+            raise ValueError(
+                f"revenue is not available for fiscal year {year}: "
+                f"{financials.ticker!r} has no income statement for it, so "
+                f"revenue, operating_margin and effective_tax_rate cannot be "
+                f"read for that year and a projection cannot be built from "
+                f"it. The extracted years are {years}; the years with an "
+                f"income statement are {financials.income_statement_years}. "
+                f"No figure is substituted for fiscal year {year} and it is "
+                f"not dropped from the window either, because dropping it "
+                f"would move the growth rate with nothing saying so. Extract "
+                f"the income statement for fiscal year {year}."
+            )
+        statements.append(income)
+    return statements
+
+
 def _source_supplied() -> AssumptionSource:
     """The caller gave this figure. No filing-year fed it, so 0 observations."""
     return AssumptionSource(
@@ -164,12 +207,19 @@ def derive_assumptions(
             f"no cash flow to discount."
         )
 
+    # Every year any statement covers, since `P3d-invisible-year`. The three
+    # ratios below need the income statement of each one, so they are fetched
+    # once, through a call that STOPS and names the field and the year when a
+    # covered year has none (backlog item 116). Reading
+    # `financials.income_statement_years` here instead would drop such a year
+    # out of the growth window in silence, which moves the derived growth rate.
     years = financials.years
+    income_statements = _income_statements_for_years(financials, years)
 
     sources: dict[str, AssumptionSource] = {}
 
     # --- Revenue growth ---
-    revenues = [financials.get_income_statement(y).revenue for y in years]
+    revenues = [income.revenue for income in income_statements]
     if ov.revenue_growth_rates:
         # A copy: the padding below appends, and appending to the caller's own
         # list would make a second call read the repeated rates as supplied and
@@ -222,7 +272,7 @@ def derive_assumptions(
     sources["revenue_growth_rates"] = growth_source
 
     # --- Operating margin ---
-    op_margins = [financials.get_income_statement(y).operating_margin for y in years]
+    op_margins = [income.operating_margin for income in income_statements]
     if ov.operating_margin is not None:
         operating_margin = ov.operating_margin
         sources["operating_margin"] = _source_supplied()
@@ -232,7 +282,7 @@ def derive_assumptions(
         sources["operating_margin"] = _source_for(margin_derived)
 
     # --- Tax rate ---
-    tax_rates = [financials.get_income_statement(y).effective_tax_rate for y in years]
+    tax_rates = [income.effective_tax_rate for income in income_statements]
     if ov.tax_rate is not None:
         pre_clamp_tax_rate = ov.tax_rate
         tax_source = _source_supplied()

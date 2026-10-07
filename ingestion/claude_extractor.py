@@ -2305,8 +2305,28 @@ def _build_is_summary(
     financials: FinancialStatements,
     target_years: list[int] | None = None,
 ) -> str:
-    """Format extracted I/S as context for Pass 2 (NRI analysis)."""
-    years = target_years or financials.years
+    """Format extracted I/S as context for Pass 2 (NRI analysis).
+
+    Every line here is read off an income statement, so the default is
+    `income_statement_years` and not `financials.years`, which since
+    `P3d-invisible-year` also covers years reached only by a balance sheet or
+    a cash flow statement (backlog item 116). Those years have no line to
+    print, and taking them from the wider set would drop each one at the
+    `if inc` below without a word — which is the defect item 116 names, not a
+    fix for it. The two sets were the same list before that unit, so this
+    prompt's text does not move.
+
+    `target_years is None` and not a bare `or`: `None` means "every year this
+    filing presents" and an empty list means "no year", and they are two
+    different requests. The `or` read both as the first, so a caller asking
+    for no year would have been shown the whole filing's income statements and
+    asked about years it did not request. No caller passes an empty list
+    today — every one arrives from `_plan_target_years`, which returns `None`
+    or `list(plan.target_years)`, and `plan_filings` builds `target_years` as
+    `None` or a one-element tuple — so this changes what no current caller
+    receives. Round 2 of `P3d-invisible-year`, review finding F2.
+    """
+    years = target_years if target_years is not None else financials.income_statement_years
     lines = []
     for y in years:
         inc = financials.get_income_statement(y)
@@ -2622,6 +2642,13 @@ def _run_nri_pass(
             # The filing as this function knows it: no path reaches here, so it
             # is named by what Pass 1 read from it. Each value is printed as it
             # is (repr), so an empty ticker shows as '' and is not replaced.
+            #
+            # `financials.years` covers every year ANY of the three statements
+            # reaches, since `P3d-invisible-year`. Pass 1 reads all three, so
+            # that is the set this sentence means by "read in Pass 1": a year
+            # Pass 1 read a cash flow statement for and no income statement
+            # named the filing just as well, and naming it is what backlog item
+            # 116 is about.
             raise ValueError(
                 f"Pass 2 (non-recurring items) could not be read for the filing "
                 f"with ticker {financials.ticker!r}, company "
@@ -2636,6 +2663,8 @@ def _run_nri_pass(
     failures = _pass2_item_failures(nri, pdf_bytes)
     if failures:
         error_list = "\n".join(f"  - {f.message}" for f in failures)
+        # `financials.years`, as in the stop above: every year Pass 1 read any
+        # of the three statements for (`P3d-invisible-year`, backlog item 116).
         raise ValueError(
             f"Pass 2 (non-recurring items) page check failed for the filing "
             f"with ticker {financials.ticker!r}, company "
@@ -3521,6 +3550,11 @@ def extract_multi_year(
 
     merged, all_nri = merge_filing_extractions(extractions, ticker, company_name)
 
+    # `merged.years` covers every year ANY of the three merged statements
+    # reaches, since `P3d-invisible-year`. This line reports what the merge
+    # produced, so a year that came out of it with a cash flow statement and
+    # no income statement belongs in the count and in the list; before that
+    # unit it was in neither, and no other line named it (backlog item 116).
     print(f"\n{'='*65}")
     print(f"MERGED: {len(merged.years)} years {merged.years}, "
           f"{len(all_nri)} non-recurring item(s)")
