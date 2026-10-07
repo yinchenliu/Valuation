@@ -78,14 +78,22 @@ was a live outage. **Treat a type error here as a defect report until proven
 otherwise.** Three times now the checker named one while the prose beside it called the
 error a nicety.
 
-**`-p no:randomly` is a no-op here, and several assignments and `docs/8-build/environment.md`
-carry it as though it were a guard.** `importlib.metadata` lists exactly two pytest
-distributions, `pytest` and `pytest-cov`. `-m pytest -p randomly` raises
+**`-p no:randomly` is gone from every live document, on the user's decision "1a" of
+2026-10-07 (item 126, closed).** It asserted nothing: `importlib.metadata` lists exactly
+two pytest distributions, `pytest` and `pytest-cov`, `-m pytest -p randomly` raises
 `ImportError: No module named 'randomly'`, and pytest accepts **disabling** an absent
-plugin in silence. So every command carrying the flag runs and the flag asserts nothing.
-**Test order is fixed, so order dependence between files is untested on this machine**,
-and backlog item 124 is exactly that class of defect. Backlog item 126, found by the
-`P14f` tester and reproduced by the overall lead on 2026-10-07.
+plugin in silence. **Journal entries and accepted assignments keep it**, because they
+record what was run and what was asked, and rewriting them would falsify the record.
+
+**Two corrections to the first write-up of that item, both mine.** It said the flag was in
+`docs/8-build/environment.md`. **It was not**: `grep -n randomly docs/8-build/environment.md`
+returns no match, and that file gives its gate commands without it. I took that half of
+the finding on report instead of running the grep. The flag was in nine live and recorded
+documents and in none of the ones the item named.
+
+**What the deletion does not fix is backlog item 127.** No test-order guard exists here, so
+order dependence between test files is untested, and item 124 is a live example of exactly
+that class.
 
 **Use the `--ignore-glob` form as the gate.** It excludes every deliberately red test by
 pattern, so it keeps working as more are written. An earlier revision of this file named
@@ -530,7 +538,7 @@ the headline. Re-ranked at `622262b`.
 | 120 | A row repeated three times in one filing prints two identical `[MERGE]` blocks, each saying "listed twice" | **new, the `P14e` round 2 review's F5.** The counts are right and the words are not |
 | 116 | A year with no income statement is invisible in every table, and the branch written to report it cannot run | **new, the `P3c` tester's T1.** `FinancialStatements.years` is built from the income statements alone. **Do not delete the dead branch**: the branch is right and the set it iterates is wrong |
 | 117 | The only test of a real route B file is `skipif`-guarded on a git-ignored file | **new, the `P3c` tester's T3.** Eleven assertions run on no clean checkout. **That skip is how item 115 reached `main`** |
-| 126 | **`-p no:randomly` is in every documented gate command and does nothing**, because `pytest-randomly` is not installed | **new, the `P14f` tester, reproduced by the overall lead.** Test order is fixed, so order dependence between files is untested here. **Item 124 is exactly that class.** Two fixes, not equivalent: install the plugin, or delete the flag |
+| 127 | **No test-order guard exists, so order dependence between test files is untested** | **new, 2026-10-07, what item 126 left behind.** `pytest-randomly` is not installed, so every run uses one fixed order. **Item 124 is a live example of the class**: `main()` leaves a changed stream handler on a captured stream for every later test in the process, and it cost the `P14f` tester three subprocesses to work around. Installing the plugin may turn tests red the first time it runs, which is the point and is why it is a unit of its own |
 | 114 | The two unit-scale checks disagree about where a unit statement may sit, so a correct reading can stop the run | **new, the route B extraction of 2026-10-06**, confirmed by the overall lead against the code. `P14g-unit-statement-pages` |
 | 124 | `main()` changes a process-global stream handler and never restores it, and a test calls `main()` in-process | **new, the `P14f` review's F2.** `_pytest.capture.CaptureIO` is an `io.TextIOWrapper` subclass, so the handler leaks into every later test in the process. Harmless today; it cost the tester three subprocesses |
 | 123, 125 | A `bool` the docstring says a caller can use, discarded at the call site; the inherited `surrogateescape` replaced rather than composed, with no text saying so | **new, the `P14f` review's F1 and F3.** Neither is a rule break. **F1 can be closed with no code change**: three of the tester's tests now read that `bool` |
@@ -605,6 +613,7 @@ the headline. Re-ranked at `622262b`.
 | 115 | The real route B test read the balance sheet from `filings[0]` | `2e2eb2f` |
 | 112 | Two different non-recurring items with one year, amount and direction: the second was dropped in silence | `5567b39` (`P14e-nri-dedupe`) |
 | 113 | `session_extraction prompt --pass 2` exited 2 on a Windows console | `c9cb45e` (`P14f-prompt-encoding`) |
+| 126 | `-p no:randomly` was in nine live and recorded documents and asserted nothing | the user's decision "1a", 2026-10-07. The flag is deleted from every live document; journal entries and accepted assignments keep it as the record of what was run. **What it leaves behind is item 127** |
 
 **At `a64818b` these tables hold 24 closed items and 37 open ones** (item 23 appears twice above). They are the headline, not the whole list: items 55, 57, 58, 60 and 61 are open in the backlog and not shown here. Items 19 to 28 did not exist when this build
 started — **every one of them was found by running the code**, not by reading it. So were

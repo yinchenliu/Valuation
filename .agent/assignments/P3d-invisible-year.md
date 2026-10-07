@@ -89,9 +89,12 @@ Measured by the overall lead on 2026-10-07, on the **Windows** machine
 | route | `TestClient(app.app, raise_server_exceptions=False).get('/')` | 200 |
 | guard | `.claude/check_guard.py` | 48/48 |
 
-**`-p no:randomly` is a no-op on this machine** and several commands carry it as though it
-were a guard: only `pytest` and `pytest-cov` are installed, and pytest accepts disabling an
-absent plugin in silence. Backlog item 126. Do not rely on it, and do not fix it here.
+**There is no test-order guard on this machine, and no command below asks for one.**
+`pytest-randomly` is not installed, so every run uses one fixed order. **Do not add
+`-p no:randomly` to any command**: it was deleted from every live document on the user's
+decision of 2026-10-07 because it asserted nothing (item 126, closed). The gap it leaves
+is item 127 and it is not yours to fix. **What it means for you**: comparing two runs by
+the **set of failing test names** is sound, and comparing them by count is not.
 
 **The twelve readers of `.years` outside `tests/`, each read on 2026-10-07:**
 
@@ -152,7 +155,8 @@ not traced to a reader of `.years` is a review finding.
 
 - **`tests/`.** The write guard denies it. This unit's tests are a separate assignment
   after the code review.
-- **Backlog item 126**, `-p no:randomly`. Named above so you do not trust the flag.
+- **Backlog item 127**, the absent test-order guard. Named above so you compare failing
+  sets by name and never by count.
 - **Backlog items 119, 120, 121, 122, 123, 124, 125** in the files you touch. Each is
   recorded.
 - **Backlog item 8**, the blanket `except Exception` that would render your `AttributeError`
