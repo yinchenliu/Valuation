@@ -1512,14 +1512,23 @@ Unrecognised direction 'Add_Back' on the 2022 non-recurring item 'Restructuring 
 Locked by a test in `tests/unit/test_normalizer_stops.py`, written red and now green
 inside the gate — see **item 24**.
 
-## 22. Zero debt balance gives a 0% cost of debt · **silent**
+## 22. Zero debt balance gives a 0% cost of debt · **CLOSED at `6cf34d3`**
 
-**Fact.** `analysis/wacc.py:37-38` — `if total_debt == 0: return 0.0`.
+**Corrected 2026-10-06.** This section said "silent" and described the defect in the
+present tense, while the summary table at the head of this file said "closed at
+`6cf34d3`". **One of the two had to be stale and this one was**, measured against the
+code: `analysis/wacc.py:253-290` now stops when a zero debt balance sits beside a
+reported interest expense, and its own comment at `:262` reads "A zero debt balance
+**used to** return 0.0 unconditionally". The `--confirm-zero-debt` flag and the
+"Confirm zero debt" checkbox are the deliberate exception, added by `P13h` at `bc30be4`.
+The weights half of this item became item 38.
 
-**What it costs.** A filing that reports an interest expense but from which no debt
-balance was extracted is missing data, not a debt-free company. The zero is read as a
-measurement. The weight is also zero in that case, so today it does not move WACC — but
-it will the moment the weights come from anywhere else.
+**The original fact, kept because it is what the rule was written from.**
+`analysis/wacc.py:37-38` held `if total_debt == 0: return 0.0`. A filing that reports an
+interest expense but from which no debt balance was extracted is missing data, not a
+debt-free company, and the zero was read as a measurement. The weight was also zero in
+that case, so it did not move WACC — but it would have, the moment the weights came
+from anywhere else.
 
 ## 23. `analysis/fcff.py` holds no `raise` at all · **silent**
 
