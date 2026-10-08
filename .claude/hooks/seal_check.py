@@ -105,6 +105,27 @@ def main() -> None:
         baseline = json.loads((root / BASELINE).read_text())
     except (OSError, ValueError):
         baseline = None
+    if not isinstance(baseline, dict):
+        baseline = None
+
+    # Backlog item 141. `seal_baseline.py` takes the snapshot when the number of
+    # subagents in flight goes from 0 to 1 and only increments after that, so
+    # this hook has to decrement, or the count never returns to 0 and the next
+    # dispatch keeps a snapshot it should have replaced.
+    #
+    # Decrement FIRST, before any comparison can end this process. A seal that
+    # fires exits 2, and if the write-back sat after that exit, every firing
+    # would leave the count one too high for ever.
+    if baseline is not None:
+        raw = baseline.get("in_flight")
+        count = raw if isinstance(raw, int) and not isinstance(raw, bool) else 0
+        remaining = max(0, count - 1)
+        updated = dict(baseline)
+        updated["in_flight"] = remaining
+        try:
+            (root / BASELINE).write_text(json.dumps(updated, indent=2) + "\n")
+        except OSError:
+            pass                      # a tripwire does not stop a run over a locked file
 
     changed: list[str] = []
 

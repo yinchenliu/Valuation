@@ -157,9 +157,34 @@ ways. Re-run without `-q` to recover a seed, and name it. **Never `-p no:randoml
 
 ## Done-criteria
 
+> ## Amendment, 2026-10-08: criteria 1, 9 and 10 are struck to the item 143 unit
+>
+> **The code reviewer escalated this and the decision is the overall lead's. Here it is.**
+>
+> **The fact.** Neither seal hook is invoked by this harness. Three measurements say so, the
+> last of them built for the purpose: an instrument that writes **before any exit** in
+> `seal_baseline.py:main` is **absent** after two separate real dispatches, and the reviewer
+> extended it to show the matcher is dead for `SendMessage` as well as `Agent`. It
+> reproduces at `HEAD`, so it is not this unit's diff.
+>
+> **What follows.** Criterion 1 asked for the harness payload fields. **They cannot be
+> measured while no payload arrives**, and no amount of work inside these four files changes
+> that. Criteria 9 and 10 asked the seal to behave correctly for two agents; that behaviour
+> **is** measured, by execution, against payloads written by hand — what is not measured is
+> the wiring that would deliver real ones.
+>
+> **So:** criterion 1 is **struck** and belongs to the unit that closes backlog item 143.
+> Criteria 9 and 10 stand as **met for the hook's logic and not for its wiring**, and the
+> entry must say exactly that rather than claim more.
+>
+> **Why not hold the unit instead.** Item 142 is real, independent of the seal, and
+> **enforced**: the write guard's own matcher does fire, which is why role separation has
+> held. Holding a working guard fix hostage to a harness defect in a different hook would
+> leave worktrees unguarded for longer, for no gain.
+
 | # | Criterion | Expected | How it is measured |
 |---|---|---|---|
-| 1 | The payload fields are measured, not assumed | every field of all four payloads, named | print them |
+| 1 | ~~The payload fields are measured, not assumed~~ | **STRUCK, 2026-10-08.** Unmeetable here: the hooks are never invoked (item 143) | the item 143 unit |
 | 2 | The chosen seal shape, and the measurement that chose it | stated in the entry | criterion 1 |
 | 3 | **The item 142 before is reproduced** | at the starting commit, a `tester` writing `<worktree>/analysis/dcf.py` gives no output and exit 0 | execute the hook |
 | 4 | That same write is now denied | the same message as the in-project case, naming the role and the path | execute the hook |
@@ -201,3 +226,103 @@ be invisible until a unit's scratch probe silently stopped working.
 - **Windows holds a file lock on a worktree directory after a test run.**
   `git worktree remove` fails the first time and succeeds on a retry. Seen twice on
   2026-10-08. Worth knowing before a unit automates worktree cleanup.
+
+---
+
+## Overall lead review: `accepted` (2026-10-08)
+
+**Re-run by me, not read.** Windows, `.venv/Scripts/python.exe`, Python 3.14.4, with
+`ANTHROPIC_API_KEY= GEMINI_API_KEY=`.
+
+| Gate | Result |
+|---|---|
+| gate form, seeds 7 / 1234 / 99 | **1584 passed, 2 skipped, 0 failed** at each. The baseline 1382 plus the tester's 202 |
+| full suite | **2 failed, 1584 passed, 2 skipped**, and the two are exactly the two red on purpose, by name. **No third red file**: the tester moved its four into the gate |
+| lint | **4 errors, every one `BLE001`** |
+| types | **2 errors in 2 files**, 21 checked |
+| census | **64** |
+| route | **200** |
+| **write guard** | **60/60**, up from 48/48 at the start of this unit |
+
+### The unit took four rounds and each one was forced by a finding, not by churn
+
+| Round | What forced it |
+|---|---|
+| 1 | — |
+| 2 | Reviewer: F1, the seal takes no baseline at a real dispatch. F2, a non-numeric count **crashed both hooks**, so `SubagentStop` did nothing, silently |
+| 3 | Reviewer: G1, `ruff check .` read **5**, not 4, because I ran lint **before** my last edit. G4, absent and unreadable were conflated |
+| 4 | **Tester: `fail`.** The round 2 narrowing let a subagent retake the snapshot over its own tampering |
+
+### The tester's `fail`, and why it is the most valuable thing in this unit
+
+It graded `fail` on **one** item while all 17 done-criteria passed, and said plainly that I
+could reasonably accept the unit over it. It did not soften the grade to match the criteria,
+and it did not widen the criteria to match the code. Its measurement:
+
+```
+tool_name=SendMessage, agent_type=tester   in_flight 1 -> 1   REFUSED
+tool_name ABSENT,      agent_type=tester   in_flight 1 -> 2   let through
+tool_name=Agent,       agent_type=tester   in_flight 1 -> 2   let through
+subagent writes STATUS.md, then dispatches with no tool_name:
+   snapshot now holds the TAMPERED bytes: True
+```
+
+**That is the false negative item 141 exists to remove, reintroduced by me in round 2.** I
+had scoped the role check to `tool_name == "SendMessage"` to kill a guessed cause for item
+143. The round 2 reviewer refuted the guess the same day. **I left the narrowing in anyway,
+on the claim that it was "correct on its own terms".** It was not.
+
+I did not widen it. I removed it: the check reads the role and nothing else. After the fix,
+my own re-measurement:
+
+```
+tool_name=SendMessage, agent_type=tester      in_flight 1 -> 1   REFUSED
+tool_name ABSENT,      agent_type=tester      in_flight 1 -> 1   REFUSED
+tool_name=Agent,       agent_type=tester      in_flight 1 -> 1   REFUSED
+tool_name=Agent,       no role (orchestrator) in_flight 1 -> 2   let through
+   snapshot now holds the TAMPERED bytes: False
+```
+
+It also found `seal_baseline.read_state` had **no caller anywhere**, which ruff's default
+rules would never have said. Deleted.
+
+### My own acceptance mutation: the narrowing restored
+
+The tester asked for this as its sixth mutation and was stopped before it could run it. I ran
+it, in a scratch copy, with the repository's `seal_baseline.py` sha256 identical at both ends:
+
+```
+control   202 passed
+mutant      7 failed, 195 passed
+   FAILED …::test_a_subagent_cannot_extend_the_window_by_any_route
+          [tool1-no tool_name at all -- the shape that used to be let through]
+   FAILED …::test_the_refusal_covers_all_three_roles[tester] [programmer] [code-reviewer]
+```
+
+**The regression guard for the exact defect the tester found is in place and it bites.**
+
+### What the tester refused to do, and said so
+
+| Trap | What it did instead |
+|---|---|
+| Assert that the hooks never run (item 143) | Wrote no test in either direction, and said why in a comment |
+| Skip when git is absent | `require_git()` raises, plus a test whose only job is to go red if git leaves |
+| Let a fake worktree make 30 deny cases pass | `add_worktree` asserts the `.git` really is a file |
+| Assert a fallback | Each corrupt shape asserts exit 0 **together with** the count returning to 0 and the next stop still firing |
+
+Its figures: **133 of 133 assertions hand-sourced, 0 from the code's output**, across 202
+passing cases. Six mutations now, all killed, the largest turning **58** red. And
+`ruff check .` run after its last write caught **7 errors of its own**.
+
+### What this closes, and what it does not
+
+**Backlog item 142 is closed.** The write guard reaches into a worktree, and 12 of the 60
+guard cases are worktree cases.
+
+**Item 141's logic is repaired and its wiring is not.** The hooks are correct and are never
+invoked. That is **item 143**, which this unit never claimed and whose cause was found the
+same day: `PreToolUse` filters on **tool names only**, and `Agent`, `Task` and `SendMessage`
+are not tool names, so that matcher could never fire. `P1g-seal-wiring` closes it.
+
+**Criterion 1 is struck**, per the amendment above the criteria table. Criteria 9 and 10
+stand as met for the hook's logic and not for its wiring.

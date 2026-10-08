@@ -4,10 +4,10 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `f08cb16` (`P1e-test-order` and its tests, one-team mode), 2026-10-08, by the overall lead**, on branch `main`, **on the Windows machine**
+**Measured at `<P1F>` (`P1f-worktree-guards` and its tests, one-team mode), 2026-10-08, by the overall lead**, on branch `main`, **on the Windows machine**
 (`.venv/Scripts/python.exe`, Python 3.14.4), with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`.
 The build moved back to the Windows machine at `0a8ea54`; the figures from `cde33cb` to
-`ac736e7` were measured on the macOS machine. **Forty-seven work units accepted by `69436d9`, twenty-one more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes`, `P14b-note-figures`, `P14d-finance-leases`, `P3a-one-pipeline`, `P1b-windows-gate`, `P3b-pipeline-stops`, `P1c-test-network-copies`, `P1d-skipped-filings`, `P3c-one-number`, `P14e-nri-dedupe`, `P14f-prompt-encoding`, `P3d-invisible-year`, `P14g-unit-statement-pages`, `P1e-test-order` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
+`ac736e7` were measured on the macOS machine. **Forty-seven work units accepted by `69436d9`, twenty-two more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes`, `P14b-note-figures`, `P14d-finance-leases`, `P3a-one-pipeline`, `P1b-windows-gate`, `P3b-pipeline-stops`, `P1c-test-network-copies`, `P1d-skipped-filings`, `P3c-one-number`, `P14e-nri-dedupe`, `P14f-prompt-encoding`, `P3d-invisible-year`, `P14g-unit-statement-pages`, `P1e-test-order`, `P1f-worktree-guards` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; **nine** times a reviewer, a
 programmer or a tester overturned a claim — **three times against a programmer**, **four times
 against the orchestrator**, once against a tester, and once by a tester against its own
@@ -64,15 +64,15 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `f08cb16` (Windows) |
+| Gate | Command | Result at `<P1F>` (Windows) |
 |---|---|---|
-| Tests | `.venv/Scripts/python.exe -m pytest -q` | **1386 tests. 1382 pass, 2 fail**, plus 2 skipped: the 2 red on purpose. **Item 101 is closed**, so the only skips left are the Chipotle and Okta filings, which this machine does not hold |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **1382 passed, 2 skipped, 0 failed**, measured at **four different orders** — seeds 7, 1234, 99 and unseeded `2667923333` — which is the first gate figure here that is not a single ordering, with or without the empty-key prefix: `tests/conftest.py` empties both API keys for every test. `P3d-invisible-year` added 33, `P14g-unit-statement-pages` added 113 and `P1e-test-order` added 12 |
+| Tests | `.venv/Scripts/python.exe -m pytest -q` | **1588 tests. 1584 pass, 2 fail**, plus 2 skipped: the 2 red on purpose. **Item 101 is closed**, so the only skips left are the Chipotle and Okta filings, which this machine does not hold |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **1584 passed, 2 skipped, 0 failed**, measured at **three different orders** — seeds 7, 1234 and 99 — which is the first gate figure here that is not a single ordering, with or without the empty-key prefix: `tests/conftest.py` empties both API keys for every test. `P3d-invisible-year` added 33, `P14g-unit-statement-pages` added 113 and `P1e-test-order` added 12 and `P1f-worktree-guards` added 202 |
 | Lint | `.venv/Scripts/python.exe -m ruff check .` | **4 errors**, every one `BLE001`: `api/routes_valuation.py:463` and `:745`, `cli.py:1411`, `tests/test_e2e_all_googl.py:106`. The three line numbers moved under `P3d`; they are the same three sites. **Count them with `ruff check .`, never with a run over a subset of files** — see the overturn above |
 | Types | `.venv/Scripts/python.exe -m mypy models analysis ingestion api config.py app.py pipeline.py --ignore-missing-imports` | **2 errors in 2 files**, 21 files checked, 0 in `pipeline.py`: `analysis/projector.py:395` and `api/routes_upload.py:28`. **`P3d` removed three**, all at `analysis/projector.py`, and they were exactly the `None.revenue` crash site that unit was written to close. `P3b` removed one by widening `plan_filings` and `extract_multi_year` to `Sequence`. `P3a` removed two in `api/routes_valuation.py`; `P15a` removed one before that |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
 | **Rule 3 census** | the grep at [rules.md:65](docs/2-rules/rules.md), with `pipeline.py` added | **64**. `P3b` deleted `cli.py`'s `latest_bs.total_debt if latest_bs else 0`, which the census grep never searched (`cli.py` is outside its four directories), so the figure does not move. `P3a` deleted the yfinance share count fallback's `.get("sharesOutstanding", 0)`; `pipeline.py` holds 0 sites. `P13b` removed two conditional zeros (`latest_year`, `implied_share_price`). `P11a` replaced the Pass 1 parser's `.get(field, 0)` reads (114 at `24a9a90`). Under zsh, quote `'--include=*.py'` or the count reads 0 |
-| **Write guard** | `.venv/Scripts/python.exe .claude/check_guard.py` | **48/48** |
+| **Write guard** | `.venv/Scripts/python.exe .claude/check_guard.py` | **60/60**, up from 48/48. `P1f-worktree-guards` added 12 worktree cases, because the guard was off inside a git worktree |
 
 ### One live behaviour change landed at `e5d8f0a`
 
@@ -658,6 +658,7 @@ the headline. Re-ranked at `622262b`.
 | 114 | The two unit-scale checks disagreed about where a unit statement may be printed, so a correct reading of a split income statement stopped the run | `309a797` (`P14g-unit-statement-pages`) |
 | 117, 140 | Two guards were absent on every machine but one, because `extractions/` and `10K_filings/` were git-ignored. A tree without them skips 12 more tests in silence | `32b3f06`, on the user's instruction |
 | 124, 127 | `main()` left a changed error handler on a stream it did not own; and no test-order guard existed | `f08cb16` (`P1e-test-order`) |
+| 142 | The write guard was off inside a git worktree: every path outside `CLAUDE_PROJECT_DIR` was allowed without a role check | `<P1F>` (`P1f-worktree-guards`) |
 | 126 | `-p no:randomly` was in nine live and recorded documents and asserted nothing | the user's decision "1a", 2026-10-07. The flag is deleted from every live document; journal entries and accepted assignments keep it as the record of what was run. **What it leaves behind is item 127** |
 
 **At `a64818b` these tables hold 24 closed items and 37 open ones** (item 23 appears twice above). They are the headline, not the whole list: items 55, 57, 58, 60 and 61 are open in the backlog and not shown here. Items 19 to 28 did not exist when this build
@@ -821,6 +822,56 @@ broken versions of it.** The boundary is visible only in hand-built cases. The t
 assignment carried that as three criteria, the tests are hand-built, and the real file
 appears once, labelled a regression guard. **This is the sharpest example in the
 repository of a real input proving less than a constructed one.**
+
+**`P1f-worktree-guards` and its tests are accepted at `<P1F>`, 2026-10-08.** They close
+backlog item 142 and repair item 141's logic. **The write guard was off inside a git
+worktree**, measured by executing the hook on two payloads with the same role and the same
+repository-relative target: a `tester` writing `<project>/analysis/dcf.py` was denied by
+name, and the same `tester` writing `<worktree>/analysis/dcf.py` produced no output and exit
+0. `AGENTS.md` calls the role split "enforced by permission, not by good intentions"; in a
+worktree it was back to good intentions.
+
+**This unit is the one to read for what happens when the overall lead writes the code.** No
+subagent can: `.claude/hooks/*.py` is `ALWAYS_DENIED` to every role, with the message "a
+subagent does not edit the permissions that bind it". So the review and the tester were the
+only independent checks, and **all three of my mistakes were caught by them, not by me**:
+
+1. A count parsed with `int()` **crashed both hooks** on a non-numeric value, so
+   `SubagentStop` did nothing, silently. Round 1 reviewer.
+2. `ruff check .` read **5**, not 4, because I ran lint **before** my last edit. That is the
+   defect this file already records against `P3c-one-number-tests`. Round 2 reviewer.
+3. I narrowed the seal's role check to one tool name, to kill a guessed cause for item 143.
+   The reviewer refuted the guess the same day. **I kept the narrowing anyway**, on the claim
+   it was "correct on its own terms". The **tester measured that it was not**: a payload
+   carrying a role and no tool name let a subagent retake the snapshot over its own tampering
+   of `STATUS.md`. That is the false negative item 141 exists to remove, reintroduced by me.
+
+**The tester's grade is the model to copy.** It returned `fail` on **one** item while all 17
+done-criteria passed, and said plainly that the unit could reasonably be accepted over it. It
+did not soften the grade to match the criteria, and it did not widen the criteria to match
+the code.
+
+**The fix is a read, not a subprocess.** `worktree_root_of` finds a worktree by reading that
+tree's `.git` file, which holds `gitdir: <project>/.git/worktrees/<name>`. So the guard needs
+no git on `PATH` and makes no subprocess call. The first shape did shell out, and the
+reviewer found two faults with it: once per candidate path rather than once per process, and
+with no git on `PATH` it **failed open silently**, which put item 142 back under a condition
+nobody would notice.
+
+**`.claude/check_guard.py` went from 48 cases to 60**, and its own runner had to change: it
+ran the guard with `PATH: ""` to stay hermetic, which would have made all 12 new cases pass
+as "allow" **for the wrong reason**. It now **fails rather than skips** when the worktree
+cannot be built, because a guard check that silently drops its newest cases is backlog item
+140's shape.
+
+**What is NOT closed, and the unit never claimed it.** The seal hooks are correct and are
+**never invoked**. That is item 143, and its cause was found the same day with documentation:
+`PreToolUse` filters on **tool names only**, and `Agent`, `Task` and `SendMessage` are not
+tool names, so that matcher could never fire. `SubagentStart` and `SubagentStop` are the
+correct events, and both carry `agent_id`, an identifier common to a subagent's start and its
+stop. **That is better than what item 141 settled for**: `P1f` counted agents in flight
+because no identifier was available at dispatch time, and accepted a deliberate false
+positive as the price. `agent_id` removes the price. `P1g-seal-wiring` closes it.
 
 **`P1e-test-order` and its tests are accepted at `f08cb16`, 2026-10-08.** They close items 124
 and 127, on the user's decision "1a" of 2026-10-07: install `pytest-randomly`. **The suite

@@ -28,6 +28,17 @@ reviewer catches out-of-scope files by reading the diff.
 Paths outside the repository are allowed. Assignments call for scratch runs,
 and those write outside the tree on purpose.
 
+**A git worktree of this repository is NOT "outside" for this purpose.** It is
+this repository, checked out somewhere else, and a role that may not write
+`analysis/` in the main checkout may not write it in a worktree either. Until
+`P1f-worktree-guards` it could: `CLAUDE_PROJECT_DIR` names one directory, a
+worktree is not under it, and every path that was not under it was allowed.
+Measured 2026-10-08, same role and same repo-relative target: a `tester`
+writing `<project>/analysis/dcf.py` was denied by name, and the same `tester`
+writing `<worktree>/analysis/dcf.py` produced no output and exit 0. Backlog
+item 142. `resolve_repo_relative` below closes that, and keeps every other
+outside path allowed, which is what scratch runs depend on.
+
 Exit 0 with no output = no decision, the normal permission flow applies.
 """
 
@@ -64,6 +75,9 @@ ALWAYS_DENIED: tuple[tuple[str, str], ...] = (
     ("STATUS.md", "the orchestrator owns the measurement of the build (AGENTS.md)"),
     ("AGENTS.md", "it is the contract you are bound by; changing it is an escalation"),
     (".claude/**", "a subagent does not edit the permissions that bind it"),
+    (".agent/.seal-baseline.json",
+     ("it is the seal's own record of what you were measured against, and a "
+      "subagent does not edit the instrument that measures it")),
 )
 
 WRITE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit", "StrReplace"}
@@ -108,6 +122,75 @@ def repo_relative(target: str, project: Path, cwd: Path) -> str | None:
     if rel == os.pardir or rel.startswith(os.pardir + os.sep):
         return None
     return PurePosixPath(rel.replace(os.sep, "/")).as_posix()
+
+
+def _normalised(path: Path) -> str:
+    return os.path.normcase(os.path.normpath(str(path)))
+
+
+def worktree_root_of(target: Path, project: Path) -> Path | None:
+    """The worktree root of `project` that contains `target`, or None.
+
+    **Reads the filesystem. Runs no subprocess and does not need git on PATH.**
+    A git worktree's `.git` is a FILE, not a directory, holding one line:
+
+        gitdir: <project>/.git/worktrees/<name>
+
+    So walking up from `target` to the first `.git` that is a file, and checking
+    that the path it names sits under `<project>/.git/worktrees/`, identifies a
+    worktree of THIS repository and of no other. A scratch directory has no
+    `.git` at all; an unrelated clone has `.git` as a directory; another
+    repository's worktree names a different `.git`. All three are correctly not
+    worktrees of this project, so they stay allowed.
+
+    The first shape of this function asked `git worktree list --porcelain`. The
+    code reviewer found two faults with it on 2026-10-08 and both are closed by
+    reading the file instead: it ran once per candidate path rather than once per
+    process (F3, measured at 1,059 ms for six outside targets), and with no git
+    on PATH it failed open **silently**, which put item 142 back under a
+    condition nobody would notice (F6).
+    """
+    try:
+        worktrees_dir = _normalised(project / ".git" / "worktrees")
+    except (OSError, ValueError):
+        return None
+    for candidate in (target, *target.parents):
+        marker = candidate / ".git"
+        try:
+            if not marker.is_file():
+                continue
+            text = marker.read_text(encoding="utf-8", errors="replace").strip()
+        except OSError:
+            continue
+        if not text.startswith("gitdir:"):
+            continue
+        named = _normalised(Path(text[len("gitdir:"):].strip()))
+        if named == worktrees_dir or named.startswith(worktrees_dir + os.sep):
+            return candidate
+    return None
+
+
+def resolve_repo_relative(target: str, project: Path, cwd: Path) -> str | None:
+    """`target` as a path relative to this repository, through any of its worktrees.
+
+    Tries `project` first, so the ordinary case touches no extra file. Only when
+    the target is not under `project` does it look for a worktree marker above
+    it. A target under none is genuinely outside the repository -- scratch space
+    -- and returns None, which `main` allows.
+    """
+    rel = repo_relative(target, project, cwd)
+    if rel is not None:
+        return rel
+    expanded = os.path.expandvars(os.path.expanduser(target.strip().strip('"').strip("'")))
+    if not expanded or "$" in expanded or "%" in expanded:
+        return None
+    probe = Path(expanded)
+    if not probe.is_absolute():
+        probe = cwd / probe
+    root = worktree_root_of(probe, project)
+    if root is None:
+        return None
+    return repo_relative(target, root, cwd)
 
 
 def matches(rel: str, pattern: str) -> bool:
@@ -215,7 +298,9 @@ def main() -> None:
         sys.exit(0)
 
     for candidate in candidates:
-        rel = repo_relative(candidate, project, cwd)
+        # `resolve_repo_relative`, not `repo_relative`: a worktree of this
+        # repository is this repository, and the roles bind there too (item 142).
+        rel = resolve_repo_relative(candidate, project, cwd)
         if rel is None:
             continue                      # outside the repository: scratch space, allowed
         reason = verdict(rel, role)
