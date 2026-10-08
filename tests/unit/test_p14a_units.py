@@ -5,7 +5,9 @@ Verifies:
    conflicting, or excepted scale mentions (Rule 3).
 2. unit_statement_on_page requires exact parenthesised group or whole text line equality
    and rejects fragments.
-3. _unit_statement_pages_allowed restricts unit statement citations to governed statement pages.
+3. _unit_statement_pages_allowed restricts unit statement citations to governed statement
+   pages and the page before each of them (P14g, backlog item 114). The page-before rule
+   itself is tested in tests/unit/test_p14g_unit_statement_pages.py.
 4. convert_filing_to_millions converts statement and Pass 2 figures once per filing
    by hand-derived arithmetic.
 5. Balance check tolerance and decimal precision adhere to 1 printed unit (0.001 for thousands,
@@ -286,9 +288,22 @@ def test_unit_statement_pages_allowed_constrains_pages() -> None:
     }
 
     allowed = _unit_statement_pages_allowed(data)
-    # units allowed only on income statement line pages: {29, 30}
-    assert allowed["units"] == {29, 30}
-    # share_units allowed on units.page (29) | diluted_shares pages (30): {29, 30}
+    # Hand derivation, from `_pages_and_page_before(pages) = pages | {p-1 for p in
+    # pages if p > 1}` applied to the income statement's line pages.
+    #   income line pages (_INCOME_STATEMENT_LINE_FIELDS only, so page 32 — the cash
+    #   flow page of depreciation_amortization, cfo and capex — is excluded):
+    #     revenue 29, cost_of_revenue 29, gross_profit 29, sga 29, operating_income 29,
+    #     tax_expense 29, net_income 29, diluted_shares 30  ->  {29, 30}
+    #   page before each: 29 - 1 = 28, 30 - 1 = 29       ->  {28, 29}
+    #   union                                            ->  {28, 29, 30}
+    # P14g (backlog item 114) added the page before, because a statement's title, its
+    # unit statement and its year header can be printed on the page before its figures.
+    assert allowed["units"] == {28, 29, 30}
+    # share_units: the `units` page itself, which is NOT widened (an already-resolved
+    # statement page, not a figure page), union the page before each diluted_shares page.
+    #   {units.page} = {29};  diluted_shares pages = {30};  30 - 1 = 29
+    #   {29} | {29, 30}                                  ->  {29, 30}
+    # Page 28 must NOT appear here: that is the P14g criterion-4 decision, in one line.
     assert allowed["share_units"] == {29, 30}
 
 
@@ -337,7 +352,13 @@ def test_unit_statement_failures_stops_when_page_outside_allowed(tmp_path: Path)
     msg = failures[0].message
     assert "'units'" in msg
     assert "page 35" in msg
-    assert "the pages allowed are [29]" in msg
+    # Hand derivation of the allowed list printed in the message:
+    #   income line pages: revenue 29, net_income 29, diluted_shares 29  ->  {29}
+    #   page before each:  29 - 1 = 28                                   ->  {28}
+    #   union, sorted                                                    ->  [28, 29]
+    # Page 35 is six pages past the figures, so the stock-award table's "(in millions)"
+    # is still refused; only the printed list of allowed pages widened by one page.
+    assert "the pages allowed are [28, 29]" in msg
 
 
 # ---------------------------------------------------------------------------

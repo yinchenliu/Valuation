@@ -1417,11 +1417,17 @@ def _printed_line_failures(data: dict[str, Any], pdf_bytes: bytes) -> list[_Chec
 #   whitespace normalised. The words of "(in thousands)" are on Okta's page 58,
 #   inside "(dollars in millions, shares in thousands, except per share data)";
 #   the statement "(in thousands)" is not, and it is not confirmed;
-# - the statement is on a page of the figures it governs: `units` on a page that a
-#   printed line of the income statement cites, `share_units` on the `units` page
-#   or a page that a `diluted_shares` line cites. "(In thousands)" heads a
+# - the statement is on a page of the figures it governs, or on the page before one
+#   of them: `units` on a page that a printed line of the income statement cites or
+#   the page before it, `share_units` on the `units` page, or on a page that a
+#   `diluted_shares` line cites or the page before it. "(In thousands)" heads a
 #   stock-award table on page 62 of the L3Harris 10-K 2026-01-02, whose statements
 #   print in millions on page 35.
+#   P14g (backlog item 114) added "the page before". Check B1 has allowed it since
+#   P14b-note-figures, and the two checks held two different rules until then: a
+#   statement split across a page break, as Walmart's fiscal 2024 income statement
+#   is, was refused here and allowed there. `_pages_and_page_before` now holds the
+#   rule for both.
 
 _UNIT_NOT_CONFIRMED_STOPS = (
     "A unit statement that is not confirmed stops the run: the scale read from it "
@@ -1470,11 +1476,50 @@ def unit_statement_on_page(printed: str, page_text: str) -> bool:
                for text_line in page_text.splitlines())
 
 
+def _pages_and_page_before(pages: set[int]) -> set[int]:
+    """Each of `pages`, and the page before it when that page is not page 1.
+
+    **This is check B1's rule about where a unit statement may sit, written
+    once.** `_row_scale_failures` (check B1) applies it one row at a time at its
+    `pages_to_check` line, and `_unit_statement_pages_allowed` applies it to the
+    whole set of pages a statement governs. Before `P14g` the two checks held
+    two different rules and disagreed: B1 allowed the page before, the unit
+    statement check did not.
+
+    Why the page before. A statement's title, its unit statement and its year
+    header are printed together, and a page break can put all three on the page
+    before the figures. Walmart's fiscal 2024 10-K prints "Walmart Inc.",
+    "Consolidated Statements of Income", "Fiscal Years Ended January 31," and
+    "(Amounts in millions, except per share data) 2024 2023 2022" as the last
+    four text lines of PDF page 45, and every data row of that statement on page
+    46. The page before page 1 does not exist, so page 1 stands alone.
+
+    Pure: no PDF, no I/O.
+    """
+    return pages | {page - 1 for page in pages if page > 1}
+
+
 def _unit_statement_pages_allowed(data: dict[str, Any]) -> dict[str, set[int]]:
     """For each unit statement, the pages it may cite: the pages of the figures it
-    governs. `units`: every page a printed line of the income statement cites, in
-    any year of the answer. `share_units`: the `units` page, and every page a
-    `diluted_shares` line cites."""
+    governs, and the page before each of them.
+
+    `units`: every page a printed line of the income statement cites, in any year
+    of the answer, with the page before each (`_pages_and_page_before`, which is
+    check B1's rule — the same rule `_row_scale_failures` applies at its
+    `pages_to_check` line).
+
+    `share_units`: the `units` page, and every page a `diluted_shares` line
+    cites with the page before each. **The two parts are different kinds of page
+    and are widened differently, on purpose.** A `diluted_shares` page is a
+    **row** page, the page a figure is printed on, so B1's rule is what applies
+    to it. `data["units"]["page"]` is an already-resolved **statement** page: the
+    page the money unit statement is itself printed on, checked in its own right
+    by the `units` row of this same check. Its predecessor is not added, because
+    no printed layout puts the share unit statement one page before the money
+    unit statement — the two are either one printed statement or two statements
+    on one page — and adding it would allow a page that no figure of this answer
+    and no statement of this answer points at.
+    """
     income_pages = {
         line["page"]
         for entry in data["historical_years"]
@@ -1485,15 +1530,21 @@ def _unit_statement_pages_allowed(data: dict[str, Any]) -> dict[str, set[int]]:
         line["page"] for entry in data["historical_years"] for line in entry["diluted_shares"]
     }
     return {
-        "units": income_pages,
-        "share_units": {data["units"]["page"]} | diluted_pages,
+        "units": _pages_and_page_before(income_pages),
+        "share_units": {data["units"]["page"]} | _pages_and_page_before(diluted_pages),
     }
 
 
 # What each statement's allowed pages are, in the words of the failure message.
 _PAGES_ALLOWED_ARE: dict[str, str] = {
-    "units": "the pages the income statement's printed lines cite",
-    "share_units": "the 'units' page and the pages the diluted share count's printed lines cite",
+    "units": (
+        "the pages the income statement's printed lines cite, and the page before each "
+        "of them"
+    ),
+    "share_units": (
+        "the 'units' page, the pages the diluted share count's printed lines cite, and "
+        "the page before each of those"
+    ),
 }
 
 
@@ -1565,9 +1616,10 @@ def _row_scale_failures(data: dict[str, Any], pdf_bytes: bytes) -> list[_CheckFa
     - the kind is "share count" for diluted_shares, and "money figures" for every other field;
     - the expected scale is the word _filing_units(data) reads for that kind;
     - the candidates are the parenthesised groups (_PARENTHESISED_GROUP, on whitespace-normalised
-      text) of the row's page and of the page before it, that hold thousands, millions or
-      billions; each is read with printed_scale(group, kind), and a group whose reading stops
-      is not a candidate for that kind;
+      text) of the row's page and of the page before it (`_pages_and_page_before`, the one
+      function that holds this rule; `_unit_statement_pages_allowed` reads the same rule),
+      that hold thousands, millions or billions; each is read with printed_scale(group, kind),
+      and a group whose reading stops is not a candidate for that kind;
     - the row passes when one candidate's word equals the expected word;
     - a page beyond the PDF, or with no text layer, is not confirmed.
 
@@ -1619,7 +1671,7 @@ def _row_scale_failures(data: dict[str, Any], pdf_bytes: bytes) -> list[_CheckFa
         print("  Row unit scales looked up on their cited pages: 0 checked, 0 pages, 0 pages not confirmed.")
         return []
 
-    pages_to_read = all_cited_pages | {p - 1 for p in all_cited_pages if p > 1}
+    pages_to_read = _pages_and_page_before(all_cited_pages)
     page_count, page_texts = _read_cited_pages(pdf_bytes, pages_to_read)
 
     failures: list[_CheckFailure] = []
@@ -1651,7 +1703,11 @@ def _row_scale_failures(data: dict[str, Any], pdf_bytes: bytes) -> list[_CheckFa
             continue
 
         scale_groups: list[str] = []
-        pages_to_check = (page, page - 1) if page > 1 else (page,)
+        # B1's rule, one row at a time, read from the one function that holds it
+        # (`_pages_and_page_before`). Sorted high to low so the row's own page is
+        # read before the page before it, which is the order the failure message
+        # lists the statements it found in.
+        pages_to_check = sorted(_pages_and_page_before({page}), reverse=True)
         for p in pages_to_check:
             p_text = page_texts[p]
             if p_text and p_text.strip():

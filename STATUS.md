@@ -4,10 +4,10 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `e5d8f0a` (`P3d-invisible-year` and its tests, one-team mode), 2026-10-07, by the overall lead**, on branch `main`, **on the Windows machine**
+**Measured at `af68793` (`P14g-unit-statement-pages` and its tests, one-team mode), 2026-10-07, by the overall lead**, on branch `main`, **on the Windows machine**
 (`.venv/Scripts/python.exe`, Python 3.14.4), with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`.
 The build moved back to the Windows machine at `0a8ea54`; the figures from `cde33cb` to
-`ac736e7` were measured on the macOS machine. **Forty-seven work units accepted by `69436d9`, nineteen more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes`, `P14b-note-figures`, `P14d-finance-leases`, `P3a-one-pipeline`, `P1b-windows-gate`, `P3b-pipeline-stops`, `P1c-test-network-copies`, `P1d-skipped-filings`, `P3c-one-number`, `P14e-nri-dedupe`, `P14f-prompt-encoding`, `P3d-invisible-year` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
+`ac736e7` were measured on the macOS machine. **Forty-seven work units accepted by `69436d9`, twenty more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes`, `P14b-note-figures`, `P14d-finance-leases`, `P3a-one-pipeline`, `P1b-windows-gate`, `P3b-pipeline-stops`, `P1c-test-network-copies`, `P1d-skipped-filings`, `P3c-one-number`, `P14e-nri-dedupe`, `P14f-prompt-encoding`, `P3d-invisible-year`, `P14g-unit-statement-pages` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; **nine** times a reviewer, a
 programmer or a tester overturned a claim — **three times against a programmer**, **four times
 against the orchestrator**, once against a tester, and once by a tester against its own
@@ -64,10 +64,10 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `e5d8f0a` (Windows) |
+| Gate | Command | Result at `af68793` (Windows) |
 |---|---|---|
-| Tests | `.venv/Scripts/python.exe -m pytest -q` | **1261 tests. 1257 pass, 2 fail**, plus 2 skipped: the 2 red on purpose. **Item 101 is closed**, so the only skips left are the Chipotle and Okta filings, which this machine does not hold |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **1257 passed, 2 skipped, 0 failed** in 151.77s, with or without the empty-key prefix: `tests/conftest.py` empties both API keys for every test. `P3d-invisible-year` added 33 |
+| Tests | `.venv/Scripts/python.exe -m pytest -q` | **1374 tests. 1370 pass, 2 fail**, plus 2 skipped: the 2 red on purpose. **Item 101 is closed**, so the only skips left are the Chipotle and Okta filings, which this machine does not hold |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **1370 passed, 2 skipped, 0 failed** in 134.72s, with or without the empty-key prefix: `tests/conftest.py` empties both API keys for every test. `P3d-invisible-year` added 33 and `P14g-unit-statement-pages` added 113 |
 | Lint | `.venv/Scripts/python.exe -m ruff check .` | **4 errors**, every one `BLE001`: `api/routes_valuation.py:463` and `:745`, `cli.py:1411`, `tests/test_e2e_all_googl.py:106`. The three line numbers moved under `P3d`; they are the same three sites. **Count them with `ruff check .`, never with a run over a subset of files** — see the overturn above |
 | Types | `.venv/Scripts/python.exe -m mypy models analysis ingestion api config.py app.py pipeline.py --ignore-missing-imports` | **2 errors in 2 files**, 21 files checked, 0 in `pipeline.py`: `analysis/projector.py:395` and `api/routes_upload.py:28`. **`P3d` removed three**, all at `analysis/projector.py`, and they were exactly the `None.revenue` crash site that unit was written to close. `P3b` removed one by widening `plan_filings` and `extract_multi_year` to `Sequence`. `P3a` removed two in `api/routes_valuation.py`; `P15a` removed one before that |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
@@ -655,6 +655,7 @@ the headline. Re-ranked at `622262b`.
 | 112 | Two different non-recurring items with one year, amount and direction: the second was dropped in silence | `5567b39` (`P14e-nri-dedupe`) |
 | 113 | `session_extraction prompt --pass 2` exited 2 on a Windows console | `c9cb45e` (`P14f-prompt-encoding`) |
 | 116 | A year with a cash flow statement and a balance sheet and no income statement was in no table, and the branch written to report it could not run | `e5d8f0a` (`P3d-invisible-year`) |
+| 114 | The two unit-scale checks disagreed about where a unit statement may be printed, so a correct reading of a split income statement stopped the run | `af68793` (`P14g-unit-statement-pages`) |
 | 126 | `-p no:randomly` was in nine live and recorded documents and asserted nothing | the user's decision "1a", 2026-10-07. The flag is deleted from every live document; journal entries and accepted assignments keep it as the record of what was run. **What it leaves behind is item 127** |
 
 **At `a64818b` these tables hold 24 closed items and 37 open ones** (item 23 appears twice above). They are the headline, not the whole list: items 55, 57, 58, 60 and 61 are open in the backlog and not shown here. Items 19 to 28 did not exist when this build
@@ -818,6 +819,57 @@ broken versions of it.** The boundary is visible only in hand-built cases. The t
 assignment carried that as three criteria, the tests are hand-built, and the real file
 appears once, labelled a regression guard. **This is the sharpest example in the
 repository of a real input proving less than a constructed one.**
+
+**`P14g-unit-statement-pages` and its tests are accepted at `af68793`, 2026-10-07.** They
+close item 114. Two checks decided where a printed unit statement may sit and they did not
+agree: check B1 allowed the row's page **and the page before it**, and
+`_unit_statement_pages_allowed` allowed only the pages a printed line cites. Walmart's fiscal
+2024 10-K prints its income statement title, `(Amounts in millions, except per share data)`
+and the year header as the last four text lines of PDF page 45, and **every data row on page
+46**. So a model citing page 45 had read the filing correctly and the run stopped. One new
+pure function now holds B1's rule once and both checks read it.
+
+**This unit is the one to read for what a priced trade looks like.** Its assignment made
+criterion 5 "what the widening admits, and which wrong answer could use each added page", and
+**the programmer paid it by execution rather than by argument**: on a two-page PDF it built,
+a `(in thousands)` note header on page 1 with a `(in millions)` income statement on page 2 is
+refused at `HEAD` and **accepted** after the change, and every money figure would then be
+divided by 1,000. It also explained why the other check cannot help: B1's expected scale comes
+from `units`, the very field in question, so B1 reported `0 pages not confirmed` in both trees.
+
+**The reviewer then found the fact that decided whether to ship, and neither the programmer
+nor the overall lead had it.** It put the same wrong statement on the figures' **own** page
+and ran it at `HEAD`: accepted there too. **So the unit widens an existing window from one
+page to two. It does not open one.** Two narrower rules were put to it and it built each in
+its own scratch tree: "no scale statement on the figure's page" **refuses** Walmart fiscal
+2024 and so breaks the fix, and "no statement the `units` text equals" **accepts** the bad
+case and so leaves the hole. **Neither works**, and the 2x2 is recorded in backlog item 138
+so nobody proposes either again. The shape that would work is a new check comparing the scale
+word of every statement printed on the allowed pages and stopping when two disagree.
+
+**The acceptance mutation is the one the tester's own finding called thinnest.** M4 —
+`_unit_statement_failures` skipping its "printed on its page" check once the page is allowed —
+is what would make the whole widening worthless, and the tester said only 2 tests catch it and
+both need the real filing. The overall lead built it: control **157 passed**, mutant **2
+failed, 155 passed**. Then it renamed `10K_filings/` away, which is what a clean checkout
+looks like, and re-ran the same mutant: **149 passed, 8 skipped, 0 failed.** The mutation
+survives the suite in silence on any machine without the filing. That is item 140.
+
+**Two corrections to the overall lead's own assignment, each caught by an agent that measured
+rather than read.** Its fact 3 gave the allowed page sets as `[46, 48]`, `[45, 48]`,
+`[21, 22, 23]`; the check actually used `[46]`, `[45]`, `[21, 22]`, because
+`_INCOME_STATEMENT_LINE_FIELDS` excludes the five cash flow fields. And the tester assignment
+cited line `:291` where the assertion sits at `:292`. Neither changes a conclusion, and both
+are in the record.
+
+Tests: 26 functions, 113 cases, **72 of 72 assertions hand-sourced and 0 from the code's
+output**, 4 of 4 added statements covered and 0 missed, four mutations applied and four
+killed. **The tester refused to assert the known hole in either direction** and wrote the
+reason into its new file's module docstring, because an assertion there would lock the defect
+and turn red when it is closed. It also read its own coverage and locked two branches the
+assignment did not ask for, one of which is **newly reachable because of this unit**: before
+`P14g` every allowed page carried a figure and so always had a text layer, and the page before
+the figures need not.
 
 **`P3d-invisible-year` and its tests are accepted at `e5d8f0a`, 2026-10-07.** They close
 item 116. `FinancialStatements.years` was built from `self.income_statements` alone, so a

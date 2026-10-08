@@ -26,21 +26,19 @@ the programmer, code reviewer and tester as Claude subagents, by the loop in `AG
 **One unit is `ready`, `building` or `rework` at a time**, unless the Notes column says
 that two units may run in parallel.
 
-**Start here, 2026-10-07. `P14g-unit-statement-pages` (row 6h) is `ready`.** Every unit
-through `P3d-invisible-year` is `accepted` and committed at `0a9ed51`, and no subagent is in
-flight. Row 6h closes item 114, a **stopping** defect that fires on a correct reading of a
-real filing: the two unit-scale checks disagree about where a unit statement may be printed,
-so Walmart's fiscal 2024 income statement, whose title and unit statement sit at the foot of
-PDF page 45 with every data row on page 46, stops the run when the model cites page 45.
+**Start here, 2026-10-07. `P1e-test-order` (row 6j) is `ready`.** Every unit through
+`P14g-unit-statement-pages` is `accepted`, and no subagent is in flight. **Read row 6j's own
+note before dispatching it**: it installs `pytest-randomly`, which changes the result of every
+gate command in this repository at once, and it carries no "0 failed" criterion on purpose.
 
-**The overall lead measured one thing before writing it that the backlog did not hold, and
-it raises the item from a theory to a bent extraction.** `extractions/WMT.json` `filings[0]`
-cites `units` page **46** with the printed text `(Amounts in millions)`, which is the
-**Consolidated Statements of Comprehensive Income** header. The income statement's own unit
-statement is on page 45 and reads `(Amounts in millions, except per share data)`, and
-`filings[1]`, the same company's next filing, cites exactly that. So the check is already
-steering what the model cites, toward another statement's header. No figure moved and no
-scale word was invented: both texts say millions.
+**`P14g-unit-statement-pages` (row 6h) was accepted on 2026-10-07.** It closed item 114 and
+opened items 138, 139 and 140. **It carries one recorded price, and the price is item 138**:
+the window in which a model may cite another table's unit statement goes from one page to two,
+and nothing can see it, because check B1 reads its expected scale from `units` itself. **The
+hole is older than the unit** — the code reviewer put the same wrong statement on the figures'
+own page and `HEAD` accepted it too — so this widened an existing window and did not open one.
+Two narrower rules were priced by execution and both failed, and the 2x2 is in item 138 so
+nobody re-proposes them.
 
 **`P3d-invisible-year` (row 6i) was accepted on 2026-10-07**, built by the one team in three
 rounds. It closed item 116 and opened items 128 to 137. **It carries one live behaviour
@@ -49,10 +47,11 @@ valuation, where it used to be dropped in silence. No input in this repository h
 shape today.
 
 **`P1e-test-order` (row 6j) has its decision: the user chose option `a` on 2026-10-07,
-install `pytest-randomly`.** Its assignment is written. **It is not `ready`, and the reason
-is scheduling rather than doubt**: installing the plugin changes the result of every gate
-command in this repository at once, so it cannot run beside another unit. It starts when no
-row is `building`.
+install `pytest-randomly`.** Its assignment is written and it is now `ready`, because
+`P14g-unit-statement-pages` is accepted and no row is `building`. **It could not be `ready`
+before that, and the reason was scheduling rather than doubt**: installing the plugin changes
+the result of every gate command in this repository at once, so it cannot run beside another
+unit.
 
 **One lesson from 2026-10-05 holds the one-unit rule in place.** Two units shared this
 working tree and the failing count moved between two runs eight minutes apart, so neither
@@ -78,9 +77,9 @@ Claude subagents, and reports to the user only.
 | 6e | `P1d-skipped-filings` | [P1d-skipped-filings.md](assignments/P1d-skipped-filings.md) | `accepted` | 101, 102 | a `skipif` guard named `10K_filings/Walmart/` and the folder is `10K_filings/WMT/`, so the real-filing check for check B1 skipped on a machine that holds the filing. A tester unit, `tests/` only |
 | 6f | `P14e-nri-dedupe` | [P14e-nri-dedupe.md](assignments/P14e-nri-dedupe.md) | `accepted` | 112 | **the defect that moves a number.** `merge_filing_extractions` dedupes non-recurring items on `(year, amount, direction)` with no `else`, so Walmart's two fiscal 2022 divestiture losses of $0.2 billion, Asda on page 66 and Seiyu on page 67, become one. Measured on the real route B file: 14 written, 13 merged, 200 $M of add-back lost in silence. **Ready to start once `P3c-one-number` lands**: its file scope is `ingestion/claude_extractor.py` alone, which is disjoint from `P3c`'s four files |
 | 6g | `P14f-prompt-encoding` | [P14f-prompt-encoding.md](assignments/P14f-prompt-encoding.md) | `accepted` | 113 | `session_extraction prompt --pass 2` exits 2 on a Windows console: the two arrows in the Pass 2 direction rules hit the `charmap` codec. Measured 2026-10-06: exit 2 and 19 lines without `PYTHONIOENCODING=utf-8`, exit 0 and 82 lines with it, and **that one subcommand is the only one of six that fails**. The prompt text does not change: those two lines are what route A sends the model. **Assignment written. Not `ready` on purpose**: its file scope (`ingestion/session_extraction.py`) is disjoint from `P14e`'s, but one unit at a time keeps every gate figure meaningful |
-| 6h | `P14g-unit-statement-pages` | [P14g-unit-statement-pages.md](assignments/P14g-unit-statement-pages.md) | `building` | 114 | check B1 reads the row's page **and the page before**; `_unit_statement_pages_allowed` allows only pages an income statement row cites. Walmart's fiscal 2024 filing prints its income statement title and unit statement at the foot of PDF page 45 and every data row on page 46, so citing page 45 stops the run on a correct reading |
+| 6h | `P14g-unit-statement-pages` | [P14g-unit-statement-pages.md](assignments/P14g-unit-statement-pages.md) | `accepted` | 114 | check B1 reads the row's page **and the page before**; `_unit_statement_pages_allowed` allows only pages an income statement row cites. Walmart's fiscal 2024 filing prints its income statement title and unit statement at the foot of PDF page 45 and every data row on page 46, so citing page 45 stops the run on a correct reading |
 | 6i | `P3d-invisible-year` | [P3d-invisible-year.md](assignments/P3d-invisible-year.md) | `accepted` | 116 | **the overall lead's recommendation for the next unit, 2026-10-07.** `FinancialStatements.years` is built from `self.income_statements` alone, so a year that has a cash flow statement and a balance sheet but no income statement is in no table, carries no reason, and nothing reports it. **A whole year can vanish.** Both entry points hold an `if income_statement is None` branch written to report exactly that, and neither branch can run. **Do not delete the dead branch**: the branch is right and the set it iterates is wrong. Touches `models/financial_statements.py`, `cli.py` and `api/routes_valuation.py`, so every consumer of `years` must be re-checked |
-| 6j | `P1e-test-order` | [P1e-test-order.md](assignments/P1e-test-order.md) | `planned` | 127, 124 | **The user decided it on 2026-10-07, option `a`: install `pytest-randomly`.** The user's framing: it "may turn tests red the first time it runs, which is the point". **Assignment written. Deliberately not `ready`, and this one has a reason the other deferrals do not**: installing the plugin changes the result of **every** gate command in this repository at once, so a unit measuring its own gate in the same working tree gets a number that means nothing. It starts when no other unit is `building`. **There is no "0 failed" criterion in it.** What it owes instead is the failing set **by name** at each of five named seeds. It also closes item 124, the one live example, without undoing `P14f-prompt-encoding`. Three things it is forbidden to do, each of which would look like success: put `-p no:randomly` anywhere, pin a default seed, or weaken a test to make it pass under shuffling. **Once the plugin is installed, `-p no:randomly` stops being the no-op item 126 deleted and becomes a way to switch the guard off.** The old row text follows | **the user's decision "1a" of 2026-10-07 is done and is not this unit**: `-p no:randomly` asserted nothing and is deleted from every live document (item 126, closed). Journal entries and accepted assignments keep it, because they record what was run. **What is left is item 127**: no test-order guard exists, so a test that passes only because another ran first passes forever. Item 124 is a live example. **Install `pytest-randomly`. It may turn tests red the first time it runs, which is the point**, so schedule it as a unit rather than folding it into a cleanup |
+| 6j | `P1e-test-order` | [P1e-test-order.md](assignments/P1e-test-order.md) | `ready` | 127, 124 | **The user decided it on 2026-10-07, option `a`: install `pytest-randomly`.** The user's framing: it "may turn tests red the first time it runs, which is the point". **Assignment written. Deliberately not `ready`, and this one has a reason the other deferrals do not**: installing the plugin changes the result of **every** gate command in this repository at once, so a unit measuring its own gate in the same working tree gets a number that means nothing. It starts when no other unit is `building`. **There is no "0 failed" criterion in it.** What it owes instead is the failing set **by name** at each of five named seeds. It also closes item 124, the one live example, without undoing `P14f-prompt-encoding`. Three things it is forbidden to do, each of which would look like success: put `-p no:randomly` anywhere, pin a default seed, or weaken a test to make it pass under shuffling. **Once the plugin is installed, `-p no:randomly` stops being the no-op item 126 deleted and becomes a way to switch the guard off.** The old row text follows | **the user's decision "1a" of 2026-10-07 is done and is not this unit**: `-p no:randomly` asserted nothing and is deleted from every live document (item 126, closed). Journal entries and accepted assignments keep it, because they record what was run. **What is left is item 127**: no test-order guard exists, so a test that passes only because another ran first passes forever. Item 124 is a live example. **Install `pytest-randomly`. It may turn tests red the first time it runs, which is the point**, so schedule it as a unit rather than folding it into a cleanup |
 | 7 | `P14c-layout-facts` | not written | `planned` | 10 | defect (item 10), through rule 1 option C: a layout fact the filing states, page-checked; the D&A decision moves into `analysis/` |
 | 8 | `P15b-gemini-flash` | [P15b-gemini-flash.md](assignments/P15b-gemini-flash.md) | `planned` | 82 | the user's decision of 2026-10-04: route A's default model becomes `gemini-3.8-flash`; the CLI cache key names the model ID. Assignment written. **Deferred by the user, 2026-10-04:** "focus on fixing the defects first before refine route A" |
 | 9 | `P14b-row-reasons` | not written | `planned` | — | feature, after the defects: rule 1 option A: a reason for each printed row, shown on both pages. A format change, and Walmart must be extracted again |

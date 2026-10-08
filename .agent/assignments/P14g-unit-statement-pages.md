@@ -228,3 +228,86 @@ check nobody can judge.
 - **`extractions/WMT.json` is not in git.** Three filings, five fiscal years, 2022 to 2026,
   balance sheet on `filings[2]`.
 - The suite takes about 135 to 225 seconds.
+
+---
+
+## Overall lead review: `accepted` (2026-10-07)
+
+**Re-run by me, not read.** Every figure below is from my own command on the Windows
+machine (`.venv/Scripts/python.exe`, Python 3.14.4), with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`.
+
+| Gate | Result |
+|---|---|
+| gate form | **1370 passed, 2 skipped, 0 failed** in 134.72s. The baseline 1257 plus the tester's 113 |
+| full suite | **2 failed, 1370 passed, 2 skipped**, and the failing set is exactly the two red on purpose, by name |
+| lint | **4 errors, every one `BLE001`**: `api/routes_valuation.py:463`, `:745`, `cli.py:1411`, `tests/test_e2e_all_googl.py:106` |
+| types | **2 errors in 2 files**, 21 checked |
+| census | **64**, unchanged |
+| route | **200** |
+| write guard | **48/48** |
+| scope | `ingestion/claude_extractor.py` alone, +71 / -15, plus the tester's `tests/unit/test_p14g_unit_statement_pages.py` and the two repaired tests |
+
+### I ran one mutation myself, and I chose the one the tester's own finding said was thinnest
+
+The tester reports M4 — `_unit_statement_failures` skipping its "printed on its page" check
+once the page is allowed — as caught by **2** tests, and says in its F2 that both need the
+real Walmart PDF. **That mutation is the one that would make this whole unit worthless**: the
+newly-allowed page would be allowed without being checked. So I built it rather than take the
+count on report.
+
+In a scratch copy at `C:\tmp\p14g_accept` I replaced
+`elif unit_statement_on_page(printed, text):` with `elif True:`.
+
+```
+control                       157 passed
+mutant                          2 failed, 155 passed
+    FAILED …::test_walmart_fiscal_2024_the_newly_allowed_page_is_still_checked
+    FAILED …::…_refusals_that_must_survive_the_widening[text-not-printed-there]
+mutant, with 10K_filings/ renamed away (a clean checkout)
+                              149 passed, 8 skipped, 0 failed
+```
+
+**The third line is the finding, and it is mine rather than the tester's**: the tester said
+the two tests need the filing, and I measured what that costs. **On any machine without
+`10K_filings/`, the mutation that empties this unit survives the whole suite in silence.**
+Recorded as item 140. The repository's `ingestion/claude_extractor.py` carries sha256
+`d4a4783247f49346…` before and after my run, the same digest the programmer, the reviewer and
+the tester each recorded.
+
+### Two corrections to this assignment's own text, neither of which changes its conclusion
+
+1. **Fact 3's page sets are wider than the check ever used.** I wrote `[46, 48]`, `[45, 48]`
+   and `[21, 22, 23]`, which is the set over **all** printed lines. The allowed set at `HEAD`
+   was `[46]`, `[45]` and `[21, 22]`, because `_INCOME_STATEMENT_LINE_FIELDS` excludes the
+   five cash flow fields on purpose. **The programmer and the reviewer each caught this
+   separately, by execution.** Page 45 is in neither set, so the defect and the fix are
+   unchanged.
+2. **The `share_units` assertion is at `:292`, not the `:291` I wrote** in the tester
+   assignment. `:291` is its comment. The tester checked before acting and left the right
+   line alone.
+
+### The decision this unit put to me, and what settled it
+
+The reviewer asked whether to narrow the widening. **Two narrower rules were on the table and
+I predicted both would fail. The reviewer implemented each in its own scratch tree and
+confirmed both predictions by execution:**
+
+| Rule | Walmart fiscal 2024, must keep | The bad case, must refuse |
+|---|---|---|
+| `HEAD` | refused — the defect | refused |
+| **as built** | accepted | accepted — the price |
+| rule X, page before only when the figure's page prints no scale statement | **refused**, `allowed units=[46]` | refused |
+| rule Y, page before only when the figure's page prints no statement the `units` text equals | accepted | **accepted**, `allowed units=[1, 2]` |
+
+**The fact that settled it is the reviewer's, and neither the programmer nor I had it.** It
+put the `(in thousands)` note header on the **same** page as the figures and ran it at `HEAD`:
+accepted there too. **So this unit does not open the hole. It widens an existing one from one
+page to two.** Against that it closes a defect that refuses a correct reading and exits, and
+exposure on the three extractions this repository holds is zero. The root is check B1 reading
+its expected scale from `units` itself, which is a different defect in a different function.
+Shipped as built, recorded as item 138 with the 2x2 attached so nobody re-proposes rule X or
+rule Y.
+
+### What this closes and what it opens
+
+**Backlog item 114 is closed.** Items **138, 139 and 140** are opened.
