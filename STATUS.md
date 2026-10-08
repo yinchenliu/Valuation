@@ -4,7 +4,7 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `af68793` (`P14g-unit-statement-pages` and its tests, one-team mode), 2026-10-07, by the overall lead**, on branch `main`, **on the Windows machine**
+**Measured at `309a797` (`P14g-unit-statement-pages` and its tests, one-team mode), 2026-10-07, by the overall lead**, on branch `main`, **on the Windows machine**
 (`.venv/Scripts/python.exe`, Python 3.14.4), with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`.
 The build moved back to the Windows machine at `0a8ea54`; the figures from `cde33cb` to
 `ac736e7` were measured on the macOS machine. **Forty-seven work units accepted by `69436d9`, twenty more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes`, `P14b-note-figures`, `P14d-finance-leases`, `P3a-one-pipeline`, `P1b-windows-gate`, `P3b-pipeline-stops`, `P1c-test-network-copies`, `P1d-skipped-filings`, `P3c-one-number`, `P14e-nri-dedupe`, `P14f-prompt-encoding`, `P3d-invisible-year`, `P14g-unit-statement-pages` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
@@ -64,7 +64,7 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `af68793` (Windows) |
+| Gate | Command | Result at `309a797` (Windows) |
 |---|---|---|
 | Tests | `.venv/Scripts/python.exe -m pytest -q` | **1374 tests. 1370 pass, 2 fail**, plus 2 skipped: the 2 red on purpose. **Item 101 is closed**, so the only skips left are the Chipotle and Okta filings, which this machine does not hold |
 | **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **1370 passed, 2 skipped, 0 failed** in 134.72s, with or without the empty-key prefix: `tests/conftest.py` empties both API keys for every test. `P3d-invisible-year` added 33 and `P14g-unit-statement-pages` added 113 |
@@ -655,7 +655,7 @@ the headline. Re-ranked at `622262b`.
 | 112 | Two different non-recurring items with one year, amount and direction: the second was dropped in silence | `5567b39` (`P14e-nri-dedupe`) |
 | 113 | `session_extraction prompt --pass 2` exited 2 on a Windows console | `c9cb45e` (`P14f-prompt-encoding`) |
 | 116 | A year with a cash flow statement and a balance sheet and no income statement was in no table, and the branch written to report it could not run | `e5d8f0a` (`P3d-invisible-year`) |
-| 114 | The two unit-scale checks disagreed about where a unit statement may be printed, so a correct reading of a split income statement stopped the run | `af68793` (`P14g-unit-statement-pages`) |
+| 114 | The two unit-scale checks disagreed about where a unit statement may be printed, so a correct reading of a split income statement stopped the run | `309a797` (`P14g-unit-statement-pages`) |
 | 126 | `-p no:randomly` was in nine live and recorded documents and asserted nothing | the user's decision "1a", 2026-10-07. The flag is deleted from every live document; journal entries and accepted assignments keep it as the record of what was run. **What it leaves behind is item 127** |
 
 **At `a64818b` these tables hold 24 closed items and 37 open ones** (item 23 appears twice above). They are the headline, not the whole list: items 55, 57, 58, 60 and 61 are open in the backlog and not shown here. Items 19 to 28 did not exist when this build
@@ -820,7 +820,7 @@ assignment carried that as three criteria, the tests are hand-built, and the rea
 appears once, labelled a regression guard. **This is the sharpest example in the
 repository of a real input proving less than a constructed one.**
 
-**`P14g-unit-statement-pages` and its tests are accepted at `af68793`, 2026-10-07.** They
+**`P14g-unit-statement-pages` and its tests are accepted at `309a797`, 2026-10-07.** They
 close item 114. Two checks decided where a printed unit statement may sit and they did not
 agree: check B1 allowed the row's page **and the page before it**, and
 `_unit_statement_pages_allowed` allowed only the pages a printed line cites. Walmart's fiscal
