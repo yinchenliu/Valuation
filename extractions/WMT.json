@@ -1,0 +1,1226 @@
+{
+  "format": "session-extraction-v4",
+  "ticker": "WMT",
+  "company_name": "Walmart Inc.",
+  "extracted_by": {
+    "model": "claude-opus-5[1m]",
+    "tool": "Claude Code",
+    "date": "2026-10-06"
+  },
+  "filings": [
+    {
+      "fiscal_year": 2024,
+      "pdf_path": "C:\\Users\\LiuYinchen\\Valuation\\10K_filings\\WMT\\Walmart Inc._10-K_2024-01-31_English.pdf",
+      "pdf_sha256": "07a1c56b090c8040ffbcd08f51b0c8267c26ee0d79893315b0da23238f22603d",
+      "size_bytes": 1068387,
+      "target_years": null,
+      "include_bs": false,
+      "pages_read": {
+        "pass1": [
+          45,
+          46,
+          47,
+          48,
+          49
+        ],
+        "pass2": [
+          34,
+          35,
+          36,
+          37,
+          50,
+          51,
+          52,
+          53,
+          64,
+          65,
+          66,
+          67
+        ]
+      },
+      "pass1": {
+        "ticker": "WMT",
+        "company_name": "Walmart Inc.",
+        "currency": "USD",
+        "units": {
+          "printed": "(Amounts in millions)",
+          "page": 46
+        },
+        "share_units": {
+          "printed": "(Amounts in millions)",
+          "page": 46
+        },
+        "historical_years": [
+          {
+            "year": 2024,
+            "revenue": [
+              {
+                "label": "Total revenues",
+                "value": 648125,
+                "page": 46
+              }
+            ],
+            "cost_of_revenue": [
+              {
+                "label": "Cost of sales",
+                "value": 490142,
+                "page": 46
+              }
+            ],
+            "gross_profit": [],
+            "sga": [
+              {
+                "label": "Operating, selling, general and administrative expenses",
+                "value": 130971,
+                "page": 46
+              }
+            ],
+            "rd_expense": [],
+            "depreciation_amortization": [
+              {
+                "label": "Depreciation and amortization",
+                "value": 11853,
+                "page": 48
+              }
+            ],
+            "other_operating_expense": [],
+            "operating_income": [
+              {
+                "label": "Operating income",
+                "value": 27012,
+                "page": 46
+              }
+            ],
+            "interest_expense": [
+              {
+                "label": "Debt",
+                "value": 2259,
+                "page": 46
+              },
+              {
+                "label": "Finance lease",
+                "value": 424,
+                "page": 46
+              }
+            ],
+            "interest_income": [
+              {
+                "label": "Interest income",
+                "value": 546,
+                "page": 46
+              }
+            ],
+            "other_non_operating": [
+              {
+                "label": "Loss on extinguishment of debt",
+                "value": 0,
+                "page": 46
+              },
+              {
+                "label": "Other (gains) and losses",
+                "value": -3027,
+                "page": 46
+              }
+            ],
+            "tax_expense": [
+              {
+                "label": "Provision for income taxes",
+                "value": 5578,
+                "page": 46
+              }
+            ],
+            "net_income": [
+              {
+                "label": "Consolidated net income",
+                "value": 16270,
+                "page": 46
+              }
+            ],
+            "diluted_shares": [
+              {
+                "label": "Diluted",
+                "value": 8108,
+                "page": 46
+              }
+            ],
+            "cfo": [
+              {
+                "label": "Net cash provided by operating activities",
+                "value": 35726,
+                "page": 48
+              }
+            ],
+            "capex": [
+              {
+                "label": "Payments for property and equipment",
+                "value": 20606,
+                "page": 48
+              },
+              {
+                "label": "Payments for business acquisitions, net of cash acquired",
+                "value": 9,
+                "page": 48
+              }
+            ],
+            "sbc": [],
+            "change_in_working_capital": [
+              {
+                "label": "Receivables, net",
+                "value": -797,
+                "page": 48
+              },
+              {
+                "label": "Inventories",
+                "value": 2017,
+                "page": 48
+              },
+              {
+                "label": "Accounts payable",
+                "value": 2515,
+                "page": 48
+              },
+              {
+                "label": "Accrued liabilities",
+                "value": -1324,
+                "page": 48
+              },
+              {
+                "label": "Accrued income taxes",
+                "value": -468,
+                "page": 48
+              }
+            ]
+          },
+          {
+            "year": 2023,
+            "revenue": [
+              {
+                "label": "Total revenues",
+                "value": 611289,
+                "page": 46
+              }
+            ],
+            "cost_of_revenue": [
+              {
+                "label": "Cost of sales",
+                "value": 463721,
+                "page": 46
+              }
+            ],
+            "gross_profit": [],
+            "sga": [
+              {
+                "label": "Operating, selling, general and administrative expenses",
+                "value": 127140,
+                "page": 46
+              }
+            ],
+            "rd_expense": [],
+            "depreciation_amortization": [
+              {
+                "label": "Depreciation and amortization",
+                "value": 10945,
+                "page": 48
+              }
+            ],
+            "other_operating_expense": [],
+            "operating_income": [
+              {
+                "label": "Operating income",
+                "value": 20428,
+                "page": 46
+              }
+            ],
+            "interest_expense": [
+              {
+                "label": "Debt",
+                "value": 1787,
+                "page": 46
+              },
+              {
+                "label": "Finance lease",
+                "value": 341,
+                "page": 46
+              }
+            ],
+            "interest_income": [
+              {
+                "label": "Interest income",
+                "value": 254,
+                "page": 46
+              }
+            ],
+            "other_non_operating": [
+              {
+                "label": "Loss on extinguishment of debt",
+                "value": 0,
+                "page": 46
+              },
+              {
+                "label": "Other (gains) and losses",
+                "value": -1538,
+                "page": 46
+              }
+            ],
+            "tax_expense": [
+              {
+                "label": "Provision for income taxes",
+                "value": 5724,
+                "page": 46
+              }
+            ],
+            "net_income": [
+              {
+                "label": "Consolidated net income",
+                "value": 11292,
+                "page": 46
+              }
+            ],
+            "diluted_shares": [
+              {
+                "label": "Diluted",
+                "value": 8202,
+                "page": 46
+              }
+            ],
+            "cfo": [
+              {
+                "label": "Net cash provided by operating activities",
+                "value": 28841,
+                "page": 48
+              }
+            ],
+            "capex": [
+              {
+                "label": "Payments for property and equipment",
+                "value": 16857,
+                "page": 48
+              },
+              {
+                "label": "Payments for business acquisitions, net of cash acquired",
+                "value": 740,
+                "page": 48
+              }
+            ],
+            "sbc": [],
+            "change_in_working_capital": [
+              {
+                "label": "Receivables, net",
+                "value": 240,
+                "page": 48
+              },
+              {
+                "label": "Inventories",
+                "value": -528,
+                "page": 48
+              },
+              {
+                "label": "Accounts payable",
+                "value": -1425,
+                "page": 48
+              },
+              {
+                "label": "Accrued liabilities",
+                "value": 4393,
+                "page": 48
+              },
+              {
+                "label": "Accrued income taxes",
+                "value": -127,
+                "page": 48
+              }
+            ]
+          },
+          {
+            "year": 2022,
+            "revenue": [
+              {
+                "label": "Total revenues",
+                "value": 572754,
+                "page": 46
+              }
+            ],
+            "cost_of_revenue": [
+              {
+                "label": "Cost of sales",
+                "value": 429000,
+                "page": 46
+              }
+            ],
+            "gross_profit": [],
+            "sga": [
+              {
+                "label": "Operating, selling, general and administrative expenses",
+                "value": 117812,
+                "page": 46
+              }
+            ],
+            "rd_expense": [],
+            "depreciation_amortization": [
+              {
+                "label": "Depreciation and amortization",
+                "value": 10658,
+                "page": 48
+              }
+            ],
+            "other_operating_expense": [],
+            "operating_income": [
+              {
+                "label": "Operating income",
+                "value": 25942,
+                "page": 46
+              }
+            ],
+            "interest_expense": [
+              {
+                "label": "Debt",
+                "value": 1674,
+                "page": 46
+              },
+              {
+                "label": "Finance lease",
+                "value": 320,
+                "page": 46
+              }
+            ],
+            "interest_income": [
+              {
+                "label": "Interest income",
+                "value": 158,
+                "page": 46
+              }
+            ],
+            "other_non_operating": [
+              {
+                "label": "Loss on extinguishment of debt",
+                "value": -2410,
+                "page": 46
+              },
+              {
+                "label": "Other (gains) and losses",
+                "value": -3000,
+                "page": 46
+              }
+            ],
+            "tax_expense": [
+              {
+                "label": "Provision for income taxes",
+                "value": 4756,
+                "page": 46
+              }
+            ],
+            "net_income": [
+              {
+                "label": "Consolidated net income",
+                "value": 13940,
+                "page": 46
+              }
+            ],
+            "diluted_shares": [
+              {
+                "label": "Diluted",
+                "value": 8415,
+                "page": 46
+              }
+            ],
+            "cfo": [
+              {
+                "label": "Net cash provided by operating activities",
+                "value": 24181,
+                "page": 48
+              }
+            ],
+            "capex": [
+              {
+                "label": "Payments for property and equipment",
+                "value": 13106,
+                "page": 48
+              },
+              {
+                "label": "Payments for business acquisitions, net of cash acquired",
+                "value": 359,
+                "page": 48
+              }
+            ],
+            "sbc": [],
+            "change_in_working_capital": [
+              {
+                "label": "Receivables, net",
+                "value": -1796,
+                "page": 48
+              },
+              {
+                "label": "Inventories",
+                "value": -11764,
+                "page": 48
+              },
+              {
+                "label": "Accounts payable",
+                "value": 5520,
+                "page": 48
+              },
+              {
+                "label": "Accrued liabilities",
+                "value": 1404,
+                "page": 48
+              },
+              {
+                "label": "Accrued income taxes",
+                "value": 39,
+                "page": 48
+              }
+            ]
+          }
+        ],
+        "latest_balance_sheet": {}
+      },
+      "pass2": {
+        "non_recurring_items": [
+          {
+            "year": 2022,
+            "description": "Loss on extinguishment of debt from the early retirement of certain higher rate long-term debt",
+            "amount": 2410,
+            "line_item": "other_non_operating",
+            "direction": "add_back",
+            "category": "other",
+            "confidence": "high",
+            "source": "Consolidated Statements of Income, 'Loss on extinguishment of debt' row, page 46",
+            "page": 46,
+            "units": {
+              "printed": "(Amounts in millions)",
+              "page": 46
+            }
+          },
+          {
+            "year": 2022,
+            "description": "Net losses from fair value changes of equity and other investments, recognized in other gains and losses",
+            "amount": 2.4,
+            "line_item": "other_non_operating",
+            "direction": "add_back",
+            "category": "other",
+            "confidence": "medium",
+            "source": "Note 1 - Summary of Significant Accounting Policies, Investments, page 52",
+            "page": 52,
+            "units": {
+              "printed": "$2.4 billion",
+              "page": 52
+            }
+          },
+          {
+            "year": 2022,
+            "description": "Incremental pre-tax loss on the divestiture of Asda (U.K. retail operations), recorded in other gains and losses",
+            "amount": 0.2,
+            "line_item": "other_non_operating",
+            "direction": "add_back",
+            "category": "gain_loss_asset_sale",
+            "confidence": "high",
+            "source": "Note 12 - Disposals, Acquisitions and Related Items, Asda, page 66",
+            "page": 66,
+            "units": {
+              "printed": "$0.2 billion",
+              "page": 66
+            }
+          },
+          {
+            "year": 2022,
+            "description": "Incremental pre-tax loss on the divestiture of Seiyu (Japan retail operations), recorded in other gains and losses",
+            "amount": 0.2,
+            "line_item": "other_non_operating",
+            "direction": "add_back",
+            "category": "gain_loss_asset_sale",
+            "confidence": "high",
+            "source": "Note 12 - Disposals, Acquisitions and Related Items, Seiyu, page 67",
+            "page": 67,
+            "units": {
+              "printed": "$0.2 billion",
+              "page": 67
+            }
+          },
+          {
+            "year": 2023,
+            "description": "Accrued liability for opioid-related legal settlements under the Settlement Framework and other state and tribal settlements",
+            "amount": 3.3,
+            "line_item": "sga",
+            "direction": "add_back",
+            "category": "litigation",
+            "confidence": "high",
+            "source": "Note 10 - Contingencies, Settlement Framework Regarding Multidistrict and State or Local Opioid-Related Litigation, page 64",
+            "page": 64,
+            "units": {
+              "printed": "$3.3 billion",
+              "page": 64
+            }
+          },
+          {
+            "year": 2023,
+            "description": "Charges for the reorganization and restructuring of certain businesses in the Walmart International segment (Flipkart and Massmart)",
+            "amount": 0.8,
+            "line_item": "sga",
+            "direction": "add_back",
+            "category": "restructuring",
+            "confidence": "high",
+            "source": "MD&A - Consolidated Results of Operations, page 36",
+            "page": 36,
+            "units": {
+              "printed": "$0.8 billion",
+              "page": 36
+            }
+          },
+          {
+            "year": 2023,
+            "description": "Net losses from fair value changes of equity and other investments, recognized in other gains and losses",
+            "amount": 1.7,
+            "line_item": "other_non_operating",
+            "direction": "add_back",
+            "category": "other",
+            "confidence": "medium",
+            "source": "Note 1 - Summary of Significant Accounting Policies, Investments, page 52",
+            "page": 52,
+            "units": {
+              "printed": "$1.7 billion",
+              "page": 52
+            }
+          },
+          {
+            "year": 2023,
+            "description": "Gain recognized on the sale of the remaining equity method investment in Brazil",
+            "amount": 0.4,
+            "line_item": "other_non_operating",
+            "direction": "remove",
+            "category": "gain_loss_asset_sale",
+            "confidence": "high",
+            "source": "MD&A - Consolidated Results of Operations, other gains and losses discussion, page 36",
+            "page": 36,
+            "units": {
+              "printed": "$0.4 billion",
+              "page": 36
+            }
+          },
+          {
+            "year": 2024,
+            "description": "Net losses from fair value changes of equity and other investments, recognized in other gains and losses",
+            "amount": 3.8,
+            "line_item": "other_non_operating",
+            "direction": "add_back",
+            "category": "other",
+            "confidence": "medium",
+            "source": "Note 1 - Summary of Significant Accounting Policies, Investments, page 52",
+            "page": 52,
+            "units": {
+              "printed": "$3.8 billion",
+              "page": 52
+            }
+          }
+        ]
+      }
+    },
+    {
+      "fiscal_year": 2025,
+      "pdf_path": "C:\\Users\\LiuYinchen\\Valuation\\10K_filings\\WMT\\Walmart Inc._10-K_2025-01-31_English.pdf",
+      "pdf_sha256": "4540f5ec206f02bc5562bfdd691ff4f64e677d39036db705a9e6a69796c30509",
+      "size_bytes": 840476,
+      "target_years": [
+        2025
+      ],
+      "include_bs": false,
+      "pages_read": {
+        "pass1": [
+          45,
+          46,
+          47,
+          48
+        ],
+        "pass2": [
+          35,
+          51,
+          64,
+          65,
+          66
+        ]
+      },
+      "pass1": {
+        "ticker": "WMT",
+        "company_name": "Walmart Inc.",
+        "currency": "USD",
+        "units": {
+          "printed": "(Amounts in millions, except per share data)",
+          "page": 45
+        },
+        "share_units": {
+          "printed": "(Amounts in millions, except per share data)",
+          "page": 45
+        },
+        "historical_years": [
+          {
+            "year": 2025,
+            "revenue": [
+              {
+                "label": "Total revenues",
+                "value": 680985,
+                "page": 45
+              }
+            ],
+            "cost_of_revenue": [
+              {
+                "label": "Cost of sales",
+                "value": 511753,
+                "page": 45
+              }
+            ],
+            "gross_profit": [],
+            "sga": [
+              {
+                "label": "Operating, selling, general and administrative expenses",
+                "value": 139884,
+                "page": 45
+              }
+            ],
+            "rd_expense": [],
+            "depreciation_amortization": [
+              {
+                "label": "Depreciation and amortization",
+                "value": 12973,
+                "page": 48
+              }
+            ],
+            "other_operating_expense": [],
+            "operating_income": [
+              {
+                "label": "Operating income",
+                "value": 29348,
+                "page": 45
+              }
+            ],
+            "interest_expense": [
+              {
+                "label": "Debt",
+                "value": 2249,
+                "page": 45
+              },
+              {
+                "label": "Finance lease",
+                "value": 479,
+                "page": 45
+              }
+            ],
+            "interest_income": [
+              {
+                "label": "Interest income",
+                "value": 483,
+                "page": 45
+              }
+            ],
+            "other_non_operating": [
+              {
+                "label": "Other (gains) and losses",
+                "value": -794,
+                "page": 45
+              }
+            ],
+            "tax_expense": [
+              {
+                "label": "Provision for income taxes",
+                "value": 6152,
+                "page": 45
+              }
+            ],
+            "net_income": [
+              {
+                "label": "Consolidated net income",
+                "value": 20157,
+                "page": 45
+              }
+            ],
+            "diluted_shares": [
+              {
+                "label": "Diluted",
+                "value": 8081,
+                "page": 45
+              }
+            ],
+            "cfo": [
+              {
+                "label": "Net cash provided by operating activities",
+                "value": 36443,
+                "page": 48
+              }
+            ],
+            "capex": [
+              {
+                "label": "Payments for property and equipment",
+                "value": 23783,
+                "page": 48
+              },
+              {
+                "label": "Payments for business acquisitions, net of cash acquired",
+                "value": 1896,
+                "page": 48
+              }
+            ],
+            "sbc": [],
+            "change_in_working_capital": [
+              {
+                "label": "Receivables, net",
+                "value": -1106,
+                "page": 48
+              },
+              {
+                "label": "Inventories",
+                "value": -2755,
+                "page": 48
+              },
+              {
+                "label": "Accounts payable",
+                "value": 3228,
+                "page": 48
+              },
+              {
+                "label": "Accrued liabilities",
+                "value": 379,
+                "page": 48
+              },
+              {
+                "label": "Accrued income taxes",
+                "value": 435,
+                "page": 48
+              }
+            ]
+          }
+        ],
+        "latest_balance_sheet": {}
+      },
+      "pass2": {
+        "non_recurring_items": [
+          {
+            "year": 2025,
+            "description": "Net losses from fair value changes of equity and other investments, recognized in other gains and losses",
+            "amount": 0.8,
+            "line_item": "other_non_operating",
+            "direction": "add_back",
+            "category": "other",
+            "confidence": "medium",
+            "source": "Note 1 - Summary of Significant Accounting Policies, Investments, page 51",
+            "page": 51,
+            "units": {
+              "printed": "$0.8 billion",
+              "page": 51
+            }
+          },
+          {
+            "year": 2025,
+            "description": "Proceeds received from the settlement of the opioid-related shareholder derivative litigation, recorded as a reduction to operating, selling, general and administrative expense",
+            "amount": 99,
+            "line_item": "sga",
+            "direction": "remove",
+            "category": "litigation",
+            "confidence": "high",
+            "source": "Note 10 - Contingencies, Opioid-Related Shareholder Derivative Litigation, page 64",
+            "page": 64,
+            "units": {
+              "printed": "$99 million",
+              "page": 64
+            }
+          }
+        ]
+      }
+    },
+    {
+      "fiscal_year": 2026,
+      "pdf_path": "C:\\Users\\LiuYinchen\\Valuation\\10K_filings\\WMT\\Walmart Inc._10-K_2026-01-31_English.pdf",
+      "pdf_sha256": "4bafa6e61b1990a3c857b5d6d0aa4005c4d50c175c6403c0685a1c21abbef5ae",
+      "size_bytes": 1111045,
+      "target_years": [
+        2026
+      ],
+      "include_bs": true,
+      "pages_read": {
+        "pass1": [
+          21,
+          22,
+          23
+        ],
+        "pass2": [
+          15,
+          16,
+          17,
+          24,
+          25,
+          26,
+          27,
+          31,
+          32
+        ]
+      },
+      "pass1": {
+        "ticker": "WMT",
+        "company_name": "Walmart Inc.",
+        "currency": "USD",
+        "units": {
+          "printed": "(Amounts in millions, except per share data)",
+          "page": 21
+        },
+        "share_units": {
+          "printed": "(Amounts in millions, except per share data)",
+          "page": 21
+        },
+        "historical_years": [
+          {
+            "year": 2026,
+            "revenue": [
+              {
+                "label": "Total revenues",
+                "value": 713163,
+                "page": 21
+              }
+            ],
+            "cost_of_revenue": [
+              {
+                "label": "Cost of sales",
+                "value": 535395,
+                "page": 22
+              }
+            ],
+            "gross_profit": [],
+            "sga": [
+              {
+                "label": "Operating, selling, general and administrative expenses",
+                "value": 147943,
+                "page": 22
+              }
+            ],
+            "rd_expense": [],
+            "depreciation_amortization": [
+              {
+                "label": "Depreciation and amortization",
+                "value": 14203,
+                "page": 23
+              }
+            ],
+            "other_operating_expense": [],
+            "operating_income": [
+              {
+                "label": "Operating income",
+                "value": 29825,
+                "page": 22
+              }
+            ],
+            "interest_expense": [
+              {
+                "label": "Debt",
+                "value": 2318,
+                "page": 22
+              },
+              {
+                "label": "Finance lease",
+                "value": 481,
+                "page": 22
+              }
+            ],
+            "interest_income": [
+              {
+                "label": "Interest income",
+                "value": 368,
+                "page": 22
+              }
+            ],
+            "other_non_operating": [
+              {
+                "label": "Other (gains) and losses",
+                "value": 2075,
+                "page": 22
+              }
+            ],
+            "tax_expense": [
+              {
+                "label": "Provision for income taxes",
+                "value": 7199,
+                "page": 22
+              }
+            ],
+            "net_income": [
+              {
+                "label": "Consolidated net income",
+                "value": 22270,
+                "page": 22
+              }
+            ],
+            "diluted_shares": [
+              {
+                "label": "Diluted",
+                "value": 8022,
+                "page": 22
+              }
+            ],
+            "cfo": [
+              {
+                "label": "Net cash provided by operating activities",
+                "value": 41565,
+                "page": 23
+              }
+            ],
+            "capex": [
+              {
+                "label": "Payments for property and equipment",
+                "value": 26642,
+                "page": 23
+              },
+              {
+                "label": "Payments for business acquisitions, net of cash acquired",
+                "value": 53,
+                "page": 23
+              }
+            ],
+            "sbc": [],
+            "change_in_working_capital": [
+              {
+                "label": "Receivables, net",
+                "value": -1136,
+                "page": 23
+              },
+              {
+                "label": "Inventories",
+                "value": -1443,
+                "page": 23
+              },
+              {
+                "label": "Accounts payable",
+                "value": 1611,
+                "page": 23
+              },
+              {
+                "label": "Accrued liabilities",
+                "value": 1607,
+                "page": 23
+              },
+              {
+                "label": "Accrued income taxes",
+                "value": 113,
+                "page": 23
+              }
+            ]
+          }
+        ],
+        "latest_balance_sheet": {
+          "year": 2026,
+          "cash": [
+            {
+              "label": "Cash and cash equivalents",
+              "value": 10727,
+              "page": 22
+            }
+          ],
+          "short_term_investments": [],
+          "accounts_receivable": [
+            {
+              "label": "Receivables, net",
+              "value": 11172,
+              "page": 22
+            }
+          ],
+          "inventory": [
+            {
+              "label": "Inventories",
+              "value": 58851,
+              "page": 22
+            }
+          ],
+          "other_current_assets": [
+            {
+              "label": "Prepaid expenses and other",
+              "value": 4124,
+              "page": 22
+            }
+          ],
+          "ppe_net": [
+            {
+              "label": "Property and equipment, net",
+              "value": 136083,
+              "page": 22
+            }
+          ],
+          "goodwill": [
+            {
+              "label": "Goodwill",
+              "value": 28735,
+              "page": 22
+            }
+          ],
+          "intangible_assets": [],
+          "other_non_current_assets": [
+            {
+              "label": "Operating lease right-of-use assets",
+              "value": 14750,
+              "page": 22
+            },
+            {
+              "label": "Finance lease right-of-use assets, net",
+              "value": 6123,
+              "page": 22
+            },
+            {
+              "label": "Other long-term assets",
+              "value": 14103,
+              "page": 22
+            }
+          ],
+          "accounts_payable": [
+            {
+              "label": "Accounts payable",
+              "value": 63061,
+              "page": 22
+            }
+          ],
+          "accrued_liabilities": [
+            {
+              "label": "Accrued liabilities",
+              "value": 31187,
+              "page": 22
+            }
+          ],
+          "other_current_liabilities": [
+            {
+              "label": "Accrued income taxes",
+              "value": 596,
+              "page": 22
+            },
+            {
+              "label": "Operating lease obligations due within one year",
+              "value": 1631,
+              "page": 22
+            }
+          ],
+          "short_term_debt": [
+            {
+              "label": "Short-term borrowings",
+              "value": 6596,
+              "page": 22
+            },
+            {
+              "label": "Long-term debt due within one year",
+              "value": 3542,
+              "page": 22
+            },
+            {
+              "label": "Finance lease obligations due within one year",
+              "value": 856,
+              "page": 22
+            }
+          ],
+          "long_term_debt": [
+            {
+              "label": "Long-term debt",
+              "value": 34624,
+              "page": 22
+            },
+            {
+              "label": "Long-term finance lease obligations",
+              "value": 5905,
+              "page": 22
+            }
+          ],
+          "other_non_current_liabilities": [
+            {
+              "label": "Long-term operating lease obligations",
+              "value": 13941,
+              "page": 22
+            },
+            {
+              "label": "Deferred income taxes and other",
+              "value": 16549,
+              "page": 22
+            },
+            {
+              "label": "Redeemable noncontrolling interest",
+              "value": 293,
+              "page": 22
+            }
+          ],
+          "total_equity": [
+            {
+              "label": "Total shareholders' equity",
+              "value": 105887,
+              "page": 22
+            }
+          ],
+          "noncontrolling_interest_nonredeemable": [
+            {
+              "label": "Nonredeemable noncontrolling interest",
+              "value": 6270,
+              "page": 22
+            }
+          ],
+          "noncontrolling_interest_redeemable": [
+            {
+              "label": "Redeemable noncontrolling interest",
+              "value": 293,
+              "page": 22
+            }
+          ],
+          "total_assets": [
+            {
+              "label": "Total assets",
+              "value": 284668,
+              "page": 22
+            }
+          ],
+          "total_liabilities_and_equity": [
+            {
+              "label": "Total liabilities, redeemable noncontrolling interest, and shareholders' equity",
+              "value": 284668,
+              "page": 22
+            }
+          ]
+        }
+      },
+      "pass2": {
+        "non_recurring_items": [
+          {
+            "year": 2026,
+            "description": "Non-cash charge on the modification of certain PhonePe share-based payment arrangements in contemplation of a potential initial public offering, recorded in operating, selling, general and administrative expenses",
+            "amount": 0.7,
+            "line_item": "sga",
+            "direction": "add_back",
+            "category": "other",
+            "confidence": "high",
+            "source": "Note 3 - Shareholders' Equity, PhonePe share-based payment modification, page 27",
+            "page": 27,
+            "units": {
+              "printed": "$0.7 billion",
+              "page": 27
+            }
+          },
+          {
+            "year": 2026,
+            "description": "Accrued portion of the judgment under the FTC and state settlement regarding the Spark Driver platform",
+            "amount": 37,
+            "line_item": "sga",
+            "direction": "add_back",
+            "category": "litigation",
+            "confidence": "high",
+            "source": "Note 9 - Contingencies, Driver Platform Matters, page 32",
+            "page": 32,
+            "units": {
+              "printed": "$37 million",
+              "page": 32
+            }
+          },
+          {
+            "year": 2026,
+            "description": "Net gain in other gains and losses, primarily from changes in the fair value of equity and other investments",
+            "amount": 2.1,
+            "line_item": "other_non_operating",
+            "direction": "remove",
+            "category": "other",
+            "confidence": "medium",
+            "source": "MD&A - Consolidated Results of Operations, other gains and losses discussion, page 16",
+            "page": 16,
+            "units": {
+              "printed": "$2.1 billion",
+              "page": 16
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

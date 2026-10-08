@@ -8,7 +8,6 @@ dist/
 build/
 .venv/
 venv/
-10K_filings/
 
 # Tool caches, created by running a gate
 .ruff_cache/
@@ -27,10 +26,18 @@ venv/
 # and they remain tracked.
 cache/
 
-# Claude Code session files (ingestion/session_extraction.py). Each holds one
-# company's figures as read from its filings, so it is DATA, like 10K_filings/ and
-# cache/, and docs/ never holds data (docs/INDEX.md). Untracked for the same reason.
-extractions/
+# NOTE, 2026-10-08, on the user's instruction: `10K_filings/` and `extractions/`
+# are now TRACKED. They were ignored as "data", which is a tidiness reason and not
+# a safety one, and the cost of that was measured twice:
+#   - backlog item 117: the only test of a real route B file is `skipif`-guarded on
+#     `extractions/WMT.json`, so it ran on no clean checkout.
+#   - backlog item 140: the mutation that would empty `P14g-unit-statement-pages`
+#     survives the whole suite on any machine without `10K_filings/`, in silence.
+# A guard that is absent on every machine but one is not a guard. 33 MB, 10 files,
+# largest 11.6 MB, all public SEC documents that never change once filed.
+#
+# `cache/` below stays ignored and the reason there IS a safety one. Do not
+# group them together again.
 
 # macOS
 .DS_Store
