@@ -89,6 +89,7 @@ import json
 import math
 import re
 import sys
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -1193,27 +1194,73 @@ def name_unencodable_characters(stream: object) -> bool:
     return True
 
 
-def main(argv: list[str] | None = None) -> int:
-    # Every subcommand prints through these two streams, so one call each covers
-    # `plan`, `locate`, `text`, `prompt` and `check`. stderr is included because
-    # `cmd_prompt` sends `parse_pass1`'s arithmetic table there.
-    name_unencodable_characters(sys.stdout)
-    name_unencodable_characters(sys.stderr)
-    args = _build_parser().parse_args(argv)
+@contextlib.contextmanager
+def naming_unencodable_characters(stream: object) -> Iterator[bool]:
+    """Name unencodable characters on `stream` for the body, then put back its handler.
+
+    `sys.stdout` and `sys.stderr` belong to whoever called this module, not to this
+    module. `main()` used to set `namereplace` on both and never put the old handler
+    back, so an in-process caller kept the changed handler for the life of its
+    process — backlog item 124. `_pytest.capture.CaptureIO` is an `io.TextIOWrapper`
+    subclass, so under pytest that reached every test that ran afterwards, and the
+    `P14f` tester paid for it with three subprocesses.
+
+    The handler is read before it is set and written back in a `finally`, so the
+    stream leaves this block exactly as it arrived. Every character is encoded at the
+    moment it is written (`io.TextIOWrapper.write` encodes into the binary buffer), so
+    text written inside the block is already bytes before the handler goes back: the
+    restore cannot un-name a character that was already named.
+
+    Yields what `name_unencodable_characters` returned, so a caller can tell a stream
+    that encodes from one that does not.
+    """
+    if not isinstance(stream, io.TextIOWrapper):
+        # No encode step happens here, so nothing was set and there is nothing to
+        # put back. `name_unencodable_characters` states that case and its reason.
+        yield name_unencodable_characters(stream)
+        return
+    previous = stream.errors
+    if not isinstance(previous, str):
+        # Rule 3. `reconfigure(errors=None)` means "leave the handler alone", so a
+        # handler that does not read as a name would silently leave `namereplace`
+        # behind — the defect this function exists to close, wearing a quieter face.
+        # `TypeError` rather than `ValueError` because the complaint is about the
+        # type of `stream.errors`, and because `main`'s `except (ValueError,
+        # FileNotFoundError)` must not turn this into an ordinary "ERROR: …" exit.
+        raise TypeError(
+            "cannot name unencodable characters on this stream: its error handler "
+            f"reads as {previous!r}, which is not a handler name, so the handler "
+            f"this would set could not be put back afterwards. Stream: {stream!r}")
+    was_set = name_unencodable_characters(stream)
     try:
-        if args.command == "plan":
-            return cmd_plan(args.pdfs, args.ticker, args.company_name,
-                            args.output, args.force)
-        if args.command == "locate":
-            return cmd_locate(args.file.resolve(), args.filing)
-        if args.command == "text":
-            return cmd_text(args.file.resolve(), args.filing, args.pages)
-        if args.command == "prompt":
-            return cmd_prompt(args.file.resolve(), args.filing, args.which_pass)
-        return cmd_check(args.file)
-    except (ValueError, FileNotFoundError) as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 2
+        yield was_set
+    finally:
+        stream.reconfigure(errors=previous)
+
+
+def main(argv: list[str] | None = None) -> int:
+    # Every subcommand prints through these two streams, so wrapping the whole body
+    # once covers `plan`, `locate`, `text`, `prompt` and `check`, and argparse's own
+    # usage message with them. stderr is included because `cmd_prompt` sends
+    # `parse_pass1`'s arithmetic table there. Both handlers go back on the way out:
+    # `main` is a function an importer may call, and it does not own these streams.
+    with naming_unencodable_characters(sys.stdout), \
+            naming_unencodable_characters(sys.stderr):
+        args = _build_parser().parse_args(argv)
+        try:
+            if args.command == "plan":
+                return cmd_plan(args.pdfs, args.ticker, args.company_name,
+                                args.output, args.force)
+            if args.command == "locate":
+                return cmd_locate(args.file.resolve(), args.filing)
+            if args.command == "text":
+                return cmd_text(args.file.resolve(), args.filing, args.pages)
+            if args.command == "prompt":
+                return cmd_prompt(args.file.resolve(), args.filing, args.which_pass)
+            return cmd_check(args.file)
+        except (ValueError, FileNotFoundError) as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
 
 
 if __name__ == "__main__":

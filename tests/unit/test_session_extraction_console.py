@@ -38,14 +38,27 @@ off this code's output.
    for every filing. Each is asserted non-empty before it is compared, because two
    empty results are not a match.
 
-**Why nothing here calls `main()` in this process.** `main()` sets a handler on
-the process-global `sys.stdout` and never restores it, and
-`_pytest.capture.CaptureIO` is an `io.TextIOWrapper` subclass, so an in-process
-call would leak `errors='namereplace'` into every test that ran afterwards
-(backlog item 124). Every test below either builds its own `TextIOWrapper` over a
-`BytesIO` it owns, or runs `main` in a **subprocess** whose streams die with it.
-No test here reads or writes `sys.stdout`, `sys.stderr` or any other global, so
-the order they run in cannot change a result.
+**Where the handler is read, and why that is not after `main()` returns.** Until
+`P1e-test-order`, `main()` set a handler on the process-global `sys.stdout` and
+never put it back, and `_pytest.capture.CaptureIO` is an `io.TextIOWrapper`
+subclass, so an in-process call leaked `errors='namereplace'` into every test
+that ran afterwards (backlog item 124). That is closed:
+`naming_unencodable_characters` reads each stream's handler, sets `namereplace`
+for the body, and restores it in a `finally`. **So this file reads the handler
+while the command is running, never after it has finished.** A test that found
+`namereplace` on the caller's stream after `main()` returned would be asserting
+that item 124 is back; the three tests in section 2 read it from inside instead,
+at every write and at the first statement of `main`'s body.
+
+**What each test owns.** Section 2 builds its own `io.TextIOWrapper` over a
+`BytesIO` — the class a console stream is, and the class `CaptureIO` is — and
+installs it through `monkeypatch`, which puts the real stream back whatever
+happens. Sections 3 and 4 run `main` in a **subprocess**, because a subprocess is
+the only way to see a *real* console encoding (`PYTHONIOENCODING`) and a real
+inherited `sys.stdout`; those tests stay.
+`test_main_leaves_a_real_process_stream_as_it_found_it` is a subprocess for the
+same reason. No test here leaves a process-global changed, so the order they run
+in cannot change a result.
 
 **No test here reaches the API, the network or a real filing.** The session file
 and its PDF are built under `tmp_path` by the builders in
@@ -55,6 +68,7 @@ keys.
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import io
 import json
@@ -71,6 +85,11 @@ from ingestion.claude_extractor import (
     pass1_prompts,
     pass2_prompts,
     plan_filings,
+)
+from ingestion.session_extraction import (
+    _build_parser,
+    main,
+    naming_unencodable_characters,
 )
 from tests.unit.test_session_extraction import COMPANY, TICKER, one_filing, write
 
@@ -94,6 +113,17 @@ PASS2_SYSTEM_LENGTH = 3317
 PASS2_SYSTEM_SHA256 = "843ce6e79ea264ca15aee431bae877e2bf78d8c3d9bfb6c387d0325f9c863e7a"
 PASS2_SYSTEM_ARROWS = 2
 
+# Source 6: the same error-handler table, for the handler these tests put on a
+# stream *before* they hand it to the unit. `xmlcharrefreplace` writes a character
+# the encoding cannot hold as `&#<decimal code point>;`, and U+2192 in decimal is
+# 2*4096 + 1*256 + 9*16 + 2 = 8192 + 256 + 144 + 2 = 8594, so it renders the arrow
+# as `&#8594;`. It is chosen because **nothing in the unit ever sets it**: a stream
+# that reads `xmlcharrefreplace` after a call can only have had its handler put
+# back, and a byte sequence that spells `&#8594;` can only have been written
+# through the caller's own handler.
+CALLER_HANDLER = "xmlcharrefreplace"
+XMLCHARREF_ARROW = b"&#8594;"
+
 
 # ===========================================================================
 # Helpers. Each test owns the stream it configures.
@@ -114,6 +144,85 @@ def written(raw: io.BytesIO, stream: io.TextIOWrapper, text: str) -> bytes:
     stream.write(text)
     stream.flush()
     return raw.getvalue()
+
+
+def owned_stream(encoding: str = "cp1252",
+                 handler: str = CALLER_HANDLER) -> io.TextIOWrapper:
+    """A text stream this test owns, carrying a handler of the test's choosing.
+
+    The handler is an argument because the question every restore test asks is
+    "did the stream leave with what it arrived with", and the answer is only
+    readable when the test, not Python and not the unit, decided what that was.
+    """
+    return io.TextIOWrapper(io.BytesIO(), encoding=encoding, errors=handler,
+                            newline="\n")
+
+
+class RecordingStream(io.TextIOWrapper):
+    """A `TextIOWrapper` that records `(encoding, errors)` at every `write`.
+
+    This is what moves the observation **inside** the run. The handler that
+    matters is the one in force at the moment a character is encoded — a
+    `TextIOWrapper` encodes in `write` — and not the one left on the stream
+    afterwards, which is the caller's and which backlog item 124 was about.
+
+    `_pytest.capture.CaptureIO` is an `io.TextIOWrapper` subclass and so is this,
+    so the object under the test is the same kind of object a console is.
+    """
+
+    def __init__(self, encoding: str) -> None:
+        super().__init__(io.BytesIO(), encoding=encoding, errors=CALLER_HANDLER,
+                         newline="\n")
+        self.states: list[tuple[str, str | None]] = []
+
+    def write(self, text: str) -> int:
+        self.states.append((self.encoding, self.errors))
+        return super().write(text)
+
+
+def recording_streams(monkeypatch: pytest.MonkeyPatch,
+                      encoding: str) -> tuple[RecordingStream, RecordingStream]:
+    """Install a recording stdout and stderr for the length of one test.
+
+    `monkeypatch` puts the real pair back however the test ends, so a broken
+    restore inside the unit cannot reach another test even while it is being
+    measured.
+    """
+    out, err = RecordingStream(encoding), RecordingStream(encoding)
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(sys, "stderr", err)
+    return out, err
+
+
+def rendered(stream: RecordingStream) -> bytes:
+    """The bytes that reached the buffer under a recording stream."""
+    stream.flush()
+    raw = stream.buffer
+    assert isinstance(raw, io.BytesIO)
+    return raw.getvalue()
+
+
+def handler_spy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[tuple[str | None, str | None]]:
+    """Record both handlers at the first statement of `main`'s body.
+
+    `main` evaluates `_build_parser()` and only then `parse_args(argv)`, so a spy
+    here reads the two handlers from **inside** the `with` block and **before**
+    argv is parsed. It returns the real parser, so the command it is spying on
+    runs exactly as it would without it: this is a spy, not a stub.
+
+    `_build_parser` is bound in this module at import, so the name below is still
+    the real function after `monkeypatch` has replaced the module's attribute.
+    """
+    seen: list[tuple[str | None, str | None]] = []
+
+    def spy() -> argparse.ArgumentParser:
+        seen.append((sys.stdout.errors, sys.stderr.errors))
+        return _build_parser()
+
+    monkeypatch.setattr("ingestion.session_extraction._build_parser", spy)
+    return seen
 
 
 def child(args: list[str], env_overrides: dict[str, str],
@@ -137,6 +246,7 @@ RECORD_STREAMS = (
     "import json, sys\n"
     "from ingestion.session_extraction import main\n"
     "before = (sys.stdout.encoding, sys.stderr.encoding)\n"
+    "errors_before = [sys.stdout.errors, sys.stderr.errors]\n"
     "argv = json.loads(sys.argv[1])\n"
     "try:\n"
     "    code = main(argv)\n"
@@ -144,6 +254,7 @@ RECORD_STREAMS = (
     "    code = exc.code\n"
     "record = {'before': list(before),\n"
     "          'after': [sys.stdout.encoding, sys.stderr.encoding],\n"
+    "          'errors_before': errors_before,\n"
     "          'errors': [sys.stdout.errors, sys.stderr.errors],\n"
     "          'code': code}\n"
     "open(sys.argv[2], 'w', encoding='utf-8').write(json.dumps(record))\n"
@@ -309,42 +420,382 @@ def test_a_detached_stream_is_not_swallowed() -> None:
 
 
 # ===========================================================================
-# 2. `main` wires both streams, before it parses argv
+# 2. `main` wires both streams, before it parses argv — read from inside the run
 # ===========================================================================
 
 @pytest.mark.parametrize("encoding", ["cp1252", "utf-8"])
 def test_main_sets_the_handler_on_stdout_and_stderr_and_moves_neither_encoding(
-    tmp_path: Path, encoding: str,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, encoding: str,
 ) -> None:
-    """Both streams, because `cmd_prompt` sends `parse_pass1`'s table to stderr.
+    """Both streams carry `namereplace` for the whole command, and keep their encoding.
 
-    Run in a subprocess: `main` mutates process-global streams and never restores
-    them (backlog item 124), so calling it here would leak the handler into every
-    later test in this process.
+    **The reading moved inside the block, and that is the repair.** This test used
+    to read `sys.stdout.errors` after `main()` had returned and require
+    `namereplace` there. `main()` now puts the caller's handler back
+    (`P1e-test-order`, backlog item 124), so that reading *is* the leak and
+    asserting it would re-state the defect. The subject is unchanged and is
+    `P14f`'s: the handler is `namereplace` on **both** streams while the command
+    runs, and the encoding is not touched.
+
+    Four expected values, not one of them this code's output:
+
+    * `namereplace` on both streams, from `P14f`: the one standard handler that
+      leaves a reader able to say which character was there;
+    * the encoding is `encoding` before, at every write, and after — because that
+      is what this test built the stream with, and the fix is in the handler;
+    * the handler after the block is `CALLER_HANDLER`, because that is what this
+      test put there and these streams are the caller's, not the module's;
+    * exit 2, because the session file does not exist (P9a step 9).
     """
-    record = run_main_and_record(
-        ["check", str(tmp_path / "no-such-session.json")],
-        tmp_path / "record.json", encoding)
+    out, err = recording_streams(monkeypatch, encoding)
+    inside = handler_spy(monkeypatch)
 
-    assert record["errors"] == ["namereplace", "namereplace"]
-    assert record["after"] == record["before"] == [encoding, encoding]
-    # The session file does not exist, so the command stops: exit 2, by P9a step 9.
-    assert record["code"] == 2
+    code = main(["check", str(tmp_path / "no-such-session.json")])
+
+    # Inside the block, on both streams, before argv is parsed.
+    assert inside == [("namereplace", "namereplace")]
+    # And at every write the command made, which is where it decides a character's
+    # bytes. Non-empty first: a command that printed nothing proves nothing.
+    assert out.states
+    assert set(out.states) == {(encoding, "namereplace")}
+    # The encoding never moved: built with it, written with it, left with it.
+    assert (out.encoding, err.encoding) == (encoding, encoding)
+    # Both handlers are back, so an in-process caller keeps what it had.
+    assert (out.errors, err.errors) == (CALLER_HANDLER, CALLER_HANDLER)
+    assert code == 2
 
 
-def test_main_sets_the_handler_before_it_parses_argv(tmp_path: Path) -> None:
-    """argv that argparse rejects still leaves both streams safe.
+def test_main_sets_the_handler_before_it_parses_argv(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """argv that argparse rejects still prints through a handler that names.
 
     This is what makes one call site cover all six subcommands: the handler is on
     the stream before anything decides which subcommand is running, so `plan`,
     `locate`, `text`, `prompt` and `check` are covered by construction — and so is
     argparse's own usage message, which prints to stderr.
+
+    Measured two ways, both from inside the run, because the old reading (the
+    handler still on the stream after `main()` returned) is backlog item 124:
+
+    * the spy reads both handlers at `_build_parser()`, which `main` evaluates
+      before `parse_args(argv)`;
+    * argparse's error message echoes the rejected subcommand, and the name given
+      here holds `U+2192`, which cp1252 cannot encode. By the codecs
+      error-handler table that message reaches the console as
+      `\\N{RIGHTWARDS ARROW}` under `namereplace`, and as `&#8594;` under the
+      `xmlcharrefreplace` this test put on the stream itself. So the bytes say
+      which handler was in force at a write argparse made before any subcommand
+      existed — and they would have said `&#8594;` had the handler been set after
+      argv was parsed, or not at all.
+    """
+    out, err = recording_streams(monkeypatch, "cp1252")
+    inside = handler_spy(monkeypatch)
+
+    with pytest.raises(SystemExit) as stop:
+        main([f"pass{ARROW}"])
+
+    assert stop.value.code == 2  # argparse's exit code for an unparsable argv
+    assert inside == [("namereplace", "namereplace")]
+    assert err.states
+    assert set(err.states) == {("cp1252", "namereplace")}
+
+    message = rendered(err)
+    assert NAMED_ARROW.encode("ascii") in message
+    assert XMLCHARREF_ARROW not in message
+    # argparse leaves through `SystemExit`, which is not an `Exception`: the
+    # restore is in a `finally` and covers it.
+    assert (out.errors, err.errors) == (CALLER_HANDLER, CALLER_HANDLER)
+
+
+def test_plan_and_locate_go_through_the_block_too(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The two dispatch arms no other test reaches through `main`.
+
+    "One `with` covers every subcommand" is a claim about `main`'s dispatch, and
+    the test above proves only that the handler is on before the dispatch happens.
+    `check` and `prompt` are run through it above; `plan` and `locate` are the two
+    arms nothing else runs through `main` at all, so they are run here and asked
+    the same two questions: every write happened at `namereplace`, and the
+    caller's handler came back.
+
+    Exit 0 twice, because both commands succeed: the skeleton is written to a path
+    that does not exist yet, and the PDF `locate` reads is the one the session file
+    records the hash of.
+    """
+    session_path = session_with_one_filing(tmp_path)
+    data = json.loads(session_path.read_text(encoding="utf-8"))
+    pdf_path = data["filings"][0]["pdf_path"]
+
+    out, err = recording_streams(monkeypatch, "cp1252")
+    plan_code = main(
+        ["plan", pdf_path, "-t", TICKER, "-o", str(tmp_path / "skeleton.json")])
+    locate_code = main(["locate", str(session_path), "--filing", "0"])
+
+    assert (plan_code, locate_code) == (0, 0)
+    assert out.states
+    assert set(out.states) == {("cp1252", "namereplace")}
+    assert (out.errors, err.errors) == (CALLER_HANDLER, CALLER_HANDLER)
+
+
+@pytest.mark.parametrize("encoding", ["cp1252", "utf-8"])
+def test_main_prints_through_both_streams_with_the_handler_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, encoding: str,
+) -> None:
+    """`prompt --pass 2` writes to stdout *and* stderr, and both name the arrow.
+
+    `main` wraps stderr because `cmd_prompt` sends `parse_pass1`'s arithmetic
+    table there. The test above proves the handler is on stderr; this one proves
+    stderr is written to, on the one command backlog item 113 was about, with the
+    handler recorded at each of those writes.
+
+    Expected values: the arrow count is taken from the prompt pair built here out
+    of `claude_extractor`, the command's own input; its rendering is the
+    `namereplace` contract on cp1252 and the UTF-8 encoding rule on utf-8, both
+    stated at the head of this file. Exit 0 because the command succeeds.
+    """
+    session_path = session_with_one_filing(tmp_path)
+    system, user = prompts_for(session_path, 0, 2)
+    arrows = (system + user).count(ARROW)
+    assert arrows == PASS2_SYSTEM_ARROWS  # not a vacuous run
+
+    out, err = recording_streams(monkeypatch, encoding)
+    code = main(["prompt", str(session_path), "--filing", "0", "--pass", "2"])
+
+    assert code == 0
+    assert out.states and err.states  # both streams really were printed through
+    assert set(out.states) == {(encoding, "namereplace")}
+    assert set(err.states) == {(encoding, "namereplace")}
+
+    printed = rendered(out)
+    if encoding == "cp1252":
+        assert printed.count(NAMED_ARROW.encode("ascii")) == arrows
+        assert UTF8_ARROW not in printed
+    else:
+        assert printed.count(UTF8_ARROW) == arrows
+        assert b"\\N{" not in printed
+
+    assert (out.encoding, err.encoding) == (encoding, encoding)
+    assert (out.errors, err.errors) == (CALLER_HANDLER, CALLER_HANDLER)
+
+
+def test_main_puts_both_handlers_back_when_a_subcommand_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An exception `main` does not catch still leaves the caller's streams as they were.
+
+    `main` catches `ValueError` and `FileNotFoundError` and renders them as
+    `ERROR: …`; anything else leaves through the two `with` blocks. The restore is
+    in a `finally`, so the property is "whatever leaves, the handler is back", and
+    the expected handler is the one this test installed — never a value read off a
+    run.
+
+    The stand-in subcommand also records the two handlers at the moment it is
+    called, which is the deepest point inside the block, so this test says the
+    handler was on *and* that it did not stay on.
+    """
+    seen: list[tuple[str | None, str | None]] = []
+
+    def explode(path: Path) -> int:
+        seen.append((sys.stdout.errors, sys.stderr.errors))
+        raise RuntimeError("a subcommand failing in a way main does not catch")
+
+    monkeypatch.setattr("ingestion.session_extraction.cmd_check", explode)
+    out, err = recording_streams(monkeypatch, "cp1252")
+
+    with pytest.raises(RuntimeError, match="does not catch"):
+        main(["check", str(tmp_path / "any.json")])
+
+    assert seen == [("namereplace", "namereplace")]
+    assert (out.errors, err.errors) == (CALLER_HANDLER, CALLER_HANDLER)
+
+
+@pytest.mark.parametrize("encoding", ["cp1252", "utf-8"])
+def test_main_leaves_a_real_process_stream_as_it_found_it(
+    tmp_path: Path, encoding: str,
+) -> None:
+    """The same restore, on the `sys.stdout` and `sys.stderr` Python itself builds.
+
+    The tests above hand `main` a stream this file constructed. This one gives it
+    a child process's real inherited pair, at the console encoding
+    `PYTHONIOENCODING` sets, and asks an identity rather than a value: `main()`
+    does not own those streams, so whatever handler they carried in, they carry
+    out. That holds whatever Python's defaults happen to be, so no part of the
+    expectation comes from a run.
+
+    **This is the assertion backlog item 124 fails.** Before `P1e-test-order` the
+    child read `namereplace` on both streams here, on a call that set it and never
+    put it back.
     """
     record = run_main_and_record(
-        ["no-such-subcommand"], tmp_path / "record.json", "cp1252")
+        ["check", str(tmp_path / "no-such-session.json")],
+        tmp_path / "record.json", encoding)
 
-    assert record["errors"] == ["namereplace", "namereplace"]
-    assert record["code"] == 2  # argparse's exit code for an unparsable argv
+    assert record["errors"] == record["errors_before"]
+    # Not vacuous: `sys`'s documentation gives a piped stdout `strict` and a piped
+    # stderr `backslashreplace`, so neither end of that identity reads
+    # `namereplace` unless this module set it and left it there.
+    assert "namereplace" not in record["errors_before"]
+    assert record["after"] == record["before"] == [encoding, encoding]
+    # The session file does not exist, so the command stops: exit 2, by P9a step 9.
+    assert record["code"] == 2
+
+
+# ===========================================================================
+# 2b. `naming_unencodable_characters`: the block, and what it puts back
+# ===========================================================================
+
+def test_inside_the_block_the_handler_names_and_after_it_the_caller_s_handler_is_back(
+) -> None:
+    """Set for the body, put back on the way out — proved by bytes, not by an attribute.
+
+    The same text is written twice, inside the block and after it, and the two
+    renderings are the two the codecs error-handler table gives for `U+2192`:
+    `\\N{RIGHTWARDS ARROW}` under `namereplace`, `&#8594;` under the
+    `xmlcharrefreplace` this test put on the stream. A restore that only reset the
+    attribute, or one that never ran, cannot produce that pair.
+    """
+    stream = owned_stream("cp1252", CALLER_HANDLER)
+    raw = stream.buffer
+    assert isinstance(raw, io.BytesIO)
+
+    with naming_unencodable_characters(stream) as was_set:
+        assert was_set is True
+        assert stream.errors == "namereplace"
+        assert stream.encoding == "cp1252"
+        stream.write(f"inside {ARROW}\n")
+        stream.flush()
+        inside_bytes = raw.getvalue()
+
+    assert stream.errors == CALLER_HANDLER
+    assert stream.encoding == "cp1252"
+    stream.write(f"after {ARROW}\n")
+    stream.flush()
+    after_bytes = raw.getvalue()[len(inside_bytes):]
+
+    assert inside_bytes == b"inside " + NAMED_ARROW.encode("ascii") + b"\n"
+    assert after_bytes == b"after " + XMLCHARREF_ARROW + b"\n"
+
+
+def test_the_caller_s_handler_is_back_when_the_body_raises() -> None:
+    """The body failing is not a reason to keep a handler the caller did not set."""
+    stream = owned_stream("cp1252", CALLER_HANDLER)
+
+    with pytest.raises(RuntimeError, match="the body failed"), \
+            naming_unencodable_characters(stream):
+        assert stream.errors == "namereplace"
+        raise RuntimeError("the body failed")
+
+    assert stream.errors == CALLER_HANDLER
+
+
+def test_the_caller_s_handler_is_back_on_systemexit() -> None:
+    """argparse's exit path, at the level of the block itself.
+
+    `SystemExit` derives from `BaseException` and not from `Exception`, so a
+    restore written as `except Exception` would miss it and every rejected argv
+    would leak a handler. The restore is a `finally`, which does not.
+    """
+    stream = owned_stream("cp1252", CALLER_HANDLER)
+
+    with pytest.raises(SystemExit) as stop, naming_unencodable_characters(stream):
+        assert stream.errors == "namereplace"
+        raise SystemExit(2)
+
+    assert stop.value.code == 2
+    assert stream.errors == CALLER_HANDLER
+
+
+def test_a_stream_that_does_not_encode_is_yielded_through_with_nothing_set() -> None:
+    """No encode step means nothing can be lost, so there is nothing to set or restore.
+
+    This is not a defaulted figure and there is no missing input to stop on: an
+    object that keeps `str` cannot drop a character, which is the only thing the
+    handler protects. What the test does lock is that the block is a pass-through
+    for such an object — it yields `False`, and it does not reach for
+    `reconfigure` on the way in or on the way out.
+    """
+    class NotAnEncoder:
+        def __init__(self) -> None:
+            self.reconfigured: list[dict[str, Any]] = []
+            self.text = ""
+
+        def reconfigure(self, **kwargs: Any) -> None:
+            self.reconfigured.append(kwargs)
+
+        def write(self, text: str) -> int:
+            self.text += text
+            return len(text)
+
+    stream = NotAnEncoder()
+
+    with naming_unencodable_characters(stream) as was_set:
+        assert was_set is False
+        assert stream.reconfigured == []        # nothing set on the way in
+        stream.write(f"costs {ARROW} remove")
+
+    assert stream.reconfigured == []            # and nothing restored on the way out
+    assert stream.text == f"costs {ARROW} remove"
+
+
+def test_a_handler_that_is_not_a_name_stops_and_names_the_value_and_the_stream() -> None:
+    """Rule 3. `reconfigure(errors=None)` means "leave the handler alone".
+
+    So a stream whose `errors` does not read as a handler name is one the block
+    could set `namereplace` on and never put back — backlog item 124 wearing a
+    quieter face, and silent. It must stop before it sets anything.
+
+    The exception type is part of the requirement, not decoration: `main` catches
+    `ValueError` and renders it as an ordinary `ERROR: …` with exit 2, so a
+    `ValueError` here would be indistinguishable from a bad session file.
+    """
+    class HandlerIsNotAName(io.TextIOWrapper):
+        def __init__(self) -> None:
+            super().__init__(io.BytesIO(), encoding="cp1252", newline="\n")
+            self.reconfigured: list[dict[str, Any]] = []
+
+        @property
+        def errors(self) -> str | None:
+            return None
+
+        def reconfigure(self, **kwargs: Any) -> None:
+            self.reconfigured.append(kwargs)
+
+    stream = HandlerIsNotAName()
+
+    with pytest.raises(TypeError) as stop, naming_unencodable_characters(stream):
+        pytest.fail("the body must not run when the handler cannot be put back")
+
+    assert not isinstance(stop.value, ValueError)  # `main` would have swallowed one
+    message = str(stop.value)
+    assert "None" in message                       # the value it read
+    assert "error handler" in message              # what that value was supposed to be
+    assert "HandlerIsNotAName" in message          # the stream it read it from
+    assert stream.reconfigured == []               # it stopped before it set anything
+
+
+def test_the_outer_stream_is_restored_when_the_inner_one_stops() -> None:
+    """`main` nests two of these blocks. The first must not be left changed by the second.
+
+    stdout is entered, then stderr; if stderr cannot be restored afterwards the
+    whole call fails, and stdout — already set — has to come back. Otherwise the
+    rule 3 stop would itself leak a handler.
+    """
+    class HandlerIsNotAName(io.TextIOWrapper):
+        @property
+        def errors(self) -> str | None:
+            return None
+
+    outer = owned_stream("cp1252", CALLER_HANDLER)
+    inner = HandlerIsNotAName(io.BytesIO(), encoding="cp1252", newline="\n")
+
+    # The two blocks are entered in `main`'s order: stdout, then stderr.
+    with pytest.raises(TypeError), naming_unencodable_characters(outer), \
+            naming_unencodable_characters(inner):
+        pytest.fail("neither body may run")
+
+    assert outer.errors == CALLER_HANDLER
 
 
 # ===========================================================================

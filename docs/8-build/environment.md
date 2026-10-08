@@ -75,8 +75,41 @@ the runtime dependencies and the gates.
 | scipy | 1.18.1 | **1.17.1** |
 | starlette | 1.6.0 | 1.7.0 |
 | pytest | 9.1.1 | 9.1.1 |
+| pytest-randomly | 5.0.0 | not installed yet |
 | ruff | 0.16.8 | 0.16.9 |
 | mypy | 2.3.1 | 2.3.1 |
+
+### `pytest-randomly` shuffles every run, and `-q` hides the seed
+
+**Added by `P1e-test-order` on the user's decision of 2026-10-07**, for backlog item 127:
+without it every run used one fixed order, so a test that passes only because another ran
+first passed forever.
+
+**It shuffles modules and the tests within a module**, so order dependence between files is
+covered. **It does not produce every permutation**: modules stay contiguous blocks, so a
+dependence that needs module Y's test to run *between* two of module X's is unreachable at
+any seed. Do not read "shuffled" as "all orders".
+
+**Measured on 2026-10-08, and it changes how you read a red gate:**
+
+```
+.venv/Scripts/python.exe -m pytest -q  ...   ->  no seed line at all
+.venv/Scripts/python.exe -m pytest     ...   ->  Using --randomly-seed=2667923333
+```
+
+**`-q` suppresses the `Using --randomly-seed=` line.** Every gate command in this document
+uses `-q`, so **a passing gate figure describes one order that was never recorded**. That is
+fine for a pass. It is not fine for a failure.
+
+| What you are doing | What to run |
+|---|---|
+| The ordinary gate | `-m pytest -q --ignore-glob="*_rule3_red.py"` as before |
+| Something went red and you need the order | **re-run without `-q`** to print the seed, then quote it |
+| A measurement you must repeat exactly | `--randomly-seed=<n>` on that one command, and name `<n>` |
+
+**Never use `-p no:randomly`.** It was deleted from nine documents on 2026-10-07 (item 126)
+because it asserted nothing while no plugin was installed. **Now that one is installed, the
+same flag stops being a no-op and becomes a way to switch the guard off.**
 
 **One test result depends on that difference.** On macOS, at `5dc28a0`,
 `tests/unit/test_capm.py::test_beta_stops_when_the_market_series_has_no_variation`

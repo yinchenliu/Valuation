@@ -220,3 +220,92 @@ guard off has produced nothing.
   no scratch copy contains, which is why the scheduling rule above exists. Name the version
   you installed, so it can be undone.
 - The suite takes about 135 to 225 seconds, and this unit runs it at least eleven times.
+
+---
+
+## Overall lead review: `accepted` (2026-10-08)
+
+**Re-run by me, not read.** Windows, `.venv/Scripts/python.exe`, Python 3.14.4, with
+`ANTHROPIC_API_KEY= GEMINI_API_KEY=`.
+
+| Gate | Result |
+|---|---|
+| gate form, seed 7 | **1382 passed, 2 skipped, 0 failed** (143.29s) |
+| gate form, seed 1234 | **1382 passed, 2 skipped, 0 failed** (145.11s) |
+| gate form, seed 99 | **1382 passed, 2 skipped, 0 failed** (137.35s) |
+| gate form, unseeded, **without `-q` so the seed is recorded** | `Using --randomly-seed=2667923333`, **1382 passed, 2 skipped, 0 failed** |
+| full suite | **2 failed, 1382 passed, 2 skipped**, and the two are exactly the two red on purpose, by name |
+| lint | **4 errors, every one `BLE001`**, each named, none in a file this unit wrote |
+| types | **2 errors in 2 files**, 21 checked |
+| census | **64** |
+| route | **200** |
+| write guard | **48/48** |
+| scope | `ingestion/session_extraction.py` +87, `requirements-dev.txt` +1, and the tester's `tests/unit/test_session_extraction_console.py` +501 / −45. Nothing else |
+
+**Four different orders, one result.** That is the first gate figure in this repository's
+history that is not a single ordering, and it is why the unit was worth doing even though
+shuffling found nothing.
+
+### I ran the thinnest mutation myself
+
+The tester reports four mutations and the weakest at **2** red: the rule 3 `TypeError` stop
+made silent. I built it rather than take the count. In `C:\tmp\p1e_accept` I replaced the
+`raise TypeError(...)` with `pass`, which is precisely what makes `reconfigure(errors=None)`
+leave `namereplace` behind — item 124 returning in a quieter form.
+
+```
+control   29 passed
+mutant     2 failed, 27 passed
+    FAILED …::test_a_handler_that_is_not_a_name_stops_and_names_the_value_and_the_stream
+    FAILED …::test_the_outer_stream_is_restored_when_the_inner_one_stops
+```
+
+The repository's `ingestion/session_extraction.py` carries sha256 `55aff340…` before and
+after, the same digest the programmer, the reviewer and the tester each recorded.
+
+### The honest result, stated as the unit's output rather than buried
+
+**Shuffling turned nothing red.** Twelve gate runs over six orders before the fix, four more
+after it. **The programmer said so plainly and then said why it is weaker than it looks**,
+and the reviewer sharpened it: the three tests that observe the handler run in a
+**subprocess**, so they could never have seen an in-process leak at any seed. **Item 124 was
+unfindable by shuffling.** What turned three tests red was the code fix, not the plugin.
+
+So this unit's value is prospective. It bought a guard that has caught nothing yet, and a
+gate figure that now holds across four orders instead of one. Both are real; neither is a
+discovery.
+
+### The finding that decides whether the guard ever pays off
+
+The reviewer's F1, which I re-ran myself: **`-q` suppresses the `Using --randomly-seed=`
+line.** 0 matches with it, `Using --randomly-seed=3689265847` without it. Every documented
+gate command uses `-q`, so a red gate would have recorded no order and been unreproducible.
+**`docs/8-build/environment.md` now says so**, with the three cases: the ordinary gate keeps
+`-q`, a failure is re-run without it to recover the seed, and a repeatable measurement uses
+`--randomly-seed=<n>`.
+
+### The reviewer's structural limit, recorded against item 127
+
+`pytest-randomly` 5.0.0 shuffles modules **and** tests within a module, so item 127's class
+is covered. But **modules stay contiguous blocks**, so a dependence needing module Y's test
+to run *between* two of module X's is unreachable at any seed. That is now in item 127 and in
+`environment.md`, so nobody reads "shuffled" as "all permutations".
+
+### The tester's F4, which it asked me to decide
+
+It treated the non-`TextIOWrapper` path — yield `False`, set nothing, restore nothing — as
+**not** a rule 3 default, and locked the pass-through property rather than a fallback value.
+
+**I agree, and here is the fact that decides it.** Rule 3 is about a **missing input**
+replaced by a default: "a zero that means 'we do not know' and a zero that means 'zero' are
+the same bytes". Here nothing is missing. A stream with no encode step genuinely has no
+unencodable characters to name, so `False` states a fact about that stream rather than
+standing in for a measurement that failed. No figure is invented and no field is absent. The
+tester's reading is right and its test locks the right thing.
+
+### What this closes
+
+**Backlog items 124 and 127 are closed.** Item 126 was already closed by the user's decision
+of 2026-10-07. Items **117 and 140** were closed earlier the same day at `32b3f06` by
+tracking `10K_filings/` and `extractions/`, and the tester measured what their absence had
+cost: a tree without them **skips 12 more tests in silence**, 14 against 2.

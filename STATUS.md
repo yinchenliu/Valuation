@@ -4,10 +4,10 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `309a797` (`P14g-unit-statement-pages` and its tests, one-team mode), 2026-10-07, by the overall lead**, on branch `main`, **on the Windows machine**
+**Measured at `<P1E>` (`P1e-test-order` and its tests, one-team mode), 2026-10-08, by the overall lead**, on branch `main`, **on the Windows machine**
 (`.venv/Scripts/python.exe`, Python 3.14.4), with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`.
 The build moved back to the Windows machine at `0a8ea54`; the figures from `cde33cb` to
-`ac736e7` were measured on the macOS machine. **Forty-seven work units accepted by `69436d9`, twenty more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes`, `P14b-note-figures`, `P14d-finance-leases`, `P3a-one-pipeline`, `P1b-windows-gate`, `P3b-pipeline-stops`, `P1c-test-network-copies`, `P1d-skipped-filings`, `P3c-one-number`, `P14e-nri-dedupe`, `P14f-prompt-encoding`, `P3d-invisible-year`, `P14g-unit-statement-pages` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
+`ac736e7` were measured on the macOS machine. **Forty-seven work units accepted by `69436d9`, twenty-one more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes`, `P14b-note-figures`, `P14d-finance-leases`, `P3a-one-pipeline`, `P1b-windows-gate`, `P3b-pipeline-stops`, `P1c-test-network-copies`, `P1d-skipped-filings`, `P3c-one-number`, `P14e-nri-dedupe`, `P14f-prompt-encoding`, `P3d-invisible-year`, `P14g-unit-statement-pages`, `P1e-test-order` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; **nine** times a reviewer, a
 programmer or a tester overturned a claim — **three times against a programmer**, **four times
 against the orchestrator**, once against a tester, and once by a tester against its own
@@ -64,10 +64,10 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `309a797` (Windows) |
+| Gate | Command | Result at `<P1E>` (Windows) |
 |---|---|---|
-| Tests | `.venv/Scripts/python.exe -m pytest -q` | **1374 tests. 1370 pass, 2 fail**, plus 2 skipped: the 2 red on purpose. **Item 101 is closed**, so the only skips left are the Chipotle and Okta filings, which this machine does not hold |
-| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **1370 passed, 2 skipped, 0 failed** in 134.72s, with or without the empty-key prefix: `tests/conftest.py` empties both API keys for every test. `P3d-invisible-year` added 33 and `P14g-unit-statement-pages` added 113 |
+| Tests | `.venv/Scripts/python.exe -m pytest -q` | **1386 tests. 1382 pass, 2 fail**, plus 2 skipped: the 2 red on purpose. **Item 101 is closed**, so the only skips left are the Chipotle and Okta filings, which this machine does not hold |
+| **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **1382 passed, 2 skipped, 0 failed**, measured at **four different orders** — seeds 7, 1234, 99 and unseeded `2667923333` — which is the first gate figure here that is not a single ordering, with or without the empty-key prefix: `tests/conftest.py` empties both API keys for every test. `P3d-invisible-year` added 33, `P14g-unit-statement-pages` added 113 and `P1e-test-order` added 12 |
 | Lint | `.venv/Scripts/python.exe -m ruff check .` | **4 errors**, every one `BLE001`: `api/routes_valuation.py:463` and `:745`, `cli.py:1411`, `tests/test_e2e_all_googl.py:106`. The three line numbers moved under `P3d`; they are the same three sites. **Count them with `ruff check .`, never with a run over a subset of files** — see the overturn above |
 | Types | `.venv/Scripts/python.exe -m mypy models analysis ingestion api config.py app.py pipeline.py --ignore-missing-imports` | **2 errors in 2 files**, 21 files checked, 0 in `pipeline.py`: `analysis/projector.py:395` and `api/routes_upload.py:28`. **`P3d` removed three**, all at `analysis/projector.py`, and they were exactly the `None.revenue` crash site that unit was written to close. `P3b` removed one by widening `plan_filings` and `extract_multi_year` to `Sequence`. `P3a` removed two in `api/routes_valuation.py`; `P15a` removed one before that |
 | **Routes** | `TestClient(app.app, raise_server_exceptions=False).get('/')` | **200** |
@@ -656,6 +656,8 @@ the headline. Re-ranked at `622262b`.
 | 113 | `session_extraction prompt --pass 2` exited 2 on a Windows console | `c9cb45e` (`P14f-prompt-encoding`) |
 | 116 | A year with a cash flow statement and a balance sheet and no income statement was in no table, and the branch written to report it could not run | `e5d8f0a` (`P3d-invisible-year`) |
 | 114 | The two unit-scale checks disagreed about where a unit statement may be printed, so a correct reading of a split income statement stopped the run | `309a797` (`P14g-unit-statement-pages`) |
+| 117, 140 | Two guards were absent on every machine but one, because `extractions/` and `10K_filings/` were git-ignored. A tree without them skips 12 more tests in silence | `32b3f06`, on the user's instruction |
+| 124, 127 | `main()` left a changed error handler on a stream it did not own; and no test-order guard existed | `<P1E>` (`P1e-test-order`) |
 | 126 | `-p no:randomly` was in nine live and recorded documents and asserted nothing | the user's decision "1a", 2026-10-07. The flag is deleted from every live document; journal entries and accepted assignments keep it as the record of what was run. **What it leaves behind is item 127** |
 
 **At `a64818b` these tables hold 24 closed items and 37 open ones** (item 23 appears twice above). They are the headline, not the whole list: items 55, 57, 58, 60 and 61 are open in the backlog and not shown here. Items 19 to 28 did not exist when this build
@@ -819,6 +821,47 @@ broken versions of it.** The boundary is visible only in hand-built cases. The t
 assignment carried that as three criteria, the tests are hand-built, and the real file
 appears once, labelled a regression guard. **This is the sharpest example in the
 repository of a real input proving less than a constructed one.**
+
+**`P1e-test-order` and its tests are accepted at `<P1E>`, 2026-10-08.** They close items 124
+and 127, on the user's decision "1a" of 2026-10-07: install `pytest-randomly`. **The suite
+now runs in a different order every time**, and the gate figure above was taken at four
+orders rather than one.
+
+**Read this unit for how a negative result should be reported.** Shuffling turned **nothing**
+red — sixteen gate runs across ten orders, each with the same failing set. The programmer
+reported that as a negative result and then said, unprompted, why it is weaker than it looks:
+**item 124, the one known order leak, could never have been found this way**, because no test
+asserts on an encoding failure. The reviewer sharpened it: the three tests that *do* observe
+the handler run in a **subprocess**, so they could not see an in-process leak at any seed.
+**What turned three tests red was the code fix, not the plugin.** The guard's value is
+entirely prospective, and nobody dressed it up as a discovery.
+
+**One finding decides whether that guard ever pays off, and it was found by reading the
+output rather than the code.** `-q` suppresses the `Using --randomly-seed=` line: 0 matches
+with it, `Using --randomly-seed=2667923333` without it. Every documented gate command uses
+`-q`, so a red gate would have recorded **no order** and been unreproducible — the guard would
+catch something and lose it in the same breath. `docs/8-build/environment.md` now states the
+three cases, and the structural limit beside it: `pytest-randomly` shuffles modules **and**
+tests within a module, but **modules stay contiguous blocks**, so "shuffled" is not "all
+permutations".
+
+**Item 124's fix is a restore, chosen against the obvious alternative.** `main()` now runs
+inside a context manager that reads the handler, sets `namereplace`, and puts it back in a
+`finally`. A `__main__` guard would have been simpler and wrong: `main(argv)` is called
+in-process by a test, and a guard would have handed that caller item 113 back. The reviewer
+measured the `finally` on **bytes** rather than reasoning about it — through a
+non-write-through wrapper, both arrows survive as their Unicode names in the buffer after the
+restore has run.
+
+**The tester's job was to repair three tests whose failing assertion *was* the defect, and
+the measure of it is what it did not delete.** Only **two** assertion lines were removed from
+the whole file, both the leak itself; every test function present at `HEAD` still exists; and
+the six subprocess tests are **byte-identical** to `HEAD`. Both subjects moved **inside** the
+run instead of being dropped: one to a spy on `_build_parser`, which `main` evaluates before
+`parse_args`, and one to a byte reading where argparse's own error message spells
+`\N{RIGHTWARDS ARROW}` — which only `namereplace` produces — at a write made before any
+subcommand existed. Four mutations, none survived: removing the `finally` turns **13** red,
+including all three repaired tests, which is the proof the subject survived the repair.
 
 **`P14g-unit-statement-pages` and its tests are accepted at `309a797`, 2026-10-07.** They
 close item 114. Two checks decided where a printed unit statement may sit and they did not
