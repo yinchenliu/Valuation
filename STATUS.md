@@ -4,7 +4,7 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `<P1F>` (`P1f-worktree-guards` and its tests, one-team mode), 2026-10-08, by the overall lead**, on branch `main`, **on the Windows machine**
+**Measured at `053463c` (`P1f-worktree-guards` and its tests, one-team mode), 2026-10-08, by the overall lead**, on branch `main`, **on the Windows machine**
 (`.venv/Scripts/python.exe`, Python 3.14.4), with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`.
 The build moved back to the Windows machine at `0a8ea54`; the figures from `cde33cb` to
 `ac736e7` were measured on the macOS machine. **Forty-seven work units accepted by `69436d9`, twenty-two more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes`, `P14b-note-figures`, `P14d-finance-leases`, `P3a-one-pipeline`, `P1b-windows-gate`, `P3b-pipeline-stops`, `P1c-test-network-copies`, `P1d-skipped-filings`, `P3c-one-number`, `P14e-nri-dedupe`, `P14f-prompt-encoding`, `P3d-invisible-year`, `P14g-unit-statement-pages`, `P1e-test-order`, `P1f-worktree-guards` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
@@ -64,7 +64,7 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-| Gate | Command | Result at `<P1F>` (Windows) |
+| Gate | Command | Result at `053463c` (Windows) |
 |---|---|---|
 | Tests | `.venv/Scripts/python.exe -m pytest -q` | **1588 tests. 1584 pass, 2 fail**, plus 2 skipped: the 2 red on purpose. **Item 101 is closed**, so the only skips left are the Chipotle and Okta filings, which this machine does not hold |
 | **Tests, the gate form** | `... -m pytest -q --ignore-glob="*_rule3_red.py"` | **1584 passed, 2 skipped, 0 failed**, measured at **three different orders** — seeds 7, 1234 and 99 — which is the first gate figure here that is not a single ordering, with or without the empty-key prefix: `tests/conftest.py` empties both API keys for every test. `P3d-invisible-year` added 33, `P14g-unit-statement-pages` added 113 and `P1e-test-order` added 12 and `P1f-worktree-guards` added 202 |
@@ -658,7 +658,7 @@ the headline. Re-ranked at `622262b`.
 | 114 | The two unit-scale checks disagreed about where a unit statement may be printed, so a correct reading of a split income statement stopped the run | `309a797` (`P14g-unit-statement-pages`) |
 | 117, 140 | Two guards were absent on every machine but one, because `extractions/` and `10K_filings/` were git-ignored. A tree without them skips 12 more tests in silence | `32b3f06`, on the user's instruction |
 | 124, 127 | `main()` left a changed error handler on a stream it did not own; and no test-order guard existed | `f08cb16` (`P1e-test-order`) |
-| 142 | The write guard was off inside a git worktree: every path outside `CLAUDE_PROJECT_DIR` was allowed without a role check | `<P1F>` (`P1f-worktree-guards`) |
+| 142 | The write guard was off inside a git worktree: every path outside `CLAUDE_PROJECT_DIR` was allowed without a role check | `053463c` (`P1f-worktree-guards`) |
 | 126 | `-p no:randomly` was in nine live and recorded documents and asserted nothing | the user's decision "1a", 2026-10-07. The flag is deleted from every live document; journal entries and accepted assignments keep it as the record of what was run. **What it leaves behind is item 127** |
 
 **At `a64818b` these tables hold 24 closed items and 37 open ones** (item 23 appears twice above). They are the headline, not the whole list: items 55, 57, 58, 60 and 61 are open in the backlog and not shown here. Items 19 to 28 did not exist when this build
@@ -823,7 +823,7 @@ assignment carried that as three criteria, the tests are hand-built, and the rea
 appears once, labelled a regression guard. **This is the sharpest example in the
 repository of a real input proving less than a constructed one.**
 
-**`P1f-worktree-guards` and its tests are accepted at `<P1F>`, 2026-10-08.** They close
+**`P1f-worktree-guards` and its tests are accepted at `053463c`, 2026-10-08.** They close
 backlog item 142 and repair item 141's logic. **The write guard was off inside a git
 worktree**, measured by executing the hook on two payloads with the same role and the same
 repository-relative target: a `tester` writing `<project>/analysis/dcf.py` was denied by
