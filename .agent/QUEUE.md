@@ -82,6 +82,49 @@ you are the main agent, and will dispatch subagents to finish the build"). The o
 lead writes every assignment, dispatches the programmer, code reviewer and tester as
 Claude subagents, and reports to the user only.
 
+## The pilot: two teams, not three (the user's decision, 2026-10-08)
+
+**Two worktrees, two branches, two units at a time.** The user chose a pilot run rather than
+the full three.
+
+**Two is not a smaller three. It is the smallest number that tests anything new**, because
+every defect this scheme exposes needs exactly two agents in flight, and no more:
+
+- backlog item 141, the seal clearing the first of two agents, needs two.
+- backlog item 143, the seal never firing at all, needs one.
+- backlog item 142, the write guard off in a worktree, needs one.
+
+So the pilot buys the whole measurement at the lowest blast radius, and a third team would
+add contention without adding a case.
+
+**What the pilot must be, to be worth running:**
+
+1. **Two SMALL units with disjoint Files in scope.** The pilot tests the machinery, not the
+   throughput. A failure must be cheap to diagnose and cheap to throw away.
+2. **Neither unit may touch `STATUS.md`, `.agent/QUEUE.md`, `.agent/journal/INDEX.md` or the
+   backlog.** Those four are append-mostly and every merge would conflict on them. The
+   overall lead writes them on `main`, after each merge. Subagents already write one journal
+   file each, with a unique name, and those never conflict.
+3. **Neither unit may install anything.** The venv is shared across worktrees, so a unit like
+   `P1e-test-order` can never be parallel under any scheme.
+4. **Merge one at a time, and run the gate after EACH merge, not once at the end.** Unit A
+   passes alone and unit B passes alone; nothing has run A and B together until the merge.
+   Gating after each one names the culprit; gating once does not.
+5. **A worktree has no `.venv`.** Commands use the main checkout's interpreter by absolute
+   path. Measured on 2026-10-08: a fresh worktree ran `tests/unit/test_p14g_unit_statement_pages.py`
+   at **113 passed** against the real Walmart PDF that way. `10K_filings/` and `extractions/`
+   are tracked since `32b3f06`, so a worktree carries them.
+
+**Candidate pairs, disjoint by construction.** Both are small, both are real defects, and
+neither touches the other's files:
+
+| Team | Item | Files in scope |
+|---|---|---|
+| A | 133, the two surviving `if target_years:` sites | `ingestion/claude_extractor.py` |
+| B | 128, the CLI reconciliation iterating `raw.years` where the page iterates the union | `cli.py`, `api/routes_valuation.py` |
+
+**Not started until `P1f-worktree-guards` and `P1g-seal-wiring` are both accepted.**
+
 | # | Unit | Assignment | State | Backlog items | Notes |
 |---|---|---|---|---|---|
 | 0 | `P1b-windows-gate` | [P1b-windows-gate.md](assignments/P1b-windows-gate.md) | `accepted` | 93 | the build moved to the Windows machine, where 14 tests fail for two reasons that no product defect causes: a `_no_socket` fixture that breaks the Windows asyncio self-pipe (13), and an argparse message that differs between Python 3.11 and 3.14 (1). A tester unit, `tests/` only. **Runs in parallel with `P3b-pipeline-stops`: disjoint files** |
