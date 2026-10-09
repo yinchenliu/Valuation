@@ -135,3 +135,35 @@ Each sits in `ingestion/session_extraction.py`. Leave them alone.
 - 120 — the repeated `[MERGE]` summary line.
 - 123, 125 — the discarded `bool` and the replaced `surrogateescape` handler.
 - 146 — `cmd_plan` writes absolute PDF paths into a session file.
+
+## Handoff
+
+### Commits
+- `42034c2`: `P1h-mac-gate: stream-handler stop names the stream's class on every Python (item 145)`
+
+### Verdicts
+- Programmer: `complete`, entry: `.agent/journal/2026-10-09T0121-programmer-p1h-mac-gate.md`
+- Code reviewer: `approved`, entry: `.agent/journal/2026-10-09T0133-code_reviewer-p1h-mac-gate.md`
+- Tester: `pass`, entry: `.agent/journal/2026-10-09T0135-tester-p1h-mac-gate.md`
+
+### Gates
+- Test gate (seed 7): `0 failed, 1589 passed, 0 skipped in 33.48s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=7`)
+- Test gate (seed 1234): `0 failed, 1589 passed, 0 skipped in 34.06s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=1234`)
+- Test gate (seed 99): `0 failed, 1589 passed, 0 skipped in 33.53s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=99`)
+- Full suite (seed 7): `2 failed, 1589 passed in 33.83s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -p no:cacheprovider --randomly-seed=7`)
+  Failures are only the two intentional red tests: `test_an_extraction_with_no_income_statements_stops_and_names_the_input` and `test_valuation_with_session_file_and_files_on_a_cache_hit_stops`.
+- Defect test: `1 passed in 0.02s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -p no:cacheprovider "tests/unit/test_session_extraction_console.py::test_a_handler_that_is_not_a_name_stops_and_names_the_value_and_the_stream"`)
+- New unit tests: `3 passed in 0.03s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/test_p1h_mac_gate.py`)
+- Lint: `4 errors`, all `BLE001`, 0 in unit files (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m ruff check .`)
+- Types: `2 errors in 2 files` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m mypy models analysis ingestion api config.py app.py pipeline.py --ignore-missing-imports`)
+- Rule 3 census: `64` (`grep -rnE "if [^)]+ else 0(\.0)?\b|\bor +0(\.0)?\b|\.get\([^,]+, *0(\.0)?\)|: *float *= *0\.0" '--include=*.py' models analysis api ingestion pipeline.py | wc -l`)
+- Web root: HTTP 200 (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -c "from starlette.testclient import TestClient; from app import app; print(TestClient(app).get('/').status_code)"`)
+
+### Findings and notes
+- Criterion 9 (mutation kill): 3 of 3 tests in `tests/unit/test_p1h_mac_gate.py` killed the mutation when `{type(stream).__name__} ` was removed on Python 3.11 (`3 failed in 0.04s` with `AssertionError: assert '<SubclassName>' in ...`), and passed when restored (`3 passed in 0.03s`).
+- Test file `tests/unit/test_session_extraction_console.py` was not modified (`git diff main -- tests/unit/test_session_extraction_console.py` produced no output).
+- Pre-existing backlog items 53, 60, 95, 120, 123, 125, 146 in `ingestion/session_extraction.py` remain untouched.
+
+### Questions for the overall lead
+None.
+

@@ -1230,7 +1230,8 @@ def naming_unencodable_characters(stream: object) -> Iterator[bool]:
         raise TypeError(
             "cannot name unencodable characters on this stream: its error handler "
             f"reads as {previous!r}, which is not a handler name, so the handler "
-            f"this would set could not be put back afterwards. Stream: {stream!r}")
+            f"this would set could not be put back afterwards. Stream: "
+            f"{type(stream).__name__} {stream!r}")
     was_set = name_unencodable_characters(stream)
     try:
         yield was_set
