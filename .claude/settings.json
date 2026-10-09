@@ -13,9 +13,10 @@
             "statusMessage": "Checking the unit's file scope"
           }
         ]
-      },
+      }
+    ],
+    "SubagentStart": [
       {
-        "matcher": "Agent|Task|SendMessage",
         "hooks": [
           {
             "type": "command",

@@ -36,6 +36,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROLES = {"programmer", "code-reviewer", "tester"}
@@ -94,12 +95,41 @@ def main() -> None:
     except (ValueError, OSError):
         sys.exit(0)
 
-    if (data.get("agent_type") or "").strip() not in ROLES:
-        sys.exit(0)
-
     cwd = data.get("cwd") or os.getcwd()
     project = os.environ.get("CLAUDE_PROJECT_DIR") or cwd
     root = Path(project)
+
+    # Recorded BEFORE the role check below, and it has to be, for the same
+    # reason `seal_baseline.py` records its own: backlog item 143. This hook was
+    # configured on `SubagentStop` for weeks and never observably ran, and the
+    # role check is one candidate explanation -- if the stop payload carries no
+    # `agent_type`, or one this repository does not expect, the hook exits here
+    # and looks exactly like a hook that never fired. Recording first is the
+    # only way to tell those apart.
+    #
+    # Key names, `agent_type` and `agent_id` only. A payload carries prompts,
+    # and a prompt does not belong in a file the repository keeps.
+    try:
+        path = root / BASELINE
+        seen = json.loads(path.read_text())
+        if not isinstance(seen, dict):
+            seen = {}
+    except (OSError, ValueError):
+        seen = {}
+    seen["last_stop_seen"] = {
+        "payload_keys": sorted(data.keys()),
+        "agent_type": (data.get("agent_type") or "").strip(),
+        "agent_id": data.get("agent_id") or "",
+        "seen_at": datetime.now(UTC).isoformat(),
+    }
+    try:
+        (root / BASELINE).parent.mkdir(parents=True, exist_ok=True)
+        (root / BASELINE).write_text(json.dumps(seen, indent=2) + "\n")
+    except OSError:
+        pass
+
+    if (data.get("agent_type") or "").strip() not in ROLES:
+        sys.exit(0)
 
     try:
         baseline = json.loads((root / BASELINE).read_text())
