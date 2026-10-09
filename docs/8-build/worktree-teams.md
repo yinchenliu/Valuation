@@ -183,7 +183,7 @@ seen five times on 2026-10-08.
 
 | Team | Unit | Backlog item | Files in scope |
 |---|---|---|---|
-| A | `P1h-mac-gate` | **145**, the stream-handler stop hides a subclass on Python 3.11 | `ingestion/session_extraction.py`, `tests/unit/test_p1h_mac_gate.py` |
+| A, done | `P1h-mac-gate` | **145**, accepted in round 2 and merged as `d13be2d` | `ingestion/session_extraction.py`, `tests/unit/test_p1h_mac_gate.py` |
 | B | `P14h-target-years` | **133**, an empty year list reads as "all years" in two prompt builders | `ingestion/claude_extractor.py`, `tests/unit/test_p14h_target_years.py` |
 | B, done | `P3e-reconciliation-years` | **128**, accepted and merged as `f4059c7` | `cli.py`, `tests/unit/test_p3e_reconciliation_years.py` |
 
