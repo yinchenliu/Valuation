@@ -320,3 +320,24 @@ None.
 
 None.
 
+
+## Overall lead review, round 2
+
+**2026-10-08. Verdict: `accepted`.** Branch `unit/team-b` at `3ad257e` (the tester's fix)
+and `45bd99b` (the handoff, committed with the unit, no amend). F1 and F2 are answered, and
+this is **the first unit in the pilot whose tests a code reviewer reviewed** (test-review
+mode, `.agent/journal/2026-10-09T0249-code_reviewer-p14h-target-years-tests.md`).
+
+| # | Check | I measured | Agree? |
+|---|---|---|---|
+| F1 | the hash tests are gone | 17 tests, none reads `extractions/WMT.json`; the six hashes are in the handoff as the criterion 4 measurement | yes |
+| F2 | no path depends on the working directory | the 17 tests pass from the repository root and from `/tmp`; no `Path("…")` relative literal is left | yes |
+| 6 | the tests kill the old code | in a scratch worktree with `main`'s builders: **8 failed, 9 passed**; restored 17 passed | yes |
+| T3 | no fallback asserted | the search finds 0 lines | yes |
+| 9 | scope | the two files in scope, two assignment files, five journal entries | yes |
+
+**One note on the test review, for the next one.** Its "Pre-existing" table cites backlog
+items 21, 52 and 114 for `tests/test_e2e_all_googl.py:106`, `analysis/projector.py:395` and
+`api/routes_valuation.py:463, 745`. Those items describe other defects: the three `except`
+sites are item 8 and the type error is item 11. **Cite a backlog item only after reading
+its row.** It moves no finding: none of those lines is this unit's.
