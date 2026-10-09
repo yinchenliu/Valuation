@@ -139,7 +139,7 @@ Each sits in `ingestion/session_extraction.py`. Leave them alone.
 ## Handoff
 
 ### Commits
-- `42034c2`: `P1h-mac-gate: stream-handler stop names the stream's class on every Python (item 145)`
+- `3b1225d`: `P1h-mac-gate: stream-handler stop names the stream's class on every Python (item 145)`
 
 ### Verdicts
 - Programmer: `complete`, entry: `.agent/journal/2026-10-09T0121-programmer-p1h-mac-gate.md`
@@ -230,3 +230,33 @@ make a new commit; do not amend**, so the record shows both rounds.
 3. Commit on `unit/team-a` as a new commit, append `## Handoff, round 2` with the commit,
    the counts and the commands, and tell the user "P1h-mac-gate is ready for the overall
    lead".
+
+## Handoff, round 2
+
+### Commits
+- `c227cc0`: `P1h-mac-gate rework: remove interpreter-dependent preconditions from tests (F1)`
+
+### Verdicts
+- Tester: `pass` (round 2), entry: `.agent/journal/2026-10-09T0155-tester-p1h-mac-gate-r2.md`
+
+### Gates
+- Test gate (seed 7): `0 failed, 1589 passed, 0 skipped in 32.33s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=7`)
+- Test gate (seed 1234): `0 failed, 1589 passed, 0 skipped in 33.24s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=1234`)
+- Test gate (seed 99): `0 failed, 1589 passed, 0 skipped in 32.39s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=99`)
+- Full suite (seed 7): `2 failed, 1589 passed in 31.51s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -p no:cacheprovider --randomly-seed=7`)
+  Failures are only the two intentional red tests: `test_an_extraction_with_no_income_statements_stops_and_names_the_input` and `test_valuation_with_session_file_and_files_on_a_cache_hit_stops`.
+- Defect test: `1 passed in 0.02s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -p no:cacheprovider "tests/unit/test_session_extraction_console.py::test_a_handler_that_is_not_a_name_stops_and_names_the_value_and_the_stream"`)
+- Unit tests: `3 passed in 0.02s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/test_p1h_mac_gate.py`)
+- Lint: `4 errors`, all `BLE001`, 0 in unit files (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m ruff check .`)
+- Types: `2 errors in 2 files` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m mypy models analysis ingestion api config.py app.py pipeline.py --ignore-missing-imports`)
+- Rule 3 census: `64` (`grep -rnE "if [^)]+ else 0(\.0)?\b|\bor +0(\.0)?\b|\.get\([^,]+, *0(\.0)?\)|: *float *= *0\.0" '--include=*.py' models analysis api ingestion pipeline.py | wc -l`)
+- Web root: HTTP 200 (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -c "from starlette.testclient import TestClient; from app import app; print(TestClient(app).get('/').status_code)"`)
+
+### Findings and notes
+- F1 (tester): resolved. Removed three interpreter-dependent precondition assertions (`assert "<ClassName>" not in repr(stream)`), comments, and docstring line in `tests/unit/test_p1h_mac_gate.py`. Retained `expected_stream_prefix` check requiring `Stream: <ClassName> ` to precede `repr(stream)`. All 3 tests pass on Python 3.11 (`3 passed in 0.02s`).
+- Criterion 9 (mutation kill): 3 of 3 tests in `tests/unit/test_p1h_mac_gate.py` killed the mutant when `{type(stream).__name__} ` was removed on Python 3.11 (`3 failed in 0.04s` with `AssertionError: assert '<SubclassName>' in ...`), and passed when restored (`3 passed in 0.02s`).
+- F2 (record): resolved. Corrected round 1 handoff commit from `42034c2` to `3b1225d` (the commit on the branch). Rework committed as new commit `c227cc0` on `unit/team-a` without amending.
+
+### Questions for the overall lead
+None.
+
