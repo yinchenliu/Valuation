@@ -135,3 +135,145 @@ Each sits in `ingestion/session_extraction.py`. Leave them alone.
 - 120 — the repeated `[MERGE]` summary line.
 - 123, 125 — the discarded `bool` and the replaced `surrogateescape` handler.
 - 146 — `cmd_plan` writes absolute PDF paths into a session file.
+
+## Handoff
+
+### Commits
+- `3b1225d`: `P1h-mac-gate: stream-handler stop names the stream's class on every Python (item 145)`
+
+### Verdicts
+- Programmer: `complete`, entry: `.agent/journal/2026-10-09T0121-programmer-p1h-mac-gate.md`
+- Code reviewer: `approved`, entry: `.agent/journal/2026-10-09T0133-code_reviewer-p1h-mac-gate.md`
+- Tester: `pass`, entry: `.agent/journal/2026-10-09T0135-tester-p1h-mac-gate.md`
+
+### Gates
+- Test gate (seed 7): `0 failed, 1589 passed, 0 skipped in 33.48s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=7`)
+- Test gate (seed 1234): `0 failed, 1589 passed, 0 skipped in 34.06s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=1234`)
+- Test gate (seed 99): `0 failed, 1589 passed, 0 skipped in 33.53s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=99`)
+- Full suite (seed 7): `2 failed, 1589 passed in 33.83s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -p no:cacheprovider --randomly-seed=7`)
+  Failures are only the two intentional red tests: `test_an_extraction_with_no_income_statements_stops_and_names_the_input` and `test_valuation_with_session_file_and_files_on_a_cache_hit_stops`.
+- Defect test: `1 passed in 0.02s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -p no:cacheprovider "tests/unit/test_session_extraction_console.py::test_a_handler_that_is_not_a_name_stops_and_names_the_value_and_the_stream"`)
+- New unit tests: `3 passed in 0.03s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/test_p1h_mac_gate.py`)
+- Lint: `4 errors`, all `BLE001`, 0 in unit files (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m ruff check .`)
+- Types: `2 errors in 2 files` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m mypy models analysis ingestion api config.py app.py pipeline.py --ignore-missing-imports`)
+- Rule 3 census: `64` (`grep -rnE "if [^)]+ else 0(\.0)?\b|\bor +0(\.0)?\b|\.get\([^,]+, *0(\.0)?\)|: *float *= *0\.0" '--include=*.py' models analysis api ingestion pipeline.py | wc -l`)
+- Web root: HTTP 200 (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -c "from starlette.testclient import TestClient; from app import app; print(TestClient(app).get('/').status_code)"`)
+
+### Findings and notes
+- Criterion 9 (mutation kill): 3 of 3 tests in `tests/unit/test_p1h_mac_gate.py` killed the mutation when `{type(stream).__name__} ` was removed on Python 3.11 (`3 failed in 0.04s` with `AssertionError: assert '<SubclassName>' in ...`), and passed when restored (`3 passed in 0.03s`).
+- Test file `tests/unit/test_session_extraction_console.py` was not modified (`git diff main -- tests/unit/test_session_extraction_console.py` produced no output).
+- Pre-existing backlog items 53, 60, 95, 120, 123, 125, 146 in `ingestion/session_extraction.py` remain untouched.
+
+### Questions for the overall lead
+None.
+
+
+## Overall lead review
+
+**Round 1, 2026-10-08. Verdict: `rework`. One finding to fix (F1), one record to correct
+(F2).** The code change is accepted as it stands: the programmer does not run again.
+
+### What I re-ran, from this worktree, with the empty-key prefix
+
+| # | Criterion | I measured | Agree? |
+|---|---|---|---|
+| 1 | the defect test passes, unchanged | `1 passed` | yes |
+| 2 | `test_session_extraction_console.py` unchanged | empty diff | yes |
+| 3 | gate form, seeds 7, 1234, 99 | `1589 passed` at each, 0 failed, 0 skipped | yes |
+| 4 | full suite | `2 failed, 1589 passed`, the two `*_rule3_red.py` tests | yes |
+| 5 | lint | `4 errors`, all `BLE001`, none in a unit file | yes |
+| 6 | types | `2 errors in 2 files` | yes |
+| 7 | census | `64` | yes |
+| 8 | scope | the 2 files in scope, 2 assignment files, 3 journal entries | yes |
+| 9 | mutation | I removed `{type(stream).__name__} ` in a scratch worktree: `4 failed` (the 3 new tests and the defect test); restored: `4 passed` | yes, **on Python 3.11 only** — see F1 |
+
+### F1 — the three new tests fail on the Windows machine. Fix it.
+
+**The fact.** `tests/unit/test_p1h_mac_gate.py:71`, `:104` and `:131` each assert
+`"<ClassName>" not in repr(stream)`, as a "precondition". That asserts a property of the
+**interpreter**, not of the code. On Python 3.13 and later, `repr()` of a `TextIOWrapper`
+subclass names the subclass. The proof is in this repository: at `82ac523` on the Windows
+machine (Python 3.14.4), `test_a_handler_that_is_not_a_name_stops_and_names_the_value_and_the_stream`
+passed while the message carried `{stream!r}` and nothing else, and it asserts the subclass
+name.
+
+**What follows.** On the Windows machine all 3 new tests go red against correct code. I
+cannot run 3.14 here, so I gave the three classes a `repr` that names the subclass, as 3.14
+prints it, and ran the tests on the correct code: **3 of 3 fail, each at its precondition
+line.** That is item 145 again, in the other direction.
+
+**The fix, in `tests/unit/test_p1h_mac_gate.py` only (a tester change; the programmer does
+not run).** Delete the three `assert "<ClassName>" not in repr(stream)` lines, their
+`# Precondition` comments, and the docstring line "repr(stream) on Python 3.11 omits the
+subclass name". The `expected_stream_prefix` assertion already carries the test: it needs
+`Stream: <ClassName> ` before the `repr`, which only the fix writes. **I measured that fix
+before asking for it**, on a scratch copy, under both `repr` forms:
+
+| Code | Python 3.11 `repr` | 3.14-style `repr` |
+|---|---|---|
+| correct code | 3 pass | 3 pass |
+| mutant (class name removed) | 3 FAIL | 3 FAIL |
+
+Do not add a `skipif` on the Python version. A test that kills the mutant on both machines
+is the aim, and the fix above is one.
+
+### F2 — the handoff names a commit that is not on the branch. Correct it.
+
+`## Handoff` names `42034c2`. The branch holds `3b1225d`: the reflog shows
+`commit (amend)` from `42034c2`. Name the commit that is on the branch. **For the rework,
+make a new commit; do not amend**, so the record shows both rounds.
+
+### To finish the rework
+
+1. Dispatch the tester with F1. It changes `tests/unit/test_p1h_mac_gate.py` only.
+2. Re-run criterion 9 and the gates (criteria 3 to 8).
+3. Commit on `unit/team-a` as a new commit, append `## Handoff, round 2` with the commit,
+   the counts and the commands, and tell the user "P1h-mac-gate is ready for the overall
+   lead".
+
+## Handoff, round 2
+
+### Commits
+- `c227cc0`: `P1h-mac-gate rework: remove interpreter-dependent preconditions from tests (F1)`
+
+### Verdicts
+- Tester: `pass` (round 2), entry: `.agent/journal/2026-10-09T0155-tester-p1h-mac-gate-r2.md`
+
+### Gates
+- Test gate (seed 7): `0 failed, 1589 passed, 0 skipped in 32.33s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=7`)
+- Test gate (seed 1234): `0 failed, 1589 passed, 0 skipped in 33.24s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=1234`)
+- Test gate (seed 99): `0 failed, 1589 passed, 0 skipped in 32.39s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=99`)
+- Full suite (seed 7): `2 failed, 1589 passed in 31.51s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -p no:cacheprovider --randomly-seed=7`)
+  Failures are only the two intentional red tests: `test_an_extraction_with_no_income_statements_stops_and_names_the_input` and `test_valuation_with_session_file_and_files_on_a_cache_hit_stops`.
+- Defect test: `1 passed in 0.02s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -p no:cacheprovider "tests/unit/test_session_extraction_console.py::test_a_handler_that_is_not_a_name_stops_and_names_the_value_and_the_stream"`)
+- Unit tests: `3 passed in 0.02s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/test_p1h_mac_gate.py`)
+- Lint: `4 errors`, all `BLE001`, 0 in unit files (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m ruff check .`)
+- Types: `2 errors in 2 files` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m mypy models analysis ingestion api config.py app.py pipeline.py --ignore-missing-imports`)
+- Rule 3 census: `64` (`grep -rnE "if [^)]+ else 0(\.0)?\b|\bor +0(\.0)?\b|\.get\([^,]+, *0(\.0)?\)|: *float *= *0\.0" '--include=*.py' models analysis api ingestion pipeline.py | wc -l`)
+- Web root: HTTP 200 (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -c "from starlette.testclient import TestClient; from app import app; print(TestClient(app).get('/').status_code)"`)
+
+### Findings and notes
+- F1 (tester): resolved. Removed three interpreter-dependent precondition assertions (`assert "<ClassName>" not in repr(stream)`), comments, and docstring line in `tests/unit/test_p1h_mac_gate.py`. Retained `expected_stream_prefix` check requiring `Stream: <ClassName> ` to precede `repr(stream)`. All 3 tests pass on Python 3.11 (`3 passed in 0.02s`).
+- Criterion 9 (mutation kill): 3 of 3 tests in `tests/unit/test_p1h_mac_gate.py` killed the mutant when `{type(stream).__name__} ` was removed on Python 3.11 (`3 failed in 0.04s` with `AssertionError: assert '<SubclassName>' in ...`), and passed when restored (`3 passed in 0.02s`).
+- F2 (record): resolved. Corrected round 1 handoff commit from `42034c2` to `3b1225d` (the commit on the branch). Rework committed as new commit `c227cc0` on `unit/team-a` without amending.
+
+### Questions for the overall lead
+None.
+
+
+## Overall lead review, round 2
+
+**2026-10-08. Verdict: `accepted`.** Branch `unit/team-a` at `c227cc0` (the tester's fix)
+and `500a0e8` (the handoff, below). F1 and F2 are answered.
+
+| # | Check | I measured | Agree? |
+|---|---|---|---|
+| F1 | the three precondition lines are gone | `grep -c "not in repr(stream)"` gives `0`; the diff `dbeddfd..c227cc0` removes exactly those lines, their comments and the docstring line | yes |
+| F1 | the tests now hold on both Pythons | in a scratch worktree: correct code passes 3 of 3 under the 3.11 `repr` and under a 3.14-style `repr`; the mutant (class name removed) fails 3 of 3 under both | yes |
+| F2 | the round 1 handoff names the commit on the branch | `3b1225d` | yes |
+| 1-8 | criteria 1 to 8, re-run in the worktree | `1 passed`; empty diff; gate form `1589 passed` at seeds 7, 1234, 99, 0 failed; full suite 2 failed, the two red on purpose; lint 4; types 2 in 2; census 64; scope exact | yes |
+
+**One note.** Build lead A wrote `## Handoff, round 2` and the F2 correction and committed
+neither: `c227cc0` holds the test file and the journal entry only. A merge would have left
+the handoff behind, and an uncommitted edit in a worktree can be lost. The overall lead
+committed the text unchanged as `500a0e8`. **Commit the handoff with the unit.**
