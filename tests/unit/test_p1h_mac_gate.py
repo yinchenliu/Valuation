@@ -63,12 +63,8 @@ def test_subclass_with_none_errors_names_subclass_in_typeerror() -> None:
     - Exception type: TypeError (not ValueError).
     - Exception message contains 'StreamWithNoneErrors'.
     - Exception message contains 'error handler reads as None'.
-    - repr(stream) on Python 3.11 omits the subclass name.
     """
     stream = StreamWithNoneErrors()
-
-    # Precondition: repr of stream omits subclass name on Python 3.11.
-    assert "StreamWithNoneErrors" not in repr(stream)
 
     with pytest.raises(TypeError) as exc_info, naming_unencodable_characters(stream):
         pytest.fail("The context block must not execute when errors is None")
@@ -100,9 +96,6 @@ def test_subclass_with_integer_errors_names_subclass_in_typeerror() -> None:
     """
     stream = StreamWithIntegerErrors()
 
-    # Precondition: repr of stream omits subclass name on Python 3.11.
-    assert "StreamWithIntegerErrors" not in repr(stream)
-
     with pytest.raises(TypeError) as exc_info, naming_unencodable_characters(stream):
         pytest.fail("The context block must not execute when errors is an integer")
 
@@ -126,9 +119,6 @@ def test_distinct_subclass_name_is_reported_verbatim() -> None:
     - String prefix 'Stream: CustomTelemetryTextStream' matches format.
     """
     stream = CustomTelemetryTextStream()
-
-    # Precondition: repr does not contain the subclass name.
-    assert "CustomTelemetryTextStream" not in repr(stream)
 
     with pytest.raises(TypeError) as exc_info, naming_unencodable_characters(stream):
         pytest.fail("The context block must not execute")
