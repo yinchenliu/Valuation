@@ -42,13 +42,12 @@ the programmer, code reviewer and tester as Claude subagents, by the loop in `AG
 **One unit is `ready`, `building` or `rework` at a time**, unless the Notes column says
 that two units may run in parallel.
 
-**Start here, 2026-10-08, macOS. Row 6n (`P3e-reconciliation-years`) is `accepted` and
-merged as `f4059c7`. Row 6m (`P1h-mac-gate`) is `accepted` and merged as `d13be2d`, so both
-pilot units are in. Round 2: row 6o (`P14h-target-years`, item 133) is `accepted` and merged as `ea430d0`. Round 3: row 6q
-(`P3f-cli-assumption-labels`, item 68) is `ready` for team B. Still in round 2:
-and row 6p (`P15c-portable-session-paths`, item 146) is `ready` for team A.** Team A builds `P1h-mac-gate` (item 145, the one red test on this machine). Team
-B builds `P3e-reconciliation-years` (item 128). Their Files in scope are disjoint:
-`ingestion/session_extraction.py` against `cli.py`, and two new test files. Read
+**Start here, 2026-10-08, macOS. Three pilot units are merged** — `P3e-reconciliation-years`
+(row 6n, `f4059c7`), `P1h-mac-gate` (row 6m, `d13be2d`) and `P14h-target-years` (row 6o,
+`ea430d0`) — and the gate form on `main` is 1623 passed, 0 failed, 0 skipped. **In flight**:
+team A builds `P15c-portable-session-paths` (row 6p, item 146) in
+`ingestion/session_extraction.py`; team B has `P3f-cli-assumption-labels` (row 6q, item 68)
+`ready` in `cli.py`. Their Files in scope are disjoint. Read
 [../docs/8-build/worktree-teams.md](../docs/8-build/worktree-teams.md) first.
 
 **The worktrees are on the macOS machine**, `../Valuation-wt/team-a` on `unit/team-a` and
