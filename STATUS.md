@@ -4,7 +4,16 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Measured at `053463c` (`P1f-worktree-guards` and its tests, one-team mode), 2026-10-08, by the overall lead**, on branch `main`, **on the Windows machine**
+**Re-measured at `2e9447a`, 2026-10-08, by the overall lead, on the macOS machine**
+(`.venv/bin/python`, Python 3.11.6, `pytest-randomly` 5.0.0), with
+`ANTHROPIC_API_KEY= GEMINI_API_KEY=`. **The build moved back to macOS that day**, on the
+user's instruction, and runs as two Antigravity build leads in two git worktrees with Claude
+Code as the overall lead (`.agent/QUEUE.md`, `docs/8-build/worktree-teams.md`). Section 1
+holds the macOS figures. **Two of them differ from Windows, and neither is a regression**:
+one test depends on the Python version (backlog item 145, assigned to `P1h-mac-gate`), and
+the Chipotle filing is not yet tracked, so one test skips.
+
+**The previous measurement, kept for the record: at `053463c` (`P1f-worktree-guards` and its tests, one-team mode), 2026-10-08, by the overall lead**, on branch `main`, **on the Windows machine**
 (`.venv/Scripts/python.exe`, Python 3.14.4), with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`.
 The build moved back to the Windows machine at `0a8ea54`; the figures from `cde33cb` to
 `ac736e7` were measured on the macOS machine. **Forty-seven work units accepted by `69436d9`, twenty-two more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes`, `P14b-note-figures`, `P14d-finance-leases`, `P3a-one-pipeline`, `P1b-windows-gate`, `P3b-pipeline-stops`, `P1c-test-network-copies`, `P1d-skipped-filings`, `P3c-one-number`, `P14e-nri-dedupe`, `P14f-prompt-encoding`, `P3d-invisible-year`, `P14g-unit-statement-pages`, `P1e-test-order`, `P1f-worktree-guards` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
@@ -63,6 +72,20 @@ done-criteria as well, showing it went red against correct code.
 ---
 
 ## 1. The gates, today
+
+**At `2e9447a` on macOS** (`.venv/bin/python`), the empty-key prefix on every command:
+
+| Gate | Result at `2e9447a` (macOS) |
+|---|---|
+| Tests, full suite, seed 7 | **3 failed, 1584 passed, 1 skipped**: the 2 red on purpose (`*_rule3_red.py`) and item 145 |
+| **Tests, the gate form**, seeds 7, 1234, 99 | **1 failed, 1584 passed, 1 skipped** at each seed. The failure is item 145, `test_a_handler_that_is_not_a_name_stops_and_names_the_value_and_the_stream`, which passes on Python 3.14. The skip is `tests/unit/test_p14b_note_figures.py:971`: `10K_filings/CMG/` is not tracked yet. Before `2e9447a` two more skipped, `test_p14d_finance_leases.py:589` and `test_p14e_nri_dedupe.py:656`, because `extractions/WMT.json` held absolute Windows paths (item 146); both run and pass now |
+| Lint | **4 errors**, every one `BLE001`, the same four sites as below |
+| Types | **2 errors in 2 files**, 21 files checked: `api/routes_upload.py:28`, `analysis/projector.py:395` |
+| Routes | **200** |
+| Rule 3 census | **64** |
+| Write guard | **60/60** |
+
+**At `053463c` on Windows, for the record**:
 
 | Gate | Command | Result at `053463c` (Windows) |
 |---|---|---|
@@ -577,11 +600,13 @@ the headline. Re-ranked at `622262b`.
 | 119 | **Two filings that re-report one item in different words are counted twice, and nothing says so** | **new, `P14e`'s programmer and its round 1 reviewer.** Item 112's defect failing the other way. **Left open on purpose**: deciding two texts mean one charge is a judgement rule 1 gives to the model, not to Python. Measured as rarer than the mode just closed: `plan_filings` gives every filing after the oldest its own fiscal year alone, and the real Walmart file has zero cross-filing overlap |
 | 121 | Five Pass 2 fields stop with a bare `KeyError` naming the field and not the item; five others name the year and the description | **new, the `P14e` tester.** The stop is right in both cases. On a filing with fourteen items, `KeyError: 'direction'` does not say which one |
 | 120 | A row repeated three times in one filing prints two identical `[MERGE]` blocks, each saying "listed twice" | **new, the `P14e` round 2 review's F5.** The counts are right and the words are not |
-| 116 | A year with no income statement is invisible in every table, and the branch written to report it cannot run | **new, the `P3c` tester's T1.** `FinancialStatements.years` is built from the income statements alone. **Do not delete the dead branch**: the branch is right and the set it iterates is wrong |
-| 117 | The only test of a real route B file is `skipif`-guarded on a git-ignored file | **new, the `P3c` tester's T3.** Eleven assertions run on no clean checkout. **That skip is how item 115 reached `main`** |
-| 127 | **No test-order guard exists, so order dependence between test files is untested** | **new, 2026-10-07, what item 126 left behind.** `pytest-randomly` is not installed, so every run uses one fixed order. **Item 124 is a live example of the class**: `main()` leaves a changed stream handler on a captured stream for every later test in the process, and it cost the `P14f` tester three subprocesses to work around. Installing the plugin may turn tests red the first time it runs, which is the point and is why it is a unit of its own |
-| 114 | The two unit-scale checks disagree about where a unit statement may sit, so a correct reading can stop the run | **new, the route B extraction of 2026-10-06**, confirmed by the overall lead against the code. `P14g-unit-statement-pages` |
-| 124 | `main()` changes a process-global stream handler and never restores it, and a test calls `main()` in-process | **new, the `P14f` review's F2.** `_pytest.capture.CaptureIO` is an `io.TextIOWrapper` subclass, so the handler leaks into every later test in the process. Harmless today; it cost the tester three subprocesses |
+| 145 | The stream-handler stop hides a subclass on Python 3.11 and 3.12, so the macOS gate form is red | **new, 2026-10-08, on the move to macOS.** One test, passes on 3.14. `P1h-mac-gate` (pilot team A) |
+| 146 | `session_extraction plan` writes absolute PDF paths into a session file | **new, 2026-10-08.** `extractions/WMT.json` was hand-corrected to repo-relative paths at `2e9447a`; the next `plan` run writes absolute paths again |
+| 138, 139 | Nothing cross-checks the `units` claim; `WMT.json` `filings[0]` cites the Comprehensive Income unit header | **new at `P14g`.** 138 is **silent and multiplies every money figure**; no filing here reaches it. Left in queue order on the user's decision `a`, 2026-10-07 |
+| 141, 144 | The seal keeps one baseline; the seal's events do not fire for a background agent | **2026-10-08.** The seal has never worked. It does not bind an Antigravity agent at all, so it does not block the worktree pilot |
+| 128 | The CLI reconciles `raw.years`, the page the union of both sides | **new at `P3d`, latent.** `P3e-reconciliation-years` (pilot team B) |
+| 129 | `Gross Margin` and `EBIT Margin` print a fabricated `0.0%` for a zero-revenue year | **new at `P3d`, silent.** Both entry points; the property also feeds `analysis/projector.py` |
+| 130-137 | eight findings from `P3d-invisible-year` in `cli.py`, `templates/_statements.html` and `ingestion/claude_extractor.py` | **new at `P3d`.** 133, the two surviving `if target_years:` sites, is `P14h-target-years`, team A's next unit |
 | 123, 125 | A `bool` the docstring says a caller can use, discarded at the call site; the inherited `surrogateescape` replaced rather than composed, with no text saying so | **new, the `P14f` review's F1 and F3.** Neither is a rule break. **F1 can be closed with no code change**: three of the tester's tests now read that `bool` |
 | 103, 104, 105, 106, 108, 109, 110, 111, 118 | nine findings from the `P3c-one-number` review and its tester | **new.** A stop that does not name the field; the basis sentence in four places; a conditional with two identical branches; a tense; a fixture that cannot see item 87; six copies of one sentence per row; two `step="0.1"` fields; a ratio shown at one decimal place everywhere; coverage blind to a continuation-line diff |
 | 10 | D&A subtraction buried in the parser, `ingestion/claude_extractor.py:479` | an accounting decision taken inside a parser, on two zero-defaulted values |
@@ -600,6 +625,8 @@ the headline. Re-ranked at `622262b`.
 
 | # | Item | Closed at |
 |---|---|---|
+| 117, 140 | A real-filing test ran on no clean checkout, because `extractions/` and `10K_filings/` were git-ignored | `32b3f06`. **On macOS it held only from `2e9447a`**: `WMT.json` named Windows paths until then (item 146) |
+| 124, 127 | No test-order guard; `main()` left a changed stream handler behind | `f08cb16` (`P1e-test-order`, `pytest-randomly`) |
 | 3 | Unknown NRI line item guessed a field | `38b903c` |
 | 9 | Unlabelled cost-of-debt assumption and projection ratios | `6cf34d3` (debt), `576d4f0` (ratios rendered via `P8b-statements-ui`) |
 | 22 | Zero debt balance gave a 0% cost of debt | `6cf34d3` — its weights half is item 38 |
