@@ -163,3 +163,52 @@ Each sits in `ingestion/claude_extractor.py`. Leave them alone.
 - 78, 80, 84, 85, 138 — the unit-scale checks and their messages.
 - 119, 120 — the non-recurring item merge.
 - 122 — `--debug` on a Windows console.
+
+## Handoff (build lead B)
+
+### Commit
+
+`a67a225` (`a67a225c312a0fad7d16b555ebc85d8239079587`)
+
+### Verdicts
+
+- **Programmer:** complete (`.agent/journal/2026-10-09T0204-programmer-p14h-target-years.md`)
+- **Code Reviewer:** `approved` (`.agent/journal/2026-10-09T0216-code_reviewer-p14h-target-years.md`)
+- **Tester:** `pass` (`.agent/journal/2026-10-09T0218-tester-p14h-target-years.md`)
+
+### Summary
+
+In `ingestion/claude_extractor.py`, `_build_financials_prompt` (Pass 1) and `_build_nri_prompt` (Pass 2) now test `target_years is not None` instead of truthiness (`if target_years:`), and raise `ValueError` naming `target_years` when `target_years` is an empty list (Rule 3, backlog item 133). When `target_years` is `None` or a populated list, prompt text is identical byte for byte to `main`, matching all six reference prompt hashes on `extractions/WMT.json`.
+
+New test file `tests/unit/test_p14h_target_years.py` contains 23 unit tests verifying Rule 3 stops, template string generation against hand-derived literal expectations, prompt pair assembly, and prompt hash invariance across all 3 filings in `extractions/WMT.json`. All tests call production code directly (item 148). Mutation probe restoring `if target_years:` failed 7 tests (killed).
+
+### Measured Gates
+
+All commands run on macOS from `/Users/yinchenliu/Documents/Git/DCF/Valuation-wt/team-b` with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`.
+
+| Gate / Criterion | Command | Result |
+|---|---|---|
+| 1. No truthiness test of `target_years` | `grep -n "if target_years:" ingestion/claude_extractor.py` | Exit 1 (0 matches) |
+| 2. Pass 1 empty list stop | `pytest -q -p no:cacheprovider tests/unit/test_p14h_target_years.py -k test_build_financials_prompt_empty` | 2 passed in 0.03s |
+| 3. Pass 2 empty list stop | `pytest -q -p no:cacheprovider tests/unit/test_p14h_target_years.py -k test_build_nri_prompt_empty` | 1 passed in 0.03s |
+| 4. Six real prompt hashes | `for f in 0 1 2; do for p in 1 2; do ...; done; done` | All 6 hashes match baseline: f0p1 `cbf26b0a876034f6`, f0p2 `024bd96701e72481`, f1p1 `c401b7bb3096592c`, f1p2 `9391f61bfa21ac43`, f2p1 `4aa84c989703f3ce`, f2p2 `cc61ac590ca169f0` |
+| 5. Template text unchanged | `pytest -q -p no:cacheprovider tests/unit/test_p14h_target_years.py -k matches_hand_derived` | 8 passed in 0.03s |
+| 6. Mutation probe killed | Mutant with `if target_years:` | 7 failed, 10 passed (DID NOT RAISE ValueError) |
+| 7. Randomly shuffled gate (n=7) | `pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=7` | 1 failed, 1625 passed in 33.60s |
+| 7. Randomly shuffled gate (n=1234) | `pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=1234` | 1 failed, 1625 passed in 32.68s |
+| 7. Randomly shuffled gate (n=99) | `pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=99` | 1 failed, 1625 passed in 33.18s |
+| 8. Lint | `ruff check .` | 4 errors, all `BLE001` (`api/routes_valuation.py:463, 745`, `cli.py:1416`, `tests/test_e2e_all_googl.py:106`), 0 in files written by this unit |
+| 8. Types | `mypy models analysis ingestion api config.py app.py pipeline.py --ignore-missing-imports` | 2 errors in 2 files (`analysis/projector.py:395`, `api/routes_upload.py:28`, 21 files checked) |
+| 8. Rule 3 census | `grep -rnE "if [^)]+ else 0(\.0)?\b\|\bor +0(\.0)?\b\|\.get\([^,]+, *0(\.0)?\)\|: *float *= *0\.0" '--include=*.py' models analysis api ingestion pipeline.py \| wc -l` | 64 |
+| 9. Scope | `git diff --name-only main...HEAD` | Only files in scope |
+
+Note on Criterion 7: The single failing test across all three seeds is `tests/unit/test_session_extraction_console.py:774: test_a_handler_that_is_not_a_name_stops_and_names_the_value_and_the_stream`, which is the known pre-existing failure on macOS (backlog item 145, team A's unit `P1h-mac-gate`). Passed tests increased by 23 (from 1602 to 1625).
+
+### New Findings
+
+None.
+
+### Questions for the Overall Lead
+
+None.
+
