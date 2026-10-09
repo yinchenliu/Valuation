@@ -17,8 +17,24 @@ team owns.
 **The order, on the user's direction of 2026-10-04:** route B is the main route and route A
 an option, so defect fixes come first, then route A refinements, then new features.
 
-**Build mode: one team (Claude Code), from 2026-10-05, until the user says to return to two
-teams.** The user's words: "antigravity is stopped and won't continue after refresh unless i
+**Build mode: two teams in two worktrees, from 2026-10-08, on the macOS machine.** The
+user's words: "i would like to use the antigravity gemini agent to work on each of git
+worktree (total of 2 worktree to start with) and you are the orchestrator, the main agent,
+the overall lead to build and report back to me". So one Antigravity build lead works in
+each worktree, one unit at a time, and the Claude Code session is the overall lead on
+`main`. [../docs/8-build/worktree-teams.md](../docs/8-build/worktree-teams.md) owns how.
+**In this mode a build lead does not write this file.** It writes `## Handoff` in its
+assignment, commits on its branch, and tells the user. The overall lead sets every state
+here, on `main`.
+
+**This instruction supersedes the user's earlier condition "close item 143 before deploying
+the worktree team scheme"**, and the reason is a fact, not a preference: the seal (items
+143, 144) and the write guard are Claude Code hooks, and **neither runs in Antigravity**
+([../AGENTS.md](../AGENTS.md), "Two teams"). So closing 143 would protect no Gemini agent.
+What protects the pilot is the build lead's `git status` after each run and the overall
+lead's scope check on each branch before it merges. `P1g-seal-wiring` stays `half done`.
+
+**The previous mode, kept for the record: one team (Claude Code), from 2026-10-05.** The user's words: "antigravity is stopped and won't continue after refresh unless i
 tell it to. so you can takeover the build. i will ask you to change to 2 teams once
 antigravity token is back". The overall lead also sets the build lead's states and runs
 the programmer, code reviewer and tester as Claude subagents, by the loop in `AGENTS.md`.
@@ -26,14 +42,21 @@ the programmer, code reviewer and tester as Claude subagents, by the loop in `AG
 **One unit is `ready`, `building` or `rework` at a time**, unless the Notes column says
 that two units may run in parallel.
 
-**Start here. The two-team worktree pilot is set up and ready to run.** Read
-[../docs/8-build/worktree-teams.md](../docs/8-build/worktree-teams.md) first: it owns how
-two teams run in parallel, what protects them and what does not, and it is written for a
-session that has read none of the work that produced it.
+**Start here, 2026-10-08, macOS. Two pilot units are `ready`, one per worktree: rows 6m
+and 6n.** Team A builds `P1h-mac-gate` (item 145, the one red test on this machine). Team
+B builds `P3e-reconciliation-years` (item 128). Their Files in scope are disjoint:
+`ingestion/session_extraction.py` against `cli.py`, and two new test files. Read
+[../docs/8-build/worktree-teams.md](../docs/8-build/worktree-teams.md) first.
 
-**Two worktrees exist already**, `Valuation-wt/team-a` on `unit/team-a` and
-`Valuation-wt/team-b` on `unit/team-b`, both carrying `10K_filings/` and
-`extractions/WMT.json` and neither carrying a `.venv`.
+**The worktrees are on the macOS machine**, `../Valuation-wt/team-a` on `unit/team-a` and
+`../Valuation-wt/team-b` on `unit/team-b`. The two the Windows machine made on 2026-10-08
+were never pushed, and nothing was built in them.
+
+**The pair changed from the one below, and the reason is the macOS gate.** Item 145 makes
+the gate form red on this machine, so a merge gate cannot read `0 failed` until it is
+fixed. Item 133 (`P14h-target-years`, row 6o) is team A's next unit.
+
+**The old header follows**, from the Windows machine.
 
 **The write guard works inside a worktree and the seal does not work anywhere.** Item 142
 is closed, 60/60 guard cases. Items 143 and 144 record the seal: the hook events are now
@@ -137,7 +160,10 @@ neither touches the other's files:
 | A | 133, the two surviving `if target_years:` sites | `ingestion/claude_extractor.py` |
 | B | 128, the CLI reconciliation iterating `raw.years` where the page iterates the union | `cli.py`, `api/routes_valuation.py` |
 
-**Not started until `P1f-worktree-guards` and `P1g-seal-wiring` are both accepted.**
+~~**Not started until `P1f-worktree-guards` and `P1g-seal-wiring` are both accepted.**~~
+Superseded on 2026-10-08 by the user's instruction at the top of this file: the build leads
+are Antigravity agents, and no Claude Code hook runs for them. The pair above is replaced by
+rows 6m and 6n.
 
 | # | Unit | Assignment | State | Backlog items | Notes |
 |---|---|---|---|---|---|
@@ -159,6 +185,9 @@ neither touches the other's files:
 | 6j | `P1e-test-order` | [P1e-test-order.md](assignments/P1e-test-order.md) | `accepted` | 127, 124 | **The user decided it on 2026-10-07, option `a`: install `pytest-randomly`.** The user's framing: it "may turn tests red the first time it runs, which is the point". **Assignment written. Deliberately not `ready`, and this one has a reason the other deferrals do not**: installing the plugin changes the result of **every** gate command in this repository at once, so a unit measuring its own gate in the same working tree gets a number that means nothing. It starts when no other unit is `building`. **There is no "0 failed" criterion in it.** What it owes instead is the failing set **by name** at each of five named seeds. It also closes item 124, the one live example, without undoing `P14f-prompt-encoding`. Three things it is forbidden to do, each of which would look like success: put `-p no:randomly` anywhere, pin a default seed, or weaken a test to make it pass under shuffling. **Once the plugin is installed, `-p no:randomly` stops being the no-op item 126 deleted and becomes a way to switch the guard off.** The old row text follows | **the user's decision "1a" of 2026-10-07 is done and is not this unit**: `-p no:randomly` asserted nothing and is deleted from every live document (item 126, closed). Journal entries and accepted assignments keep it, because they record what was run. **What is left is item 127**: no test-order guard exists, so a test that passes only because another ran first passes forever. Item 124 is a live example. **Install `pytest-randomly`. It may turn tests red the first time it runs, which is the point**, so schedule it as a unit rather than folding it into a cleanup |
 | 6k | `P1f-worktree-guards` | [P1f-worktree-guards.md](assignments/P1f-worktree-guards.md) | `accepted` | 142, 141 | **the user's decision of 2026-10-08, option `a`: build the guard fixes before switching to a multi-worktree team scheme.** Item 142: `guard_paths.py` allows every path outside `CLAUDE_PROJECT_DIR`, and a worktree is outside it, so **in a worktree the write guard is off**. Measured by executing the hook: a `tester` writing `<project>/analysis/dcf.py` is denied by name, and the same `tester` writing `<worktree>/analysis/dcf.py` produces no output and exit 0. Item 141: the seal keeps **one** baseline for the whole session, so a second dispatch overwrites the snapshot the first agent will be judged against, and clears it. **This unit cannot be given to a programmer subagent, and that is by design**: `.claude/hooks/*.py` is `ALWAYS_DENIED` with the message "a subagent does not edit the permissions that bind it". **The overall lead implements it; a code reviewer still reviews it; a tester covers it from `tests/`.** The reviewer step is not optional — the change is to the thing that enforces every other change. **Waits for `P1e-test-order` to be accepted**, one unit at a time |
 | 6l | `P1g-seal-wiring` | — | `half done` | 143, 141 | **the user's decision of 2026-10-08: close item 143 before deploying the worktree team scheme.** Neither seal hook is invoked by this harness, measured three ways, reproducing at `HEAD`, and the dead matcher covers `SendMessage` as well as `Agent`. **The write guard is unaffected** and its own matcher does fire, which is why role separation has held. **Two candidates, in order**: `SubagentStart` is a hook event this harness lists and it fires per subagent, so it is a better home for the baseline than `PreToolUse` on `Agent` **and it would pair exactly with `SubagentStop`, giving the per-agent key item 141 could not have**; and `seal_check.py` exits at `agent_type not in ROLES`, so the `SubagentStop` payload may be arriving without one. **`P1f-worktree-guards` left an instrument for this**: `last_dispatch_seen`, written before any exit in `seal_baseline.py`. **Like `P1f`, no subagent can build this**: `.claude/` is `ALWAYS_DENIED` to every role. The overall lead implements; a code reviewer still reviews. **Waits for `P1f-worktree-guards` to be accepted** |
+| 6m | `P1h-mac-gate` | [P1h-mac-gate.md](assignments/P1h-mac-gate.md) | `ready` | 145 | **pilot team A**, worktree `../Valuation-wt/team-a`, branch `unit/team-a`. On macOS (Python 3.11.6) the gate form is **1 failed** at seeds 7, 1234 and 99: the stream-handler stop names the stream by `repr`, and on 3.11 and 3.12 that `repr` hides the subclass. The message names `type(stream)` itself; the test does not change. **Runs in parallel with 6n: disjoint files** |
+| 6n | `P3e-reconciliation-years` | [P3e-reconciliation-years.md](assignments/P3e-reconciliation-years.md) | `ready` | 128 | **pilot team B**, worktree `../Valuation-wt/team-b`, branch `unit/team-b`. `cli.py:845` reconciles `raw.years`, and the page reconciles the union of both sides, so a year only the adjusted statements reach is on the page and not in the CLI. Latent. `cli.py` only; the page is the reference. **Runs in parallel with 6m: disjoint files** |
+| 6o | `P14h-target-years` | not written | `planned` | 133 | team A's next unit, after 6m merges: the two surviving `if target_years:` sites in `ingestion/claude_extractor.py`, the same one-token fix `P3d` made at the third |
 | 7 | `P14c-layout-facts` | not written | `planned` | 10 | defect (item 10), through rule 1 option C: a layout fact the filing states, page-checked; the D&A decision moves into `analysis/` |
 | 8 | `P15b-gemini-flash` | [P15b-gemini-flash.md](assignments/P15b-gemini-flash.md) | `planned` | 82 | the user's decision of 2026-10-04: route A's default model becomes `gemini-3.8-flash`; the CLI cache key names the model ID. Assignment written. **Deferred by the user, 2026-10-04:** "focus on fixing the defects first before refine route A" |
 | 9 | `P14b-row-reasons` | not written | `planned` | — | feature, after the defects: rule 1 option A: a reason for each printed row, shown on both pages. A format change, and Walmart must be extracted again |

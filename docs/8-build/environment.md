@@ -15,6 +15,17 @@ place on each.**
 | Windows | `.venv/Scripts/python.exe` | **3.14.4** | `D:\Software\Python.Python.3.14\python.exe` | 2026-09-20 |
 | macOS | `.venv/bin/python` | **3.11.6** | `/opt/homebrew/opt/python@3.11/bin/python3.11` | before 2026-09-26 |
 
+**The build runs on the macOS machine from 2026-10-08.** The user's words: "it was used in
+windows machien now we change it back to mac". That day `pip install -r requirements-dev.txt`
+added `pytest-randomly` 5.0.0 to the macOS venv, and nothing else. **One test depends on the
+Python version**: on 3.11.6 the gate form is red on
+`test_a_handler_that_is_not_a_name_stops_and_names_the_value_and_the_stream`, which passes
+on 3.14.4. Backlog item 145 holds it. **No Python 3.13 or later is installed on this
+machine**: `/opt/homebrew/bin` holds 3.12.7, and 3.12 fails the same test.
+
+**A git worktree uses this venv through a link.** [worktree-teams.md](worktree-teams.md)
+owns that.
+
 **Never a bare `python`.** A bare `python` resolves to whatever is first on `PATH`.
 Use the row for the machine you are on. A command copied from the other row fails with
 "no such file", which is the fastest sign you are on the other machine.

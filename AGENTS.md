@@ -103,6 +103,13 @@ must check `git status` after each run, and reject a run that wrote outside its 
 
 #### The build lead's procedure
 
+**If your workspace is a git worktree** (`Valuation-wt/team-a` or `team-b`), you are one of
+two build leads working in parallel, and
+[docs/8-build/worktree-teams.md](docs/8-build/worktree-teams.md) changes three steps below.
+Do not write `.agent/QUEUE.md` or `.agent/journal/INDEX.md`: every merge would conflict on
+them, and the overall lead writes them on `main`. Your unit is the one your prompt names.
+At step 8, commit on your branch, write `## Handoff`, tell the user, and set no state.
+
 Read [docs/0-start.md](docs/0-start.md), [docs/2-rules/rules.md](docs/2-rules/rules.md),
 this file and [.agent/QUEUE.md](.agent/QUEUE.md). Then:
 

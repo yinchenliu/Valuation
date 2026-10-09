@@ -10,7 +10,7 @@
   "filings": [
     {
       "fiscal_year": 2024,
-      "pdf_path": "C:\\Users\\LiuYinchen\\Valuation\\10K_filings\\WMT\\Walmart Inc._10-K_2024-01-31_English.pdf",
+      "pdf_path": "10K_filings/WMT/Walmart Inc._10-K_2024-01-31_English.pdf",
       "pdf_sha256": "07a1c56b090c8040ffbcd08f51b0c8267c26ee0d79893315b0da23238f22603d",
       "size_bytes": 1068387,
       "target_years": null,
@@ -616,7 +616,7 @@
     },
     {
       "fiscal_year": 2025,
-      "pdf_path": "C:\\Users\\LiuYinchen\\Valuation\\10K_filings\\WMT\\Walmart Inc._10-K_2025-01-31_English.pdf",
+      "pdf_path": "10K_filings/WMT/Walmart Inc._10-K_2025-01-31_English.pdf",
       "pdf_sha256": "4540f5ec206f02bc5562bfdd691ff4f64e677d39036db705a9e6a69796c30509",
       "size_bytes": 840476,
       "target_years": [
@@ -826,7 +826,7 @@
     },
     {
       "fiscal_year": 2026,
-      "pdf_path": "C:\\Users\\LiuYinchen\\Valuation\\10K_filings\\WMT\\Walmart Inc._10-K_2026-01-31_English.pdf",
+      "pdf_path": "10K_filings/WMT/Walmart Inc._10-K_2026-01-31_English.pdf",
       "pdf_sha256": "4bafa6e61b1990a3c857b5d6d0aa4005c4d50c175c6403c0685a1c21abbef5ae",
       "size_bytes": 1111045,
       "target_years": [

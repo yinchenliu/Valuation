@@ -9,34 +9,45 @@ produced it.
 the smallest number that tests anything new, because every defect this scheme exposes needs
 exactly two agents in flight and no more. A third team adds contention without adding a case.
 
+**Who builds, from 2026-10-08, on the macOS machine.** The user's words: "i would like to
+use the antigravity gemini agent to work on each of git worktree (total of 2 worktree to
+start with) and you are the orchestrator, the main agent, the overall lead". So:
+
+| Where | Who | Does |
+|---|---|---|
+| `Valuation/` on `main` | Claude Code, the **overall lead** | writes assignments and the four record files, merges, gates, accepts |
+| `Valuation-wt/team-a` on `unit/team-a` | Antigravity, **build lead A** | builds one unit with its programmer, code reviewer and tester, commits, hands off |
+| `Valuation-wt/team-b` on `unit/team-b` | Antigravity, **build lead B** | the same, for its own unit |
+
 ---
 
-## 1. What is already set up
+## 1. What is set up
 
-Measured on 2026-10-08. **Verify, do not redo.**
+Measured on the macOS machine. **Verify, do not redo.**
 
 | Thing | State |
 |---|---|
-| `C:/Users/LiuYinchen/Valuation-wt/team-a` | worktree on branch `unit/team-a` |
-| `C:/Users/LiuYinchen/Valuation-wt/team-b` | worktree on branch `unit/team-b` |
-| Both carry `10K_filings/` | **yes**, 3 company folders each |
-| Both carry `extractions/WMT.json` | **yes** |
-| Both carry `.venv` | **no, and they never will.** It is git-ignored |
+| `/Users/yinchenliu/Documents/Git/DCF/Valuation-wt/team-a` | worktree on branch `unit/team-a` |
+| `/Users/yinchenliu/Documents/Git/DCF/Valuation-wt/team-b` | worktree on branch `unit/team-b` |
+| Both carry `10K_filings/` and `extractions/WMT.json` | yes: both are tracked |
+| `.venv` in each worktree | **a symbolic link** to `../../Valuation/.venv`, the main checkout's venv. `.gitignore` names `.venv` without a slash so the link is ignored too |
 
 ```
 git worktree list
 ```
 
-**A worktree has no `.venv`.** Every command inside one uses the main checkout's interpreter
-by absolute path:
+**There is one venv, and every team shares it.** Run every command from the worktree root,
+so `import models` resolves to that worktree's code. Measured on 2026-10-08: from a
+worktree, `.venv/bin/python -c "import models; print(models.__file__)"` prints the
+worktree's path, not the main checkout's.
 
-```
-C:/Users/LiuYinchen/Valuation/.venv/Scripts/python.exe -m pytest -q
-```
+**`extractions/WMT.json` holds repo-relative PDF paths** (`10K_filings/WMT/<name>`), so it
+resolves to the worktree's own copy of each filing. Before 2026-10-08 it held absolute
+Windows paths. Backlog item 146 holds why, and why the next route B `plan` would write an
+absolute path again.
 
-Run it **from** the worktree directory, so `import models` resolves to that worktree's code.
-Measured: a fresh worktree ran `tests/unit/test_p14g_unit_statement_pages.py` at **113
-passed**, against the real Walmart PDF, that way.
+**The Windows machine made two worktrees of the same names on 2026-10-08.** Their branches
+were never pushed and nothing was built in them. They are not these.
 
 ---
 
@@ -45,12 +56,14 @@ passed**, against the real Walmart PDF, that way.
 **Break any of these and the merge is worse than serialising would have been.**
 
 1. **Disjoint Files in scope.** The two units must not name the same file. This is the
-   orchestrator's job to check and nobody else's.
+   overall lead's job to check and nobody else's.
 2. **A unit branch never touches the four record files**: `STATUS.md`, `.agent/QUEUE.md`,
    `.agent/journal/INDEX.md`, `docs/9-reference/refactor-backlog.md`. They are append-mostly,
-   so every merge would conflict on all four. **The orchestrator writes them on `main` after
-   each merge.** Subagents already write one journal file each, with a unique name, and those
-   never conflict.
+   so every merge would conflict on all four. **The overall lead writes them on `main` after
+   each merge.** So in this mode a build lead does **not** set a queue state and does not
+   append to the journal index, although [../../AGENTS.md](../../AGENTS.md) tells it to in
+   one-worktree mode. Subagents still write one journal file each, with a unique name, and
+   those never conflict.
 3. **A unit branch installs nothing.** The venv is shared across worktrees, so a unit like
    `P1e-test-order`, which installs `pytest-randomly`, can never be parallel under any
    scheme.
@@ -65,114 +78,127 @@ passed**, against the real Walmart PDF, that way.
 ```
 Legend:  ──▶ normal   ┄┄▶ failure path   * the step people forget
 
-                     o1 ──▶ o2 ──▶ o3 ─────────────────────────▶ M1 ──▶ M2
-                                    │                           ╱       ╱
-      unit/team-a  ─────────────────┴──▶ A4 ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╱       ╱
-                                    │                          *       ╱
-      unit/team-b  ─────────────────┴──▶ B4 ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╱
-                                                                      *
+ main         o─────────────────────────────────────▶ M1 ─▶ gate ─▶ M2 ─▶ gate ─▶ records *
+              │                                       ▲             ▲
+ unit/team-a  ├─▶ programmer ─▶ reviewer ─▶ tester ─▶ A             │
+              │                                                     │
+ unit/team-b  └─▶ programmer ─▶ reviewer ─▶ tester ─▶ B ────────────┘
+
+ a gate that goes red after a merge ┄┄▶ rework on that branch, merge again
 ```
 
-1. **Write both assignments on `main`**, before anything starts. Check the two Files in scope
-   lists against each other.
-2. **In each worktree, run the full loop**: programmer, then code reviewer, then tester. One
-   agent at a time per team, so at most two agents are ever in flight.
-3. **Merge team A into `main`.** Run the gate.
-4. **Merge team B into `main`.** Run the gate again.
-5. **Write the records on `main`**: the acceptance in each assignment, `STATUS.md`,
+1. **The overall lead writes both assignments on `main`**, before anything starts, and
+   checks the two Files in scope lists against each other. It sets both units `ready`,
+   commits, and creates the worktrees from that commit.
+2. **In each worktree, the build lead runs the full loop**: programmer, then code reviewer,
+   then tester. One agent at a time per team, so at most two agents are ever in flight.
+3. **The build lead commits on its branch, writes `## Handoff`, and tells the user.** The
+   user tells the overall lead.
+4. **The overall lead checks the branch**: `git diff --name-only main...unit/team-a` names
+   only the unit's Files in scope, its assignment files and new journal entries. A file
+   outside that list is `rework`, whoever wrote it.
+5. **Merge team A into `main`.** Run the gate.
+6. **Merge team B into `main`.** Run the gate again.
+7. **Write the records on `main`**: the acceptance in each assignment, `STATUS.md`,
    `.agent/QUEUE.md`, `.agent/journal/INDEX.md`, the backlog. Then push once.
 
-**`unit/team-b` was branched at o3 and does not contain A4.** So the second merge is a real
-merge, not a fast-forward, and that is where a conflict appears. The gate after it is testing
-a combination that has never run anywhere.
+**`unit/team-b` was branched before A merged and does not contain A.** So the second merge
+is a real merge, not a fast-forward, and that is where a conflict appears. The gate after it
+is testing a combination that has never run anywhere.
+
+**For the next round**, the overall lead fast-forwards each branch to the new `main`
+(`git -C ../Valuation-wt/team-a merge --ff-only main`) before it sets the next unit `ready`.
 
 ---
 
 ## 4. What protects you, and what does not
 
-### The write guard works, including inside a worktree
+### Nothing in `.claude/` protects an Antigravity agent
+
+The write guard and the seal are Claude Code hooks. **Antigravity does not run them**
+([../../AGENTS.md](../../AGENTS.md), "Two teams"). So no permission stops a Gemini tester
+from writing `analysis/`, in a worktree or anywhere else. Two checks replace them:
+
+1. **The build lead runs `git status` after every subagent run** and rejects a run that
+   wrote outside its role or outside Files in scope.
+2. **The overall lead runs the scope check in step 4 of the sequence** before it merges.
+
+### For a Claude Code subagent, the write guard works inside a worktree
 
 `P1f-worktree-guards` closed backlog item 142. Before it, `guard_paths.py` allowed every path
 outside `CLAUDE_PROJECT_DIR`, and a worktree is outside it, so **in a worktree the guard was
-off**: a `tester` writing `<worktree>/analysis/dcf.py` produced no output and exit 0.
-
-It now finds a worktree by reading that tree's `.git` file, which holds
-`gitdir: <project>/.git/worktrees/<name>`. So it needs no git on `PATH` and makes no
-subprocess call. `.claude/check_guard.py` covers it with **60 cases**, 12 of them worktree
-cases, and it **fails rather than skips** if the worktree cannot be built.
+off**. It now finds a worktree by reading that tree's `.git` file, which holds
+`gitdir: <project>/.git/worktrees/<name>`. `.claude/check_guard.py` covers it with
+**60 cases**, 12 of them worktree cases.
 
 ```
-.venv/Scripts/python.exe .claude/check_guard.py      # expect 60/60
+.venv/bin/python .claude/check_guard.py      # expect 60/60
 ```
 
 ### The seal does not work, and it never has
 
-**Backlog items 143 and 144.** Measured three ways and then a fourth:
-
-- `PreToolUse` filters on **tool names only**, and `Agent`, `Task` and `SendMessage` are not
-  tool names, so the original matcher could never fire.
-- `SubagentStart` and `SubagentStop` are the correct events and are now configured.
-- Both hooks were instrumented to record what they are sent **before any exit**, so that "ran
-  and exited early" could be told from "never ran".
-- One real background subagent was then dispatched and allowed to finish. **The state file
-  was never created.** Neither event fires for a background agent, and every dispatch here is
-  a background one.
-
-**So `.agent/journal/INDEX.md`, `STATUS.md` and `.claude/hooks/` are unsealed for every
-subagent run.** That was true before the pilot and the pilot does not make it worse. The
-remaining route is the mods layer's `agent.spawn` event, which needs a plugin with a hooks
-module. Item 144 names a cheaper test to try first: dispatch one **foreground** subagent and
-see whether the two events fire there.
-
-**What this means in practice.** The guard that keeps a tester out of `analysis/` works. The
-tripwire over three bookkeeping files does not. Check the record files yourself after each
-merge.
+**Backlog items 143 and 144.** `SubagentStart` and `SubagentStop` are now configured, and
+neither fires for a background agent, which is every agent Claude Code dispatches here. It
+does not matter to this pilot, because no Claude subagent builds in it. **Check the record
+files yourself after each merge.**
 
 ---
 
-## 5. Cleanup, and one Windows trap
+## 5. Starting a build lead
+
+The user opens Antigravity once per worktree, with the worktree folder as the workspace,
+and gives it this prompt, with the letter and the unit filled in:
 
 ```
-git worktree remove --force C:/Users/LiuYinchen/Valuation-wt/team-a
+You are the build lead for team A in a two-team worktree pilot.
+Your workspace is /Users/yinchenliu/Documents/Git/DCF/Valuation-wt/team-a, on branch unit/team-a.
+Read docs/0-start.md, docs/2-rules/rules.md, AGENTS.md ("The build lead's procedure")
+and docs/8-build/worktree-teams.md. Your unit is P1h-mac-gate:
+.agent/assignments/P1h-mac-gate.md. Follow its "Pilot rules (worktree)" where they differ
+from AGENTS.md: do not edit .agent/QUEUE.md, .agent/journal/INDEX.md, STATUS.md, docs/,
+.claude/ or extractions/, and install nothing. Use .venv/bin/python, never a bare python,
+with ANTHROPIC_API_KEY= GEMINI_API_KEY= in front of every command. When the tester passes,
+run the gates, commit on unit/team-a, write ## Handoff at the end of the assignment, and
+tell me "P1h-mac-gate is ready for the overall lead". Then stop.
+```
+
+---
+
+## 6. Cleanup
+
+```
+git worktree remove ../Valuation-wt/team-a
 git worktree prune
-git branch -D unit/team-a
+git branch -d unit/team-a
 ```
 
-**Windows holds a lock on a worktree directory after a process has read from it.**
-`git worktree remove` fails the first time and works on a retry. Seen five times on
-2026-10-08. Never let cleanup decide a verdict: run it, and if it fails, run
-`git worktree prune` and remove the directory later.
+`git worktree remove` refuses a worktree with changes that are not committed. That refusal
+is the point: read what is there before you pass `--force`. **On Windows**, the directory
+stays locked after a process has read from it, and the command works on a retry. That was
+seen five times on 2026-10-08.
 
 ---
 
-## 6. The candidate pair for the pilot
+## 7. The current pair
 
-Both are small, both are real defects found by earlier units, and neither touches the other's
-files. Swap either if something more urgent appears.
+| Team | Unit | Backlog item | Files in scope |
+|---|---|---|---|
+| A | `P1h-mac-gate` | **145**, the stream-handler stop hides a subclass on Python 3.11 | `ingestion/session_extraction.py`, `tests/unit/test_p1h_mac_gate.py` |
+| B | `P3e-reconciliation-years` | **128**, the CLI reconciles `raw.years` where the page reconciles the union | `cli.py`, `tests/unit/test_p3e_reconciliation_years.py` |
 
-| Team | Backlog item | Files in scope |
-|---|---|---|
-| A | **133**, the two surviving `if target_years:` sites | `ingestion/claude_extractor.py` |
-| B | **128**, the CLI reconciliation iterates `raw.years` where the page iterates the union of both sides | `cli.py`, `api/routes_valuation.py` |
-
-**Why these two.** The pilot tests the machinery, not throughput. A failure must be cheap to
-diagnose and cheap to throw away.
+**Why these two.** The pilot tests the machinery, not throughput, so a failure must be cheap
+to diagnose and cheap to throw away. Item 145 also makes the macOS gate red, so the merge
+gates cannot read `0 failed` until it lands. Item 133 (`P14h-target-years`) was team A's
+first candidate and is now its next.
 
 ---
 
-## 7. The gate figures to expect
+## 8. The gate figures to expect
 
-Measured at `82ac523`, Windows, with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`:
-
-| Gate | Expected |
-|---|---|
-| gate form | **1584 passed, 2 skipped, 0 failed** |
-| full suite | **2 failed**, exactly the two `*_rule3_red.py` tests |
-| lint | 4 errors, every one `BLE001` |
-| types | 2 errors in 2 files |
-| census | 64 |
-| route | 200 |
-| write guard | **60/60** |
+[../../STATUS.md](../../STATUS.md), section 1, owns the current figures, with the commit
+and the machine they were measured on. The commands are in
+[environment.md](environment.md), section 4. On macOS, `.venv/bin/python` replaces
+`.venv/Scripts/python.exe` in each.
 
 **The suite shuffles.** `pytest-randomly` is installed, and **`-q` suppresses the
 `Using --randomly-seed=` line**. Re-run without `-q` to recover a seed when something goes

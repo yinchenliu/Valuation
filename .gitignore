@@ -6,7 +6,9 @@ uploads/
 *.egg-info/
 dist/
 build/
-.venv/
+# No trailing slash: a git worktree holds `.venv` as a link to the main checkout's
+# venv (docs/8-build/worktree-teams.md), and `.venv/` matches a directory only.
+.venv
 venv/
 
 # Tool caches, created by running a gate
