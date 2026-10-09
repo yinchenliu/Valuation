@@ -842,7 +842,12 @@ def print_normalization(
     # over one cell is this repository's third standing trap and backlog item
     # 92's shape, so the CLI takes the page's four cases rather than the
     # comment being softened. Round 2, review finding F4.
-    years = raw.years
+    #
+    # The set iterated is the sorted union of `raw.years` and `adjusted.years`,
+    # identical to `api/routes_valuation._build_ebit_reconciliation`, so the CLI
+    # reconciles the exact same years as the web page (the third standing trap,
+    # backlog item 128, `P3e-reconciliation-years`).
+    years = sorted(set(raw.years) | set(adjusted.years))
     if not years:
         return
 
