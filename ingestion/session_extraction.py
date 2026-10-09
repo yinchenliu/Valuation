@@ -35,7 +35,7 @@ The file format, `session-extraction-v3`:
       "filings": [
         {
           "fiscal_year": 2023,
-          "pdf_path": "/absolute/path/to/the.pdf",
+          "pdf_path": "10K_filings/CMG/the.pdf",
           "pdf_sha256": "...",
           "size_bytes": 1234567,
           "target_years": null,
@@ -64,7 +64,8 @@ one figure per field, is refused by name: it must be extracted again. A
 the two keys from the filing's printed unit statement. A `session-extraction-v3`
 file, whose Pass 2 items lack `page` and `units`, is refused by name: run the
 skill again, or add `page` and `units` to each item. `pages_read` is a locator (1-based
-PDF pages); it is recorded and printed, never computed from.
+PDF pages); it is recorded and printed, never computed from. `pdf_path` is relative to
+the repository root for a filing in the repository; an absolute path is still accepted.
 `extracted_by.model` is the model ID the session declares; it cannot be verified and
 is printed as declared. `extracted_by.tool` and `extracted_by.date` are a record for a
 human reader and are not read by this module.
@@ -94,6 +95,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import config
 from ingestion.claude_extractor import (
     _NRI_SCHEMA,
     FilingPlan,
@@ -347,6 +349,24 @@ def _read_model(data: dict[str, Any], path: Path) -> str:
     return model
 
 
+def _format_pdf_path(resolved_path: str | Path) -> str:
+    """Format a PDF path: repo-relative with forward slashes if inside config.BASE_DIR, else absolute."""
+    path = Path(resolved_path).resolve()
+    base = config.BASE_DIR.resolve()
+    try:
+        return path.relative_to(base).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def _resolve_pdf_path(recorded_path: str) -> Path:
+    """Resolve a recorded pdf_path against config.BASE_DIR if relative; use as recorded if absolute."""
+    p = Path(recorded_path)
+    if p.is_absolute():
+        return p
+    return (config.BASE_DIR / p).resolve()
+
+
 def _filing_label(path: Path, index: int, entry: dict[str, Any]) -> str:
     """'<file>: filings[i] (<pdf name>)' — the prefix of every per-filing message."""
     pdf_path = entry.get("pdf_path")  # a diagnostic label only; checked below
@@ -392,13 +412,14 @@ def _session_plans(
             )
         if not isinstance(entry["pdf_path"], str) or not entry["pdf_path"]:
             raise ValueError(f"{where}: 'pdf_path' must be a non-empty string.")
-        pairs.append((entry["fiscal_year"], entry["pdf_path"]))
+        pairs.append((entry["fiscal_year"], str(_resolve_pdf_path(entry["pdf_path"]))))
 
     plans = plan_filings(pairs)
     result: list[tuple[FilingPlan, dict[str, Any]]] = []
     for index, (plan, entry) in enumerate(zip(plans, entries, strict=True)):
         where = _filing_label(path, index, entry)
-        if (plan.fiscal_year, plan.pdf_path) != (entry["fiscal_year"], entry["pdf_path"]):
+        resolved_pdf = str(_resolve_pdf_path(entry["pdf_path"]))
+        if (plan.fiscal_year, plan.pdf_path) != (entry["fiscal_year"], resolved_pdf):
             raise ValueError(
                 f"{where}: the filings are not in plan order. plan_filings puts "
                 f"fiscal {plan.fiscal_year} ({Path(plan.pdf_path).name}) at index "
@@ -443,12 +464,13 @@ def _pdf_problems(where: str, plan: FilingPlan, entry: dict[str, Any]) -> list[s
         return [f"{where}: 'pdf_sha256' must be a non-empty string."]
     if not _is_int(recorded_size):
         return [f"{where}: 'size_bytes' must be an integer."]
+    recorded_path = entry["pdf_path"]
     try:
         (now,) = fingerprint_filings([(plan.fiscal_year, plan.pdf_path)])
     except FileNotFoundError:
         return [(
-            f"{where}: the PDF {plan.pdf_path} is not on disk, so the figures "
-            "cannot be tied to the filing they were read from."
+            f"{where}: the PDF {recorded_path} (resolved to {plan.pdf_path}) is not on disk, "
+            "so the figures cannot be tied to the filing they were read from."
         )]
     if now.sha256 != recorded_sha:
         return [(
@@ -887,7 +909,7 @@ def cmd_plan(
         "filings": [
             {
                 "fiscal_year": plan.fiscal_year,
-                "pdf_path": plan.pdf_path,
+                "pdf_path": _format_pdf_path(plan.pdf_path),
                 "pdf_sha256": prints[plan.pdf_path].sha256,
                 "size_bytes": prints[plan.pdf_path].size_bytes,
                 "target_years": (

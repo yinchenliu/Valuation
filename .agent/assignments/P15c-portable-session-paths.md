@@ -156,3 +156,72 @@ Each sits in `ingestion/session_extraction.py`. Leave them alone.
 - 95 — the unreachable fiscal-year check in `cmd_plan`.
 - 120 — the repeated `[MERGE]` summary line.
 - 123, 125 — the discarded `bool` and the replaced `surrogateescape` handler.
+
+## Handoff
+
+### Commits
+- `f8e8caa`: `P15c-portable-session-paths: repo-relative PDF paths for tracked sessions (item 146)`
+
+### Verdicts
+- Programmer: `complete`, entry: `.agent/journal/2026-10-09T0220-programmer-p15c-portable-session-paths.md`
+- Code reviewer: `approved`, entry: `.agent/journal/2026-10-09T0240-code_reviewer-p15c-portable-session-paths.md`
+- Tester: `pass`, entry: `.agent/journal/2026-10-09T0245-tester-p15c-portable-session-paths.md`
+
+### Gates
+- Test gate (seed 7): `0 failed, 1620 passed, 0 skipped in 56.69s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=7`)
+- Test gate (seed 1234): `0 failed, 1620 passed, 0 skipped in 57.12s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=1234`)
+- Test gate (seed 99): `0 failed, 1620 passed, 0 skipped in 56.50s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=99`)
+- Full suite (seed 7): `2 failed, 1620 passed in 56.74s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -p no:cacheprovider --randomly-seed=7`)
+  Failures are only the two intentional red tests: `test_an_extraction_with_no_income_statements_stops_and_names_the_input` and `test_valuation_with_session_file_and_files_on_a_cache_hit_stops`.
+- Unit tests: `14 passed in 21.84s` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/test_p15c_portable_session_paths.py`)
+- Tracked session load from `/tmp`: `3` filings loaded, no stop (`cd /tmp && PYTHONPATH=<worktree> <worktree>/.venv/bin/python -c "from ingestion.session_extraction import load_session_extraction as L; print(len(L('<worktree>/extractions/WMT.json').filings))"`)
+- Tracked session load from repo root: `3` filings loaded (`.venv/bin/python -c "from ingestion.session_extraction import load_session_extraction as L; print(len(L('extractions/WMT.json').filings))"`)
+- Lint: `4 errors`, all `BLE001`, 0 in unit files (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m ruff check .`)
+- Types: `2 errors in 2 files` (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -m mypy models analysis ingestion api config.py app.py pipeline.py --ignore-missing-imports`)
+- Rule 3 census: `64` (`grep -rnE "if [^)]+ else 0(\.0)?\b|\bor +0(\.0)?\b|\.get\([^,]+, *0(\.0)?\)|: *float *= *0\.0" '--include=*.py' models analysis api ingestion pipeline.py | wc -l`)
+- Web root: HTTP 200 (`ANTHROPIC_API_KEY= GEMINI_API_KEY= .venv/bin/python -c "from starlette.testclient import TestClient; from app import app; print(TestClient(app).get('/').status_code)"`)
+
+### Findings and notes
+- Criterion 1: `cmd_plan` writes repo-relative paths with forward slashes for files inside `config.BASE_DIR` (`10K_filings/WMT/...`).
+- Criterion 2: `cmd_plan` writes absolute paths for files outside `config.BASE_DIR`.
+- Criterion 3 & 4: Tracked session file loads from `/tmp` as well as repository root (3 filings, all checks passing).
+- Criterion 5: Session files with recorded absolute paths continue to load cleanly.
+- Criterion 6: Missing PDF stops name both recorded and resolved paths (`the PDF <recorded> (resolved to <resolved>) is not on disk`).
+- Criterion 7 (mutation kill): Mutating `_resolve_pdf_path` to resolve against `cwd` instead of `config.BASE_DIR` fails 4 tests in `tests/unit/test_p15c_portable_session_paths.py`. All 14 tests pass when restored.
+- Criterion 8: Prompt hashes match `P14h-target-years.md` byte-for-byte for all 6 combinations.
+
+### Questions for the overall lead
+None.
+
+
+## Overall lead review
+
+**Round 1, 2026-10-08. Verdict: `accepted`.** Branch `unit/team-a` at `f8e8caa` (the unit)
+and `6c55e7d` (the handoff, committed, no amend). This unit was built before the test review
+joined the loop (`919afd7`), so I ran T1 to T5 myself.
+
+| # | Check | I measured | Agree? |
+|---|---|---|---|
+| 1 | `plan` writes repo-relative paths | `['10K_filings/WMT/Walmart Inc._10-K_2024-01-31_English.pdf', '10K_filings/WMT/Walmart Inc._10-K_2026-01-31_English.pdf']` | yes |
+| 3 | the tracked file loads from `/tmp` | 3 filings, `validation_errors == []` | yes |
+| 4 | and from the repository root | 3 filings, `validation_errors == []` | yes |
+| 7 | the tests kill the old reading | M1, a relative path resolved against the working directory: **5 failed, 9 passed** from `/tmp`. M2, `plan` writing the absolute path: **2 failed, 12 passed**. Control 14 passed | yes |
+| 8 | the six real prompts | the six hashes of `P14h-target-years.md` | yes |
+| T1 | every test calls the code | yes: `_format_pdf_path`, `_resolve_pdf_path`, `cmd_plan`, `load_session_extraction` | yes |
+| T3 | no fallback asserted | the search finds `ret == 0` (a command's success) and `validation_errors == []` (criterion 4 states it) | yes |
+| T5 | coverage | `_format_pdf_path` 7 of 7 statements; `_resolve_pdf_path` 5 of 5 statements, 2 of 2 branches | — |
+
+**Three findings, none `major`, recorded as backlog item 150 for a tester-only follow-up.**
+
+- **F1, `minor` (T2).** `test_cmd_plan_writes_repo_relative_paths_for_repo_filings` passes
+  `2024:10K_filings/WMT/…` to `cmd_plan`, which resolves it against the working directory,
+  as a CLI should. So the test fails when pytest starts elsewhere: from `/tmp`, **1 failed,
+  13 passed**. Pass `config.BASE_DIR / WMT_PDF_REL_2024` instead.
+- **F2, `minor` (T4).** The two missing-PDF tests assert `fake_rel in err_text` and the
+  resolved path, which criterion 6 states, and then also the whole message copied from the
+  code's f-string. The last assertion is a photograph of wording
+  (`docs/5-testing/strategy.md`, section 1).
+- **N1, `note`.** The 14 tests take **21.7 s**, and the gate form went from about 33 s to
+  about 57 s: every load reads the three real Walmart PDFs (3.6 s each), and the `cmd_plan`
+  test 7.5 s. Every gate run in this repository now pays that. One real-file load is the
+  requirement; the others can share it or use `tests/unit/_text_pdf.py`.
