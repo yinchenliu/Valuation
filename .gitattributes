@@ -1,0 +1,9 @@
+# A filing is bytes, never text. Without this line git guesses per file: on
+# 2026-10-08 it read 4 of the 16 tracked PDFs as text (OKTA 2024 and 2025, ABBV 2025,
+# LHX 2023), and a checkout with core.autocrlf=true, the Git for Windows default,
+# would rewrite their line endings. The page check and every pdf_sha256 in
+# extractions/ then fail on that machine only.
+*.pdf binary
+
+# The pickles under tests/ are bytes for the same reason.
+*.pkl binary
