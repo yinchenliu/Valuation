@@ -59,6 +59,7 @@ rule wins.**
 | File | Owns | Open it when |
 |---|---|---|
 | [8-build/environment.md](8-build/environment.md) | the interpreter, the virtual environment, the three gates, the API keys | setting up, or a command failed |
+| [8-build/worktree-teams.md](8-build/worktree-teams.md) | how two agent teams run in parallel in git worktrees | you are starting, merging or cleaning up the two-team pilot |
 | [8-build/phases.md](8-build/phases.md) | the build order and every done-criterion | starting any unit of work |
 
 ## 9. Reference

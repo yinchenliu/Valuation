@@ -99,30 +99,38 @@ def main() -> None:
     project = os.environ.get("CLAUDE_PROJECT_DIR") or cwd
     root = Path(project)
 
+    # **Read the snapshot BEFORE recording anything.** The instrument below
+    # writes this same file, and a missing snapshot is a meaningful state: it
+    # sends the comparison down the blunter `HEAD` fallback. The first version
+    # of this instrument wrote first, so an absent file became a present one
+    # holding no digests, the fallback stopped triggering, and a real change to
+    # `STATUS.md` was cleared. The unit's own test caught it:
+    # `test_with_no_snapshot_the_seal_falls_back_to_head_and_still_fires`.
+    try:
+        baseline = json.loads((root / BASELINE).read_text())
+    except (OSError, ValueError):
+        baseline = None
+    if not isinstance(baseline, dict):
+        baseline = None
+
     # Recorded BEFORE the role check below, and it has to be, for the same
     # reason `seal_baseline.py` records its own: backlog item 143. This hook was
-    # configured on `SubagentStop` for weeks and never observably ran, and the
-    # role check is one candidate explanation -- if the stop payload carries no
-    # `agent_type`, or one this repository does not expect, the hook exits here
-    # and looks exactly like a hook that never fired. Recording first is the
-    # only way to tell those apart.
+    # configured for weeks and never observably ran, and the role check is one
+    # candidate explanation -- if the stop payload carries no `agent_type`, or
+    # one this repository does not expect, the hook exits there and looks
+    # exactly like a hook that never fired. Recording first tells those apart.
     #
     # Key names, `agent_type` and `agent_id` only. A payload carries prompts,
     # and a prompt does not belong in a file the repository keeps.
-    try:
-        path = root / BASELINE
-        seen = json.loads(path.read_text())
-        if not isinstance(seen, dict):
-            seen = {}
-    except (OSError, ValueError):
-        seen = {}
-    seen["last_stop_seen"] = {
+    observation = {
         "payload_keys": sorted(data.keys()),
         "agent_type": (data.get("agent_type") or "").strip(),
         "agent_id": data.get("agent_id") or "",
         "seen_at": datetime.now(UTC).isoformat(),
     }
     try:
+        seen = dict(baseline) if baseline else {}
+        seen["last_stop_seen"] = observation
         (root / BASELINE).parent.mkdir(parents=True, exist_ok=True)
         (root / BASELINE).write_text(json.dumps(seen, indent=2) + "\n")
     except OSError:
@@ -130,13 +138,6 @@ def main() -> None:
 
     if (data.get("agent_type") or "").strip() not in ROLES:
         sys.exit(0)
-
-    try:
-        baseline = json.loads((root / BASELINE).read_text())
-    except (OSError, ValueError):
-        baseline = None
-    if not isinstance(baseline, dict):
-        baseline = None
 
     # Backlog item 141. `seal_baseline.py` takes the snapshot when the number of
     # subagents in flight goes from 0 to 1 and only increments after that, so
