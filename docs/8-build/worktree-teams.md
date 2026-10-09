@@ -199,7 +199,7 @@ seen five times on 2026-10-08.
 |---|---|---|---|
 | A | `P15c-portable-session-paths` | **146**, a session file names its PDFs by absolute path, and the loader resolves a relative one against the working directory | `ingestion/session_extraction.py`, `tests/unit/test_p15c_portable_session_paths.py` |
 | A, done | `P1h-mac-gate` | **145**, accepted in round 2 and merged as `d13be2d` | `ingestion/session_extraction.py`, `tests/unit/test_p1h_mac_gate.py` |
-| B | `P14h-target-years` | **133**, an empty year list reads as "all years" in two prompt builders | `ingestion/claude_extractor.py`, `tests/unit/test_p14h_target_years.py` |
+| B, done | `P14h-target-years` | **133**, accepted in round 2 and merged as `ea430d0`, the first unit with a test review | `ingestion/claude_extractor.py`, `tests/unit/test_p14h_target_years.py` |
 | B, done | `P3e-reconciliation-years` | **128**, accepted and merged as `f4059c7` | `cli.py`, `tests/unit/test_p3e_reconciliation_years.py` |
 
 **Why these two.** The pilot tests the machinery, not throughput, so a failure must be cheap

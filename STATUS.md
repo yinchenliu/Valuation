@@ -4,14 +4,15 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Re-measured at `d13be2d`, 2026-10-08, by the overall lead, on the macOS machine**, after
-both merges of the worktree pilot: `P3e-reconciliation-years` (Antigravity build lead B)
-and `P1h-mac-gate` (build lead A), each accepted by the overall lead on a re-run
+**Re-measured at `ea430d0`, 2026-10-08, by the overall lead, on the macOS machine**, after
+the worktree pilot's third merge: `P14h-target-years` (Antigravity build lead B), the first
+unit whose tests a code reviewer reviewed. The two before it were `P3e-reconciliation-years`
+(build lead B) and `P1h-mac-gate` (build lead A), each accepted by the overall lead on a re-run
 (`.venv/bin/python`, Python 3.11.6, `pytest-randomly` 5.0.0), with
 `ANTHROPIC_API_KEY= GEMINI_API_KEY=`. **The build moved back to macOS that day**, on the
 user's instruction, and runs as two Antigravity build leads in two git worktrees with Claude
 Code as the overall lead (`.agent/QUEUE.md`, `docs/8-build/worktree-teams.md`). Section 1
-holds the macOS figures. **The gate form is green on macOS: 1606 passed, 0 failed, 0
+holds the macOS figures. **The gate form is green on macOS: 1623 passed, 0 failed, 0
 skipped**, at three seeds. Item 145, the one test that depended on the Python version, is
 closed by `P1h-mac-gate`. **Nothing skips**: `10K_filings/` holds one folder per ticker (ABBV, CMG, LHX, OKTA, WMT, 16
 PDFs, all tracked since `29de775`), and `.gitattributes` marks every PDF binary.
@@ -25,7 +26,7 @@ gate after each merge named its own figure, as `docs/8-build/worktree-teams.md` 
 **The previous measurement, kept for the record: at `053463c` (`P1f-worktree-guards` and its tests, one-team mode), 2026-10-08, by the overall lead**, on branch `main`, **on the Windows machine**
 (`.venv/Scripts/python.exe`, Python 3.14.4), with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`.
 The build moved back to the Windows machine at `0a8ea54`; the figures from `cde33cb` to
-`ac736e7` were measured on the macOS machine. **Forty-seven work units accepted by `69436d9`, twenty-four more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes`, `P14b-note-figures`, `P14d-finance-leases`, `P3a-one-pipeline`, `P1b-windows-gate`, `P3b-pipeline-stops`, `P1c-test-network-copies`, `P1d-skipped-filings`, `P3c-one-number`, `P14e-nri-dedupe`, `P14f-prompt-encoding`, `P3d-invisible-year`, `P14g-unit-statement-pages`, `P1e-test-order`, `P1f-worktree-guards`, `P3e-reconciliation-years`, `P1h-mac-gate` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
+`ac736e7` were measured on the macOS machine. **Forty-seven work units accepted by `69436d9`, twenty-five more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes`, `P14b-note-figures`, `P14d-finance-leases`, `P3a-one-pipeline`, `P1b-windows-gate`, `P3b-pipeline-stops`, `P1c-test-network-copies`, `P1d-skipped-filings`, `P3c-one-number`, `P14e-nri-dedupe`, `P14f-prompt-encoding`, `P3d-invisible-year`, `P14g-unit-statement-pages`, `P1e-test-order`, `P1f-worktree-guards`, `P3e-reconciliation-years`, `P1h-mac-gate`, `P14h-target-years` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; **nine** times a reviewer, a
 programmer or a tester overturned a claim — **three times against a programmer**, **four times
 against the orchestrator**, once against a tester, and once by a tester against its own
@@ -82,12 +83,12 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-**At `d13be2d` on macOS** (`.venv/bin/python`), the empty-key prefix on every command:
+**At `ea430d0` on macOS** (`.venv/bin/python`), the empty-key prefix on every command:
 
-| Gate | Result at `d13be2d` (macOS) |
+| Gate | Result at `ea430d0` (macOS) |
 |---|---|
-| Tests, full suite, seed 7 | **2 failed, 1606 passed, 0 skipped**: exactly the 2 red on purpose (`*_rule3_red.py`). `P3e-reconciliation-years` added 17 and `P1h-mac-gate` 3 |
-| **Tests, the gate form**, seeds 7, 1234, 99 | **1606 passed, 0 failed, 0 skipped** at each seed, measured on `main` after both pilot merges. After the first merge (`f4059c7`) it was 1 failed, 1602 passed: the failure was item 145, `test_a_handler_that_is_not_a_name_stops_and_names_the_value_and_the_stream`, which `P1h-mac-gate` closed. At `2e9447a` the Chipotle test (`tests/unit/test_p14b_note_figures.py:971`) skipped, because `10K_filings/CMG/` was not tracked; it runs and passes since `29de775`. Before `2e9447a` two more skipped, `test_p14d_finance_leases.py:589` and `test_p14e_nri_dedupe.py:656`, because `extractions/WMT.json` held absolute Windows paths (item 146); both run and pass now |
+| Tests, full suite, seed 7 | **2 failed, 1623 passed, 0 skipped**: exactly the 2 red on purpose (`*_rule3_red.py`). `P3e-reconciliation-years` added 17, `P1h-mac-gate` 3 and `P14h-target-years` 17 |
+| **Tests, the gate form**, seeds 7, 1234, 99 | **1623 passed, 0 failed, 0 skipped** at each seed, measured on `main` after the merge of `P14h-target-years`. After the second merge (`d13be2d`) it was 1606. After the first merge (`f4059c7`) it was 1 failed, 1602 passed: the failure was item 145, `test_a_handler_that_is_not_a_name_stops_and_names_the_value_and_the_stream`, which `P1h-mac-gate` closed. At `2e9447a` the Chipotle test (`tests/unit/test_p14b_note_figures.py:971`) skipped, because `10K_filings/CMG/` was not tracked; it runs and passes since `29de775`. Before `2e9447a` two more skipped, `test_p14d_finance_leases.py:589` and `test_p14e_nri_dedupe.py:656`, because `extractions/WMT.json` held absolute Windows paths (item 146); both run and pass now |
 | Lint | **4 errors**, every one `BLE001`: `api/routes_valuation.py:463` and `:745`, `cli.py:1416`, `tests/test_e2e_all_googl.py:106`. `cli.py`'s moved from `:1411` under `P3e`, five comment lines down; the same site |
 | Types | **2 errors in 2 files**, 21 files checked: `api/routes_upload.py:28`, `analysis/projector.py:395` |
 | Routes | **200** |
@@ -614,7 +615,7 @@ the headline. Re-ranked at `622262b`.
 | 141, 144 | The seal keeps one baseline; the seal's events do not fire for a background agent | **2026-10-08.** The seal has never worked. It does not bind an Antigravity agent at all, so it does not block the worktree pilot |
 | 148 | A test in `test_p3e_reconciliation_years.py` calls no production code and cannot fail | **new, note N1 of the `P3e` review.** Passes under the mutant the other six tests kill. A tester-only fix |
 | 129 | `Gross Margin` and `EBIT Margin` print a fabricated `0.0%` for a zero-revenue year | **new at `P3d`, silent.** Both entry points; the property also feeds `analysis/projector.py` |
-| 130-137 | eight findings from `P3d-invisible-year` in `cli.py`, `templates/_statements.html` and `ingestion/claude_extractor.py` | **new at `P3d`.** 133, the two surviving `if target_years:` sites, is `P14h-target-years`, team A's next unit |
+| 130-132, 134-137 | seven findings from `P3d-invisible-year` in `cli.py` and `templates/_statements.html` | **new at `P3d`.** Display and latent defects; none moves a number |
 | 123, 125 | A `bool` the docstring says a caller can use, discarded at the call site; the inherited `surrogateescape` replaced rather than composed, with no text saying so | **new, the `P14f` review's F1 and F3.** Neither is a rule break. **F1 can be closed with no code change**: three of the tester's tests now read that `bool` |
 | 103, 104, 105, 106, 108, 109, 110, 111, 118 | nine findings from the `P3c-one-number` review and its tester | **new.** A stop that does not name the field; the basis sentence in four places; a conditional with two identical branches; a tense; a fixture that cannot see item 87; six copies of one sentence per row; two `step="0.1"` fields; a ratio shown at one decimal place everywhere; coverage blind to a continuation-line diff |
 | 10 | D&A subtraction buried in the parser, `ingestion/claude_extractor.py:479` | an accounting decision taken inside a parser, on two zero-defaulted values |
@@ -633,6 +634,7 @@ the headline. Re-ranked at `622262b`.
 
 | # | Item | Closed at |
 |---|---|---|
+| 133 | An empty `target_years` list read as "all years" in the Pass 1 and Pass 2 prompt builders | `a67a225`, `3ad257e`, merged as `ea430d0` (`P14h-target-years`, round 2) |
 | 145 | The stream-handler stop hid a subclass on Python 3.11 and 3.12, so the macOS gate form was red | `3b1225d`, `c227cc0`, merged as `d13be2d` (`P1h-mac-gate`, round 2) |
 | 128 | The CLI reconciled `raw.years` where the page reconciled the union of both sides | `2887387`, merged as `f4059c7` (`P3e-reconciliation-years`, the worktree pilot's first merge) |
 | 117, 140 | A real-filing test ran on no clean checkout, because `extractions/` and `10K_filings/` were git-ignored | `32b3f06`. **On macOS it held only from `2e9447a`**: `WMT.json` named Windows paths until then (item 146) |
