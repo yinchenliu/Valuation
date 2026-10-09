@@ -272,3 +272,51 @@ stop tests already kill the mutant. Either delete it, or anchor the path to the 
 2. Re-run criterion 6 and the gates.
 3. Commit as a new commit, append `## Handoff, round 2` naming the commit, **commit the
    handoff**, and tell the user "P14h-target-years is ready for the overall lead".
+
+## Handoff, round 2 (build lead B)
+
+### Commit
+
+`3ad257e` (`3ad257e085dae2834fb6154268fe00bc6c03475e`)
+
+### Verdicts
+
+- **Tester (Round 2):** `pass` (`.agent/journal/2026-10-09T0242-tester-p14h-target-years-r2.md`)
+- **Code Reviewer (Test-Review Mode):** `approved` (`.agent/journal/2026-10-09T0249-code_reviewer-p14h-target-years-tests.md`)
+
+### Summary of Round 2 Changes
+
+1. **F1 answered (`major`):** Deleted `test_real_prompt_hash_invariance`, `WMT_BASELINE_HASHES` table, and the imports used only by them (`contextlib`, `hashlib`, `io`, `cmd_prompt`) from `tests/unit/test_p14h_target_years.py`. The six reference prompt hashes are recorded directly in the journal entry and gate table below as the Criterion 4 measurement.
+2. **F2 answered (`minor`):** Anchored `test_no_truthiness_test_of_target_years_in_source` path to `Path(__file__).resolve().parents[2] / "ingestion" / "claude_extractor.py"`. Verified that tests succeed when invoked from any working directory (e.g. from `/tmp`).
+3. **Test review completed:** Code reviewer verified T1–T5 in test-review mode against `docs/5-testing/strategy.md`. Mutation executed in scratch worktree `/tmp/p14h-mutant` killed (8 failed, 9 passed).
+
+### Measured Gates
+
+All commands run on macOS from `/Users/yinchenliu/Documents/Git/DCF/Valuation-wt/team-b` with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`.
+
+| Gate / Criterion | Command | Result |
+|---|---|---|
+| 1. No truthiness test of `target_years` | `grep -n "if target_years:" ingestion/claude_extractor.py` | Exit 1 (0 matches) |
+| 2, 3. Empty list stops Pass 1 and Pass 2 | `pytest -q -p no:cacheprovider tests/unit/test_p14h_target_years.py -k stops` | 7 passed in 0.03s |
+| 4. Six real prompt hashes (measurement) | `for f in 0 1 2; do for p in 1 2; do ...; done; done` | All 6 hashes match baseline: f0p1 `cbf26b0a876034f6`, f0p2 `024bd96701e72481`, f1p1 `c401b7bb3096592c`, f1p2 `9391f61bfa21ac43`, f2p1 `4aa84c989703f3ce`, f2p2 `cc61ac590ca169f0` |
+| 5. Template text unchanged | `pytest -q -p no:cacheprovider tests/unit/test_p14h_target_years.py -k matches_hand_derived` | 8 passed in 0.03s |
+| 6. Mutation probe killed | Mutant with `if target_years:` in scratch worktree | 8 failed, 9 passed (7 stop tests and 1 source check failed) |
+| 7. Randomly shuffled gate (n=7) | `pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=7` | 1 failed, 1619 passed in 33.93s |
+| 7. Randomly shuffled gate (n=1234) | `pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=1234` | 1 failed, 1619 passed in 33.83s |
+| 7. Randomly shuffled gate (n=99) | `pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=99` | 1 failed, 1619 passed in 34.36s |
+| 8. Lint | `ruff check .` | 4 errors, all `BLE001` (`api/routes_valuation.py:463, 745`, `cli.py:1416`, `tests/test_e2e_all_googl.py:106`), 0 in files written by this unit |
+| 8. Types | `mypy models analysis ingestion api config.py app.py pipeline.py --ignore-missing-imports` | 2 errors in 2 files (`analysis/projector.py:395`, `api/routes_upload.py:28`, 21 files checked) |
+| 8. Rule 3 census | `grep -rnE "if [^)]+ else 0(\.0)?\b\|\bor +0(\.0)?\b\|\.get\([^,]+, *0(\.0)?\)\|: *float *= *0\.0" '--include=*.py' models analysis api ingestion pipeline.py \| wc -l` | 64 |
+| 9. Scope | `git diff --name-only main...HEAD` | Only files in scope |
+| T5. Coverage over files in scope | `pytest -q -p no:cacheprovider tests/unit/test_p14h_target_years.py --cov=ingestion.claude_extractor --cov-branch --cov-report=term-missing` | 100% statement (19/19) and 100% branch (10/10) coverage across `_build_financials_prompt` and `_build_nri_prompt` |
+
+Note on Criterion 7: The single failing test across all three seeds is `tests/unit/test_session_extraction_console.py:774: test_a_handler_that_is_not_a_name_stops_and_names_the_value_and_the_stream`, which is the known pre-existing failure on macOS (backlog item 145, team A's unit `P1h-mac-gate`). Passed tests increased by 17 (from 1602 to 1619).
+
+### New Findings
+
+None.
+
+### Questions for the Overall Lead
+
+None.
+
