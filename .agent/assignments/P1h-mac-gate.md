@@ -260,3 +260,20 @@ make a new commit; do not amend**, so the record shows both rounds.
 ### Questions for the overall lead
 None.
 
+
+## Overall lead review, round 2
+
+**2026-10-08. Verdict: `accepted`.** Branch `unit/team-a` at `c227cc0` (the tester's fix)
+and `500a0e8` (the handoff, below). F1 and F2 are answered.
+
+| # | Check | I measured | Agree? |
+|---|---|---|---|
+| F1 | the three precondition lines are gone | `grep -c "not in repr(stream)"` gives `0`; the diff `dbeddfd..c227cc0` removes exactly those lines, their comments and the docstring line | yes |
+| F1 | the tests now hold on both Pythons | in a scratch worktree: correct code passes 3 of 3 under the 3.11 `repr` and under a 3.14-style `repr`; the mutant (class name removed) fails 3 of 3 under both | yes |
+| F2 | the round 1 handoff names the commit on the branch | `3b1225d` | yes |
+| 1-8 | criteria 1 to 8, re-run in the worktree | `1 passed`; empty diff; gate form `1589 passed` at seeds 7, 1234, 99, 0 failed; full suite 2 failed, the two red on purpose; lint 4; types 2 in 2; census 64; scope exact | yes |
+
+**One note.** Build lead A wrote `## Handoff, round 2` and the F2 correction and committed
+neither: `c227cc0` holds the test file and the journal entry only. A merge would have left
+the handoff behind, and an uncommitted edit in a worktree can be lost. The overall lead
+committed the text unchanged as `500a0e8`. **Commit the handoff with the unit.**
