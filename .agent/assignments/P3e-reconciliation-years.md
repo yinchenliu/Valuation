@@ -131,3 +131,46 @@ Each sits in `cli.py`. Leave them alone.
 - 86, 90 — the `CACHE_FORMAT` comment and the terminal growth literal.
 - 104 — the historical-FCFF basis sentence in three files.
 - 129, 130, 132, 134, 135, 136, 137 — the other `P3d-invisible-year` findings in `cli.py`.
+
+## Handoff (build lead B)
+
+### Verdicts
+
+- **Programmer:** complete (`.agent/journal/2026-10-09T0124-programmer-p3e-reconciliation-years.md`)
+- **Code Reviewer:** `approved` (`.agent/journal/2026-10-09T0137-code_reviewer-p3e-reconciliation-years.md`)
+- **Tester:** `pass` (`.agent/journal/2026-10-09T0140-tester-p3e-reconciliation-years.md`)
+
+### Summary
+
+In `cli.py:print_normalization`, updated `years = raw.years` to `years = sorted(set(raw.years) | set(adjusted.years))`, bringing the CLI into exact parity with `api/routes_valuation.py:_build_ebit_reconciliation` (backlog item 128). An unreconciled year that exists only on the adjusted side is now named in the CLI as `not extracted: raw income statement`, exactly matching the web presentation.
+
+New test file `tests/unit/test_p3e_reconciliation_years.py` adds 11 test functions and 17 test cases with 124 dynamic assertions, all independently derived from hand arithmetic and closed-form identities (0 taken from running code output). Statement and branch coverage over `cli.py:print_normalization` and `api/routes_valuation.py:_build_ebit_reconciliation` is 100%. Mutation M1 (`years = raw.years`) was killed (6 failed, 11 passed).
+
+### Measured Gates
+
+All commands run on macOS from `/Users/yinchenliu/Documents/Git/DCF/Valuation-wt/team-b` with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`.
+
+| Gate / Criterion | Command | Result |
+|---|---|---|
+| 1. No `raw.years` alone | `grep -n "years = raw.years" cli.py` | Exit 1 (0 matches) |
+| 2. Adjusted-only year parity | `pytest -q -p no:cacheprovider tests/unit/test_p3e_reconciliation_years.py` | 17 passed in 0.94s |
+| 3. Mutation M1 killed | Scratch tree with `years = raw.years` | Mutant: 6 failed, 11 passed. Restored: 17 passed |
+| 4. Existing parity test | `pytest -q -p no:cacheprovider "tests/unit/test_p3d_invisible_year.py::test_both_entry_points_name_an_unreconciled_year_in_the_same_words"` | 3 passed in 0.86s |
+| 5. Randomly shuffled gate (n=7) | `pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=7` | 1 failed, 1602 passed in 34.45s |
+| 5. Randomly shuffled gate (n=1234) | `pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=1234` | 1 failed, 1602 passed in 32.82s |
+| 5. Randomly shuffled gate (n=99) | `pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=99` | 1 failed, 1602 passed in 32.64s |
+| 6. Lint | `ruff check .` | 4 errors, all `BLE001` (`api/routes_valuation.py:463, 745`, `cli.py:1416`, `tests/test_e2e_all_googl.py:106`), 0 in files written by this unit |
+| 7. Types | `mypy models analysis ingestion api config.py app.py pipeline.py --ignore-missing-imports` | 2 errors in 2 files (`analysis/projector.py:395`, `api/routes_upload.py:28`, 21 files checked) |
+| 8. Rule 3 census | `grep -rnE "if [^)]+ else 0(\.0)?\b\|\bor +0(\.0)?\b\|\.get\([^,]+, *0(\.0)?\)\|: *float *= *0\.0" '--include=*.py' models analysis api ingestion pipeline.py \| wc -l` | 64 |
+| 9. Scope | `git diff --name-only main...HEAD` | Only files in scope |
+
+Note on Criterion 5: The single failing test across all three seeds is `tests/unit/test_session_extraction_console.py:774: test_a_handler_that_is_not_a_name_stops_and_names_the_value_and_the_stream`, which is the known pre-existing failure on macOS (backlog item 145, team A's unit `P1h-mac-gate`). Passed tests increased by 17 (from 1585 to 1602).
+
+### New Findings
+
+None.
+
+### Questions for the Overall Lead
+
+None.
+
