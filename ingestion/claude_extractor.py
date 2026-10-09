@@ -2333,7 +2333,12 @@ def _build_financials_prompt(
 
     The PDF is sent as a native document attachment, not embedded in the prompt.
     """
-    if target_years:
+    if target_years is not None:
+        if not target_years:
+            raise ValueError(
+                "target_years cannot be empty: an empty list requests no year; "
+                "None is how a caller asks for every year."
+            )
         year_str = ", ".join(str(y) for y in sorted(target_years))
         year_instruction = (
             f"Extract Income Statement and Cash Flow data for fiscal year(s): "
@@ -2411,7 +2416,12 @@ def _build_nri_prompt(
 
     The PDF is sent as a native document attachment, not embedded in the prompt.
     """
-    if target_years:
+    if target_years is not None:
+        if not target_years:
+            raise ValueError(
+                "target_years cannot be empty: an empty list requests no year; "
+                "None is how a caller asks for every year."
+            )
         year_str = ", ".join(str(y) for y in sorted(target_years))
         year_instruction = f"Analyze non-recurring items for fiscal year(s): {year_str}."
     else:

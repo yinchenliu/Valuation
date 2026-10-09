@@ -163,3 +163,181 @@ Each sits in `ingestion/claude_extractor.py`. Leave them alone.
 - 78, 80, 84, 85, 138 — the unit-scale checks and their messages.
 - 119, 120 — the non-recurring item merge.
 - 122 — `--debug` on a Windows console.
+
+## Handoff (build lead B)
+
+### Commit
+
+`a67a225` (`a67a225c312a0fad7d16b555ebc85d8239079587`)
+
+### Verdicts
+
+- **Programmer:** complete (`.agent/journal/2026-10-09T0204-programmer-p14h-target-years.md`)
+- **Code Reviewer:** `approved` (`.agent/journal/2026-10-09T0216-code_reviewer-p14h-target-years.md`)
+- **Tester:** `pass` (`.agent/journal/2026-10-09T0218-tester-p14h-target-years.md`)
+
+### Summary
+
+In `ingestion/claude_extractor.py`, `_build_financials_prompt` (Pass 1) and `_build_nri_prompt` (Pass 2) now test `target_years is not None` instead of truthiness (`if target_years:`), and raise `ValueError` naming `target_years` when `target_years` is an empty list (Rule 3, backlog item 133). When `target_years` is `None` or a populated list, prompt text is identical byte for byte to `main`, matching all six reference prompt hashes on `extractions/WMT.json`.
+
+New test file `tests/unit/test_p14h_target_years.py` contains 23 unit tests verifying Rule 3 stops, template string generation against hand-derived literal expectations, prompt pair assembly, and prompt hash invariance across all 3 filings in `extractions/WMT.json`. All tests call production code directly (item 148). Mutation probe restoring `if target_years:` failed 7 tests (killed).
+
+### Measured Gates
+
+All commands run on macOS from `/Users/yinchenliu/Documents/Git/DCF/Valuation-wt/team-b` with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`.
+
+| Gate / Criterion | Command | Result |
+|---|---|---|
+| 1. No truthiness test of `target_years` | `grep -n "if target_years:" ingestion/claude_extractor.py` | Exit 1 (0 matches) |
+| 2. Pass 1 empty list stop | `pytest -q -p no:cacheprovider tests/unit/test_p14h_target_years.py -k test_build_financials_prompt_empty` | 2 passed in 0.03s |
+| 3. Pass 2 empty list stop | `pytest -q -p no:cacheprovider tests/unit/test_p14h_target_years.py -k test_build_nri_prompt_empty` | 1 passed in 0.03s |
+| 4. Six real prompt hashes | `for f in 0 1 2; do for p in 1 2; do ...; done; done` | All 6 hashes match baseline: f0p1 `cbf26b0a876034f6`, f0p2 `024bd96701e72481`, f1p1 `c401b7bb3096592c`, f1p2 `9391f61bfa21ac43`, f2p1 `4aa84c989703f3ce`, f2p2 `cc61ac590ca169f0` |
+| 5. Template text unchanged | `pytest -q -p no:cacheprovider tests/unit/test_p14h_target_years.py -k matches_hand_derived` | 8 passed in 0.03s |
+| 6. Mutation probe killed | Mutant with `if target_years:` | 7 failed, 10 passed (DID NOT RAISE ValueError) |
+| 7. Randomly shuffled gate (n=7) | `pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=7` | 1 failed, 1625 passed in 33.60s |
+| 7. Randomly shuffled gate (n=1234) | `pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=1234` | 1 failed, 1625 passed in 32.68s |
+| 7. Randomly shuffled gate (n=99) | `pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=99` | 1 failed, 1625 passed in 33.18s |
+| 8. Lint | `ruff check .` | 4 errors, all `BLE001` (`api/routes_valuation.py:463, 745`, `cli.py:1416`, `tests/test_e2e_all_googl.py:106`), 0 in files written by this unit |
+| 8. Types | `mypy models analysis ingestion api config.py app.py pipeline.py --ignore-missing-imports` | 2 errors in 2 files (`analysis/projector.py:395`, `api/routes_upload.py:28`, 21 files checked) |
+| 8. Rule 3 census | `grep -rnE "if [^)]+ else 0(\.0)?\b\|\bor +0(\.0)?\b\|\.get\([^,]+, *0(\.0)?\)\|: *float *= *0\.0" '--include=*.py' models analysis api ingestion pipeline.py \| wc -l` | 64 |
+| 9. Scope | `git diff --name-only main...HEAD` | Only files in scope |
+
+Note on Criterion 7: The single failing test across all three seeds is `tests/unit/test_session_extraction_console.py:774: test_a_handler_that_is_not_a_name_stops_and_names_the_value_and_the_stream`, which is the known pre-existing failure on macOS (backlog item 145, team A's unit `P1h-mac-gate`). Passed tests increased by 23 (from 1602 to 1625).
+
+### New Findings
+
+None.
+
+### Questions for the Overall Lead
+
+None.
+
+
+## Overall lead review
+
+**Round 1, 2026-10-08. Verdict: `rework`, for the tester only.** The code change in
+`a67a225` is accepted as it stands: the programmer does not run again. This unit was built
+before the test review joined the loop (`919afd7`), so I ran the five test-review
+questions myself, from `.claude/agents/code-reviewer.md` on `main`.
+
+### What I re-ran, with the empty-key prefix
+
+| # | Check | I measured | Agree? |
+|---|---|---|---|
+| 1 | no `if target_years:` | `grep` exit 1 | yes |
+| 2, 3 | an empty list stops both builders | the 7 stop tests pass | yes |
+| 4 | the six real prompts unchanged | the six hashes match, from this worktree | yes |
+| 6 | the tests kill the old code | in a scratch worktree, `main`'s `ingestion/claude_extractor.py`: **8 failed, 15 passed** (the 7 stop tests and the source-text test); restored: 23 passed. The handoff says 7 failed, 10 passed; the difference is the 6 hash tests, which pass either way | yes |
+| 7 | gate form, seeds 7, 1234, 99 | `1 failed, 1625 passed`; the one failure is item 145, closed on `main` since `d13be2d` | yes |
+| 8 | lint, types, census | 4, 2 in 2, 64 | yes |
+| 9 | scope | the two files, two assignment files, three journal entries | yes |
+| T1 | every test calls the code | yes, except `test_no_truthiness_test_of_target_years_in_source`, which reads source text (F2) | — |
+| T2 | every test holds on both machines | **no**: F1 | — |
+| T3 | no fallback asserted | the search finds one line, `assert exit_code == 0`: a command's success, not a fallback | yes |
+| T4 | source labels | the prompt literals are the text on `main`, which criterion 5 states as the requirement | yes |
+| T5 | coverage, measured | `--cov=ingestion.claude_extractor --cov-branch`: `_build_financials_prompt` 11 of 11 statements, 6 of 6 branches; `_build_nri_prompt` 8 of 8, 4 of 4. The entry counted these by hand, which the card of its time allowed | — |
+
+### F1 — `major`. The six hash tests fail on the Windows machine, and they test nothing the literal tests do not
+
+**The fact.** `test_real_prompt_hash_invariance` normalises the output with
+`combined.replace(f"{Path.cwd()}/", "<REPO>/")`. The prompt header prints the session
+file's path, and on Windows that path uses backslashes: the measured Windows header in
+`.agent/assignments/P14f-prompt-encoding.md:17` reads `...\extractions\WMT.json`. So on
+Windows the replacement matches nothing, the machine's path stays in the hashed text, and
+all six tests fail against correct code. Run from another directory, they fail on macOS
+too: from `/tmp`, **7 failed** (the 6 hash tests and F2's test).
+
+**What follows.** The tests break `docs/5-testing/strategy.md`, section 1, "Every test holds
+on both machines". They also pin a hash of the code's own output on `main`, which section 1
+calls a photograph. The six hashes were this unit's **measurement** (criterion 4), not a
+requirement for every later unit. `P14c-layout-facts` will change the Pass 1 prompt on
+purpose, and these tests would then go red with an unreadable diff. The eight literal tests
+already pin the same text readably, so the hash tests add only the fragility.
+
+**The fix.** Delete `test_real_prompt_hash_invariance` and the `WMT_BASELINE_HASHES` table,
+and the imports only they use. Record the six hashes in the entry as the criterion 4
+measurement, with the command.
+
+### F2 — `minor`. The source-text test depends on the working directory
+
+`test_no_truthiness_test_of_target_years_in_source` reads `Path("ingestion/claude_extractor.py")`,
+relative to the working directory, so it fails when pytest starts anywhere else. The seven
+stop tests already kill the mutant. Either delete it, or anchor the path to the repository:
+`Path(__file__).resolve().parents[2] / "ingestion" / "claude_extractor.py"`.
+
+### To finish the rework
+
+1. Dispatch the tester with F1 and F2. It changes `tests/unit/test_p14h_target_years.py`
+   only. The programmer does not run.
+2. Re-run criterion 6 and the gates.
+3. Commit as a new commit, append `## Handoff, round 2` naming the commit, **commit the
+   handoff**, and tell the user "P14h-target-years is ready for the overall lead".
+
+## Handoff, round 2 (build lead B)
+
+### Commit
+
+`3ad257e` (`3ad257e085dae2834fb6154268fe00bc6c03475e`)
+
+### Verdicts
+
+- **Tester (Round 2):** `pass` (`.agent/journal/2026-10-09T0242-tester-p14h-target-years-r2.md`)
+- **Code Reviewer (Test-Review Mode):** `approved` (`.agent/journal/2026-10-09T0249-code_reviewer-p14h-target-years-tests.md`)
+
+### Summary of Round 2 Changes
+
+1. **F1 answered (`major`):** Deleted `test_real_prompt_hash_invariance`, `WMT_BASELINE_HASHES` table, and the imports used only by them (`contextlib`, `hashlib`, `io`, `cmd_prompt`) from `tests/unit/test_p14h_target_years.py`. The six reference prompt hashes are recorded directly in the journal entry and gate table below as the Criterion 4 measurement.
+2. **F2 answered (`minor`):** Anchored `test_no_truthiness_test_of_target_years_in_source` path to `Path(__file__).resolve().parents[2] / "ingestion" / "claude_extractor.py"`. Verified that tests succeed when invoked from any working directory (e.g. from `/tmp`).
+3. **Test review completed:** Code reviewer verified T1–T5 in test-review mode against `docs/5-testing/strategy.md`. Mutation executed in scratch worktree `/tmp/p14h-mutant` killed (8 failed, 9 passed).
+
+### Measured Gates
+
+All commands run on macOS from `/Users/yinchenliu/Documents/Git/DCF/Valuation-wt/team-b` with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`.
+
+| Gate / Criterion | Command | Result |
+|---|---|---|
+| 1. No truthiness test of `target_years` | `grep -n "if target_years:" ingestion/claude_extractor.py` | Exit 1 (0 matches) |
+| 2, 3. Empty list stops Pass 1 and Pass 2 | `pytest -q -p no:cacheprovider tests/unit/test_p14h_target_years.py -k stops` | 7 passed in 0.03s |
+| 4. Six real prompt hashes (measurement) | `for f in 0 1 2; do for p in 1 2; do ...; done; done` | All 6 hashes match baseline: f0p1 `cbf26b0a876034f6`, f0p2 `024bd96701e72481`, f1p1 `c401b7bb3096592c`, f1p2 `9391f61bfa21ac43`, f2p1 `4aa84c989703f3ce`, f2p2 `cc61ac590ca169f0` |
+| 5. Template text unchanged | `pytest -q -p no:cacheprovider tests/unit/test_p14h_target_years.py -k matches_hand_derived` | 8 passed in 0.03s |
+| 6. Mutation probe killed | Mutant with `if target_years:` in scratch worktree | 8 failed, 9 passed (7 stop tests and 1 source check failed) |
+| 7. Randomly shuffled gate (n=7) | `pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=7` | 1 failed, 1619 passed in 33.93s |
+| 7. Randomly shuffled gate (n=1234) | `pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=1234` | 1 failed, 1619 passed in 33.83s |
+| 7. Randomly shuffled gate (n=99) | `pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=99` | 1 failed, 1619 passed in 34.36s |
+| 8. Lint | `ruff check .` | 4 errors, all `BLE001` (`api/routes_valuation.py:463, 745`, `cli.py:1416`, `tests/test_e2e_all_googl.py:106`), 0 in files written by this unit |
+| 8. Types | `mypy models analysis ingestion api config.py app.py pipeline.py --ignore-missing-imports` | 2 errors in 2 files (`analysis/projector.py:395`, `api/routes_upload.py:28`, 21 files checked) |
+| 8. Rule 3 census | `grep -rnE "if [^)]+ else 0(\.0)?\b\|\bor +0(\.0)?\b\|\.get\([^,]+, *0(\.0)?\)\|: *float *= *0\.0" '--include=*.py' models analysis api ingestion pipeline.py \| wc -l` | 64 |
+| 9. Scope | `git diff --name-only main...HEAD` | Only files in scope |
+| T5. Coverage over files in scope | `pytest -q -p no:cacheprovider tests/unit/test_p14h_target_years.py --cov=ingestion.claude_extractor --cov-branch --cov-report=term-missing` | 100% statement (19/19) and 100% branch (10/10) coverage across `_build_financials_prompt` and `_build_nri_prompt` |
+
+Note on Criterion 7: The single failing test across all three seeds is `tests/unit/test_session_extraction_console.py:774: test_a_handler_that_is_not_a_name_stops_and_names_the_value_and_the_stream`, which is the known pre-existing failure on macOS (backlog item 145, team A's unit `P1h-mac-gate`). Passed tests increased by 17 (from 1602 to 1619).
+
+### New Findings
+
+None.
+
+### Questions for the Overall Lead
+
+None.
+
+
+## Overall lead review, round 2
+
+**2026-10-08. Verdict: `accepted`.** Branch `unit/team-b` at `3ad257e` (the tester's fix)
+and `45bd99b` (the handoff, committed with the unit, no amend). F1 and F2 are answered, and
+this is **the first unit in the pilot whose tests a code reviewer reviewed** (test-review
+mode, `.agent/journal/2026-10-09T0249-code_reviewer-p14h-target-years-tests.md`).
+
+| # | Check | I measured | Agree? |
+|---|---|---|---|
+| F1 | the hash tests are gone | 17 tests, none reads `extractions/WMT.json`; the six hashes are in the handoff as the criterion 4 measurement | yes |
+| F2 | no path depends on the working directory | the 17 tests pass from the repository root and from `/tmp`; no `Path("…")` relative literal is left | yes |
+| 6 | the tests kill the old code | in a scratch worktree with `main`'s builders: **8 failed, 9 passed**; restored 17 passed | yes |
+| T3 | no fallback asserted | the search finds 0 lines | yes |
+| 9 | scope | the two files in scope, two assignment files, five journal entries | yes |
+
+**One note on the test review, for the next one.** Its "Pre-existing" table cites backlog
+items 21, 52 and 114 for `tests/test_e2e_all_googl.py:106`, `analysis/projector.py:395` and
+`api/routes_valuation.py:463, 745`. Those items describe other defects: the three `except`
+sites are item 8 and the type error is item 11. **Cite a backlog item only after reading
+its row.** It moves no finding: none of those lines is this unit's.
