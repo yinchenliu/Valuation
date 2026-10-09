@@ -4,14 +4,15 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Re-measured at `2e9447a`, 2026-10-08, by the overall lead, on the macOS machine**
+**Re-measured at `29de775`, 2026-10-08, by the overall lead, on the macOS machine**
 (`.venv/bin/python`, Python 3.11.6, `pytest-randomly` 5.0.0), with
 `ANTHROPIC_API_KEY= GEMINI_API_KEY=`. **The build moved back to macOS that day**, on the
 user's instruction, and runs as two Antigravity build leads in two git worktrees with Claude
 Code as the overall lead (`.agent/QUEUE.md`, `docs/8-build/worktree-teams.md`). Section 1
-holds the macOS figures. **Two of them differ from Windows, and neither is a regression**:
-one test depends on the Python version (backlog item 145, assigned to `P1h-mac-gate`), and
-the Chipotle filing is not yet tracked, so one test skips.
+holds the macOS figures. **One differs from Windows, and it is not a regression**: one test
+depends on the Python version (backlog item 145, assigned to `P1h-mac-gate`). **Nothing
+skips any more**: `10K_filings/` holds one folder per ticker (ABBV, CMG, LHX, OKTA, WMT, 16
+PDFs, all tracked since `29de775`), and `.gitattributes` marks every PDF binary.
 
 **The previous measurement, kept for the record: at `053463c` (`P1f-worktree-guards` and its tests, one-team mode), 2026-10-08, by the overall lead**, on branch `main`, **on the Windows machine**
 (`.venv/Scripts/python.exe`, Python 3.14.4), with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`.
@@ -73,12 +74,12 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-**At `2e9447a` on macOS** (`.venv/bin/python`), the empty-key prefix on every command:
+**At `29de775` on macOS** (`.venv/bin/python`), the empty-key prefix on every command:
 
-| Gate | Result at `2e9447a` (macOS) |
+| Gate | Result at `29de775` (macOS) |
 |---|---|
-| Tests, full suite, seed 7 | **3 failed, 1584 passed, 1 skipped**: the 2 red on purpose (`*_rule3_red.py`) and item 145 |
-| **Tests, the gate form**, seeds 7, 1234, 99 | **1 failed, 1584 passed, 1 skipped** at each seed. The failure is item 145, `test_a_handler_that_is_not_a_name_stops_and_names_the_value_and_the_stream`, which passes on Python 3.14. The skip is `tests/unit/test_p14b_note_figures.py:971`: `10K_filings/CMG/` is not tracked yet. Before `2e9447a` two more skipped, `test_p14d_finance_leases.py:589` and `test_p14e_nri_dedupe.py:656`, because `extractions/WMT.json` held absolute Windows paths (item 146); both run and pass now |
+| Tests, full suite, seed 7 | **3 failed, 1585 passed, 0 skipped**: the 2 red on purpose (`*_rule3_red.py`) and item 145 |
+| **Tests, the gate form**, seeds 7, 1234, 99 | **1 failed, 1585 passed, 0 skipped** at each seed. The failure is item 145, `test_a_handler_that_is_not_a_name_stops_and_names_the_value_and_the_stream`, which passes on Python 3.14. At `2e9447a` the Chipotle test (`tests/unit/test_p14b_note_figures.py:971`) skipped, because `10K_filings/CMG/` was not tracked; it runs and passes since `29de775`. Before `2e9447a` two more skipped, `test_p14d_finance_leases.py:589` and `test_p14e_nri_dedupe.py:656`, because `extractions/WMT.json` held absolute Windows paths (item 146); both run and pass now |
 | Lint | **4 errors**, every one `BLE001`, the same four sites as below |
 | Types | **2 errors in 2 files**, 21 files checked: `api/routes_upload.py:28`, `analysis/projector.py:395` |
 | Routes | **200** |

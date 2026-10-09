@@ -44,10 +44,9 @@ repository runs (3.11 on macOS, 3.14 on Windows), and the test passes unchanged.
 
 ## What is already true — verify, do not redo
 
-- The test above is the only failure in the gate form on macOS at the commit this
-  assignment was written on. Seeds 7, 1234 and 99 each give **1 failed, 1584 passed,
-  1 skipped** before the filing commit. The skip is the Chipotle test, which runs once
-  `10K_filings/CMG/` is tracked.
+- The test above is the only failure in the gate form on macOS. At `29de775`, seeds 7,
+  1234 and 99 each give **1 failed, 1585 passed, 0 skipped**. Reproduce:
+  `.venv/bin/python -m pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=7`.
 - `pytest-randomly` 5.0.0 is installed in the macOS venv.
 
 If a measurement disagrees, stop and report the disagreement. Do not edit to make it agree.
