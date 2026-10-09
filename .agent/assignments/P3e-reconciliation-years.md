@@ -174,3 +174,44 @@ None.
 
 None.
 
+
+## Overall lead review
+
+**Round 1, 2026-10-08. Verdict: `accepted`.** Branch `unit/team-b` at `2887387`, merged into
+`main` as `f4059c7`. Two notes, neither of which cites a rule, so neither forces `rework`
+(`docs/9-reference/severity.md`, the four levels).
+
+### What I re-ran, with the empty-key prefix
+
+| # | Criterion | Where | I measured | Agree? |
+|---|---|---|---|---|
+| 1 | no `years = raw.years` in `cli.py` | worktree | `grep` exit 1 | yes |
+| 2 | adjusted-only year named by both entry points | worktree | `17 passed` | yes |
+| 3 | the tests fail on `main`'s `cli.py` | scratch worktree | `years = raw.years` restored: `6 failed, 11 passed`; control `17 passed` | yes |
+| 4 | the `P3d` parity test still passes | worktree | `3 passed` | yes |
+| 5 | gate form, seeds 7, 1234, 99 | worktree, then `main` after the merge | `1 failed, 1602 passed` at each seed, on both; the one failure is item 145, team A's unit | yes |
+| 6 | lint | `main` | `4 errors`, all `BLE001`; `cli.py`'s moved from `:1411` to `:1416`, five comment lines down | yes |
+| 7 | types | `main` | `2 errors in 2 files` | yes |
+| 8 | census | `main` | `64` | yes |
+| 9 | scope | worktree | `cli.py`, the new test file, 2 assignment files, 3 journal entries | yes |
+| — | route, write guard | `main` | `200`, `60/60` | — |
+
+### N1 (note) — one test cannot fail
+
+`test_mutation_probe_simulating_raw_years_alone_omits_adjusted_only_year` calls no
+production code. It builds two `FinancialStatements` and asserts facts about Python sets.
+Measured: it **passes under the mutant** that the other six tests kill. Its docstring says it
+"proves criterion 3", and it does not: the six tests that call `cli.print_normalization` do.
+`docs/5-testing/strategy.md:16` names this shape: a test that passes forever and verifies
+nothing. It breaks no rule and moves no number, so it is a `note`. Backlog item 148 holds it.
+
+### N2 (note) — the handoff names no commit
+
+`AGENTS.md`, "The loop for one unit", step 3, asks the handoff for its commits. This one
+gives the verdicts and the gates and no hash. The commit is `2887387`; I record it here.
+
+### What the merge proved
+
+`main` had moved by two record commits since the branch point (`93dc389`); none touched a
+file in this unit's scope, so the merge was clean and the gate after it matches the gate in
+the worktree.

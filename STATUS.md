@@ -4,7 +4,9 @@
 A number with no commit beside it is not a measurement. Re-measure on every update;
 never carry a figure forward.
 
-**Re-measured at `29de775`, 2026-10-08, by the overall lead, on the macOS machine**
+**Re-measured at `f4059c7`, 2026-10-08, by the overall lead, on the macOS machine**, after the
+worktree pilot's first merge: `P3e-reconciliation-years`, built by Antigravity build lead B
+and accepted by the overall lead on a re-run
 (`.venv/bin/python`, Python 3.11.6, `pytest-randomly` 5.0.0), with
 `ANTHROPIC_API_KEY= GEMINI_API_KEY=`. **The build moved back to macOS that day**, on the
 user's instruction, and runs as two Antigravity build leads in two git worktrees with Claude
@@ -14,10 +16,15 @@ depends on the Python version (backlog item 145, assigned to `P1h-mac-gate`). **
 skips any more**: `10K_filings/` holds one folder per ticker (ABBV, CMG, LHX, OKTA, WMT, 16
 PDFs, all tracked since `29de775`), and `.gitattributes` marks every PDF binary.
 
+**The pilot so far.** `P3e-reconciliation-years` (item 128) is accepted and merged, round 1.
+`P1h-mac-gate` (item 145) went back as `rework` on one test finding: its three new tests
+assert a property of Python 3.11 that is false on 3.14, so they would go red on the Windows
+machine against correct code. Its code change is accepted as it stands.
+
 **The previous measurement, kept for the record: at `053463c` (`P1f-worktree-guards` and its tests, one-team mode), 2026-10-08, by the overall lead**, on branch `main`, **on the Windows machine**
 (`.venv/Scripts/python.exe`, Python 3.14.4), with `ANTHROPIC_API_KEY= GEMINI_API_KEY=`.
 The build moved back to the Windows machine at `0a8ea54`; the figures from `cde33cb` to
-`ac736e7` were measured on the macOS machine. **Forty-seven work units accepted by `69436d9`, twenty-two more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes`, `P14b-note-figures`, `P14d-finance-leases`, `P3a-one-pipeline`, `P1b-windows-gate`, `P3b-pipeline-stops`, `P1c-test-network-copies`, `P1d-skipped-filings`, `P3c-one-number`, `P14e-nri-dedupe`, `P14f-prompt-encoding`, `P3d-invisible-year`, `P14g-unit-statement-pages`, `P1e-test-order`, `P1f-worktree-guards` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
+`ac736e7` were measured on the macOS machine. **Forty-seven work units accepted by `69436d9`, twenty-three more since (`P14b-pass2-units`, `P14b-reasoning`, `P15a-two-routes`, `P14b-note-figures`, `P14d-finance-leases`, `P3a-one-pipeline`, `P1b-windows-gate`, `P3b-pipeline-stops`, `P1c-test-network-copies`, `P1d-skipped-filings`, `P3c-one-number`, `P14e-nri-dedupe`, `P14f-prompt-encoding`, `P3d-invisible-year`, `P14g-unit-statement-pages`, `P1e-test-order`, `P1f-worktree-guards`, `P3e-reconciliation-years` and their tests), and not one on its own report.** Every programmer run went to a reviewer that
 re-ran the measurements rather than reading them; **nine** times a reviewer, a
 programmer or a tester overturned a claim — **three times against a programmer**, **four times
 against the orchestrator**, once against a tester, and once by a tester against its own
@@ -74,13 +81,13 @@ done-criteria as well, showing it went red against correct code.
 
 ## 1. The gates, today
 
-**At `29de775` on macOS** (`.venv/bin/python`), the empty-key prefix on every command:
+**At `f4059c7` on macOS** (`.venv/bin/python`), the empty-key prefix on every command:
 
-| Gate | Result at `29de775` (macOS) |
+| Gate | Result at `f4059c7` (macOS) |
 |---|---|
-| Tests, full suite, seed 7 | **3 failed, 1585 passed, 0 skipped**: the 2 red on purpose (`*_rule3_red.py`) and item 145 |
-| **Tests, the gate form**, seeds 7, 1234, 99 | **1 failed, 1585 passed, 0 skipped** at each seed. The failure is item 145, `test_a_handler_that_is_not_a_name_stops_and_names_the_value_and_the_stream`, which passes on Python 3.14. At `2e9447a` the Chipotle test (`tests/unit/test_p14b_note_figures.py:971`) skipped, because `10K_filings/CMG/` was not tracked; it runs and passes since `29de775`. Before `2e9447a` two more skipped, `test_p14d_finance_leases.py:589` and `test_p14e_nri_dedupe.py:656`, because `extractions/WMT.json` held absolute Windows paths (item 146); both run and pass now |
-| Lint | **4 errors**, every one `BLE001`, the same four sites as below |
+| Tests, full suite, seed 7 | **3 failed, 1602 passed, 0 skipped**: the 2 red on purpose (`*_rule3_red.py`) and item 145. `P3e-reconciliation-years` added 17 |
+| **Tests, the gate form**, seeds 7, 1234, 99 | **1 failed, 1602 passed, 0 skipped** at each seed, measured on `main` after the merge of `unit/team-b`. The failure is item 145, `test_a_handler_that_is_not_a_name_stops_and_names_the_value_and_the_stream`, which passes on Python 3.14. At `2e9447a` the Chipotle test (`tests/unit/test_p14b_note_figures.py:971`) skipped, because `10K_filings/CMG/` was not tracked; it runs and passes since `29de775`. Before `2e9447a` two more skipped, `test_p14d_finance_leases.py:589` and `test_p14e_nri_dedupe.py:656`, because `extractions/WMT.json` held absolute Windows paths (item 146); both run and pass now |
+| Lint | **4 errors**, every one `BLE001`: `api/routes_valuation.py:463` and `:745`, `cli.py:1416`, `tests/test_e2e_all_googl.py:106`. `cli.py`'s moved from `:1411` under `P3e`, five comment lines down; the same site |
 | Types | **2 errors in 2 files**, 21 files checked: `api/routes_upload.py:28`, `analysis/projector.py:395` |
 | Routes | **200** |
 | Rule 3 census | **64** |
@@ -605,7 +612,7 @@ the headline. Re-ranked at `622262b`.
 | 146 | `session_extraction plan` writes absolute PDF paths into a session file | **new, 2026-10-08.** `extractions/WMT.json` was hand-corrected to repo-relative paths at `2e9447a`; the next `plan` run writes absolute paths again |
 | 138, 139 | Nothing cross-checks the `units` claim; `WMT.json` `filings[0]` cites the Comprehensive Income unit header | **new at `P14g`.** 138 is **silent and multiplies every money figure**; no filing here reaches it. Left in queue order on the user's decision `a`, 2026-10-07 |
 | 141, 144 | The seal keeps one baseline; the seal's events do not fire for a background agent | **2026-10-08.** The seal has never worked. It does not bind an Antigravity agent at all, so it does not block the worktree pilot |
-| 128 | The CLI reconciles `raw.years`, the page the union of both sides | **new at `P3d`, latent.** `P3e-reconciliation-years` (pilot team B) |
+| 148 | A test in `test_p3e_reconciliation_years.py` calls no production code and cannot fail | **new, note N1 of the `P3e` review.** Passes under the mutant the other six tests kill. A tester-only fix |
 | 129 | `Gross Margin` and `EBIT Margin` print a fabricated `0.0%` for a zero-revenue year | **new at `P3d`, silent.** Both entry points; the property also feeds `analysis/projector.py` |
 | 130-137 | eight findings from `P3d-invisible-year` in `cli.py`, `templates/_statements.html` and `ingestion/claude_extractor.py` | **new at `P3d`.** 133, the two surviving `if target_years:` sites, is `P14h-target-years`, team A's next unit |
 | 123, 125 | A `bool` the docstring says a caller can use, discarded at the call site; the inherited `surrogateescape` replaced rather than composed, with no text saying so | **new, the `P14f` review's F1 and F3.** Neither is a rule break. **F1 can be closed with no code change**: three of the tester's tests now read that `bool` |
@@ -626,6 +633,7 @@ the headline. Re-ranked at `622262b`.
 
 | # | Item | Closed at |
 |---|---|---|
+| 128 | The CLI reconciled `raw.years` where the page reconciled the union of both sides | `2887387`, merged as `f4059c7` (`P3e-reconciliation-years`, the worktree pilot's first merge) |
 | 117, 140 | A real-filing test ran on no clean checkout, because `extractions/` and `10K_filings/` were git-ignored | `32b3f06`. **On macOS it held only from `2e9447a`**: `WMT.json` named Windows paths until then (item 146) |
 | 124, 127 | No test-order guard; `main()` left a changed stream handler behind | `f08cb16` (`P1e-test-order`, `pytest-randomly`) |
 | 3 | Unknown NRI line item guessed a field | `38b903c` |
