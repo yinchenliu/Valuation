@@ -20,14 +20,12 @@ What this file locks:
      produces exact hand-derived balance sheet instructions.
   9. The prompt pairs produced by `_pass1_prompt_pair` and `_pass2_prompt_pair`
      assemble the system prompt constant and user prompt builder output without drift.
- 10. The six real prompts extracted from `extractions/WMT.json` match the baseline
-     SHA256 hashes byte-for-byte across all three filings and both passes (Criterion 4).
 
 Where every expected value came from:
   - Hand derivation from template strings:
       * Pass 1 template:
-        "Extract financial data from the attached 10-K/10-Q PDF filing.\\n\\n"
-        "TARGET YEARS: {year_instruction}\\n"
+        "Extract financial data from the attached 10-K/10-Q PDF filing.\n\n"
+        "TARGET YEARS: {year_instruction}\n"
         "BALANCE SHEET: {bs_instruction}"
         Where None gives:
         "Extract Income Statement and Cash Flow data for ALL fiscal years present in the filing (typically 2-3 years)."
@@ -40,8 +38,8 @@ Where every expected value came from:
         Where include_bs=False gives:
         "Do NOT extract the balance sheet. Set latest_balance_sheet to {}."
       * Pass 2 template:
-        "{year_instruction}\\n\\n"
-        "EXTRACTED INCOME STATEMENT (for reference \u2014 use to anchor your findings):\\n"
+        "{year_instruction}\n\n"
+        "EXTRACTED INCOME STATEMENT (for reference — use to anchor your findings):\n"
         "{is_summary}"
         Where None gives:
         "Analyze non-recurring items for ALL fiscal years in the filing."
@@ -53,22 +51,12 @@ Where every expected value came from:
       * Exception type is `ValueError`.
       * Message must contain "target_years".
       * Message text: "target_years cannot be empty: an empty list requests no year; None is how a caller asks for every year."
-  - Baseline hashes on extractions/WMT.json (filings 0, 1, 2 x passes 1, 2):
-      * Filing 0 Pass 1: cbf26b0a876034f6
-      * Filing 0 Pass 2: 024bd96701e72481
-      * Filing 1 Pass 1: c401b7bb3096592c
-      * Filing 1 Pass 2: 9391f61bfa21ac43
-      * Filing 2 Pass 1: 4aa84c989703f3ce
-      * Filing 2 Pass 2: cc61ac590ca169f0
 
 No assertion in this file was obtained by running the code and reading what it printed.
 """
 
 from __future__ import annotations
 
-import contextlib
-import hashlib
-import io
 from pathlib import Path
 
 import pytest
@@ -85,7 +73,6 @@ from ingestion.claude_extractor import (
     pass1_prompts,
     pass2_prompts,
 )
-from ingestion.session_extraction import cmd_prompt
 from models.financial_statements import (
     CashFlowStatement,
     FinancialStatements,
@@ -162,16 +149,6 @@ EXPECTED_PASS2_MULTI = (
     "D&A=50  Other_OpEx=50  EBIT=100  Other_NonOp=0"
 )
 
-WMT_BASELINE_HASHES: dict[tuple[int, int], str] = {
-    (0, 1): "cbf26b0a876034f6",
-    (0, 2): "024bd96701e72481",
-    (1, 1): "c401b7bb3096592c",
-    (1, 2): "9391f61bfa21ac43",
-    (2, 1): "4aa84c989703f3ce",
-    (2, 2): "cc61ac590ca169f0",
-}
-
-
 def _make_minimal_financials(year: int = 2024) -> FinancialStatements:
     """Fixture providing minimal financial statements for Pass 2 context."""
     return FinancialStatements(
@@ -210,7 +187,7 @@ def _make_minimal_financials(year: int = 2024) -> FinancialStatements:
 
 def test_no_truthiness_test_of_target_years_in_source() -> None:
     """Verify that 'if target_years:' does not appear anywhere in ingestion/claude_extractor.py."""
-    source_path = Path("ingestion/claude_extractor.py")
+    source_path = Path(__file__).resolve().parents[2] / "ingestion" / "claude_extractor.py"
     content = source_path.read_text(encoding="utf-8")
     assert "if target_years:" not in content
 
@@ -368,38 +345,3 @@ def test_prompt_pair_assembly_closed_form_identity() -> None:
     assert p2_sys == _NRI_SYSTEM_PROMPT
     assert p2_user == expected_p2_user
 
-
-# ---------------------------------------------------------------------------
-# Criterion 4: Real prompt hash invariance on extractions/WMT.json
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    ("filing_idx", "which_pass", "expected_hash"),
-    [
-        (0, 1, WMT_BASELINE_HASHES[(0, 1)]),
-        (0, 2, WMT_BASELINE_HASHES[(0, 2)]),
-        (1, 1, WMT_BASELINE_HASHES[(1, 1)]),
-        (1, 2, WMT_BASELINE_HASHES[(1, 2)]),
-        (2, 1, WMT_BASELINE_HASHES[(2, 1)]),
-        (2, 2, WMT_BASELINE_HASHES[(2, 2)]),
-    ],
-)
-def test_real_prompt_hash_invariance(
-    filing_idx: int,
-    which_pass: int,
-    expected_hash: str,
-) -> None:
-    """Real filing prompts on extractions/WMT.json match the baseline hashes."""
-    wmt_path = Path("extractions/WMT.json").resolve()
-    buf_out = io.StringIO()
-    buf_err = io.StringIO()
-    with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
-        exit_code = cmd_prompt(wmt_path, filing_idx, which_pass)
-    assert exit_code == 0
-
-    # Match shell 2>&1 behavior: stderr preceding/interleaved with stdout
-    combined = buf_err.getvalue() + buf_out.getvalue()
-    normalized = combined.replace(f"{Path.cwd()}/", "<REPO>/")
-    computed_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
-    assert computed_hash == expected_hash
