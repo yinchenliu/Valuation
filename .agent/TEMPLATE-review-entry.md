@@ -59,6 +59,24 @@ the unit reads, ask: if it were missing, what happens?
 **Rule or document:** which one it violates.
 **What would fix it:** one sentence.
 
+## Test review — only in test-review mode
+
+Leave the code-review sections above empty, and fill this one. File name:
+`<YYYY-MM-DDTHHMM>-code_reviewer-<slug>-tests.md`. The tester's entry: `<path>`.
+
+| # | Question | Result | Evidence |
+|---|---|---|---|
+| T1 | every test calls the code it is about | yes / no: `<test>` | the production function each test calls, and the mutation I ran |
+| T2 | every test holds on Python 3.11 and 3.14 | yes / no: `<test>` | no assertion on interpreter, library or platform behaviour; no `skipif` on the version |
+| T3 | no fallback is asserted | yes / no: `<file:line>` | the search output, and the reason each hit is allowed |
+| T4 | every expected-value source label is true | yes / no: `<row>` | the rows I checked |
+| T5 | coverage is measured over the files in scope | yes / no | the command, re-run, and its output |
+
+**The mutation I ran**, in a scratch worktree outside the repository:
+
+| Mutation | `file:line` | Result with it | Result without it | Tests that went red |
+|---|---|---|---|---|
+
 ## Pre-existing, already recorded — not findings against this unit
 
 | Backlog item | `file:line` | Touched by this unit? |

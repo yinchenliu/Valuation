@@ -109,6 +109,7 @@ you only for a unit the user tells you to build with your own subagents.
 
 ```
 programmer → code-reviewer → (revision → code-reviewer)* → tester
+           → code-reviewer, test review → (tester revision → test review)*
 ```
 
 | Verdict | You do |

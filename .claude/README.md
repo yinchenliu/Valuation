@@ -19,7 +19,7 @@ of the CLO_AUP build's setup, adapted to this repository.
 │   └── ste100.md          byte-identical copy of the CLO_AUP original
 ├── skills/
 │   └── main-agent/        the orchestrator's role
-├── check_guard.py         48 cases the write guard must get right
+├── check_guard.py         60 cases the write guard must get right
 └── README.md              this file
 ```
 

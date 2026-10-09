@@ -34,8 +34,8 @@ These are not style. Each one produces a wrong number on a clean run.
 1. **A silent default where a value is missing.** `x if y else 0.0`,
    `d.get(key, 0)`, `x or 0.0`, a dataclass money field defaulting to `0.0`, a
    presence test with an empty branch. Rule 3. **This is the defect this repository
-   has most of** — 14 sites in `models/`, `analysis/` and `api/`, about 30 more in
-   `ingestion/claude_extractor.py`. Do not add a fifteenth.
+   has most of** — **64 sites** at `fde3e98`, by the census in `docs/2-rules/rules.md`;
+   `STATUS.md` section 1 holds the current count. Do not add one.
 2. **A number that came from the model.** The model returns figures printed in the
    filing. A margin, a growth rate, a discount rate or an assumption from a model is
    rule 1, and it is rejected whatever the number is.
@@ -64,6 +64,27 @@ Read `docs/2-rules/rules.md` for what each one costs and what is allowed instead
   input to it came from the filing.
 - **Write only your Files in scope.** If the work needs a file outside them, stop and
   say so in your entry. Do not widen your own scope.
+
+## Your scope and your tools
+
+These hold whatever tool runs you.
+
+- **You write the files in your assignment's Files in scope, and your one journal entry.
+  Nothing else.** If the work needs another file, stop and say so in your entry.
+- **Scratch work goes outside the repository**: `/tmp/` on macOS, `c:/tmp/` on Windows.
+  A scratch file inside the repository dirties the tree.
+- **Never a bare `python`.** Use `.venv/bin/python` on macOS, `.venv/Scripts/python.exe`
+  on Windows, with `ANTHROPIC_API_KEY= GEMINI_API_KEY=` in front of every command. The
+  gates are:
+
+  ```
+  .venv/bin/python -m pytest -q -rs -p no:cacheprovider --ignore-glob="*_rule3_red.py" --randomly-seed=<n>
+  .venv/bin/python -m ruff check .
+  .venv/bin/python -m mypy models analysis ingestion api config.py app.py pipeline.py --ignore-missing-imports
+  ```
+
+  Use these commands exactly. `docs/8-build/environment.md` owns them, and `STATUS.md`
+  section 1 holds the current figures.
 
 ## What you may never touch
 
@@ -94,7 +115,9 @@ Write exactly one journal entry, at
 partially.** An unlogged run is work that did not happen.
 
 Your entry states, for every done-criterion: whether it passes, and the command whose
-output proves it.
+output proves it. **A quick check counts only with its code or command in the entry.**
+"Verified by execution probe" with nothing beside it is a claim, not a measurement: a
+reviewer cannot re-run it. That happened in `P3e-reconciliation-years`, criteria 2 and 3.
 
 Return the path to your entry. Your report is a claim. A code reviewer decides
 whether the unit is accepted.
@@ -110,40 +133,23 @@ an escalation, not something you decide.
 
 ## Claude Code harness notes
 
-These five facts are about the harness, not about the work. Nothing above changes.
+These facts are about the Claude Code harness only. Nothing above changes, and a tool
+that is not Claude Code skips this section.
 
-**1. Your journal filename uses `programmer`.**
-Write to `.agent/journal/<YYYY-MM-DDTHHMM>-programmer-<slug>.md`. The frontmatter
-`agent:` field takes the same string.
+**1. Your journal filename uses `programmer`.** The frontmatter `agent:` field takes the
+same string.
 
-**2. Your write scope is enforced by a hook, not by trust.**
-`.claude/hooks/guard_paths.py` runs before every Write, Edit and Bash call and denies
-a write outside your scope: everything except `tests/`. A denial is the permission
-answering, not a defect to work around. If the work needs a file outside your scope,
-stop and say so in your entry.
+**2. Part of your write scope is enforced by a hook.** `.claude/hooks/guard_paths.py` runs
+before every Write, Edit and Bash call. For a programmer it denies `tests/`, and for every
+role it denies `STATUS.md`, `.agent/journal/INDEX.md`, `AGENTS.md`, `.claude/` and the
+seal's baseline file. The rest of "Your scope and your tools" is yours to keep: the hook
+does not stop a write to `docs/` or to a file outside Files in scope. A denial is the
+permission answering, not a defect to work around. Paths outside the repository are not
+guarded.
 
-Paths outside the repository are not guarded. Use `/tmp/` for scratch runs, or
-`c:/tmp/` on Windows.
+**3. `STATUS.md` and `.agent/journal/INDEX.md` are sealed.** The write guard denies them.
+A second hook was meant to check them when you finish; backlog items 143 and 144 record
+that it does not fire for a background agent.
 
-**3. Use the pinned interpreter. Never a bare `python`.**
-The venv puts it under `bin` on macOS and Linux, and under `Scripts` on Windows. The
-commands below use the macOS form. On Windows, write `.venv/Scripts/python.exe` instead.
-```
-.venv/bin/python -m pytest -q
-.venv/bin/python -m ruff check .
-.venv/bin/python -m mypy models analysis ingestion api config.py app.py --ignore-missing-imports
-```
-
-**Use that command exactly.** A shorter form was printed here until 2026-09-22 and it
-reports **18 errors in 6 files** where the real gate reports **14 in 4** — the four extra
-are only missing third-party stubs, which `--ignore-missing-imports` is there to
-suppress. Two agents measuring "the types gate" with different commands both got a
-defensible number and disagreed. `STATUS.md` section 1 carries the live figure.
-`docs/8-build/environment.md` owns the gates. Read it before you assume one passes.
-
-**4. `STATUS.md` and `.agent/journal/INDEX.md` are sealed twice.**
-The write guard denies them, and a second hook checks when you finish and refuses to
-let you stop if either moved. They are the orchestrator's record of your run.
-
-**5. Return the path to your entry as the last line of your report.**
-The orchestrator reads the entry, not the report.
+**4. Return the path to your entry as the last line of your report.** The orchestrator
+reads the entry, not the report.

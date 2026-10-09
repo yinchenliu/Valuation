@@ -91,7 +91,8 @@ Legend:  ──▶ normal   ┄┄▶ failure path   * the step people forget
    checks the two Files in scope lists against each other. It sets both units `ready`,
    commits, and creates the worktrees from that commit.
 2. **In each worktree, the build lead runs the full loop**: programmer, then code reviewer,
-   then tester. One agent at a time per team, so at most two agents are ever in flight.
+   then tester, then the code reviewer again on the tests (test review, from 2026-10-08).
+   One agent at a time per team, so at most two agents are ever in flight.
 3. **The build lead commits on its branch, writes `## Handoff`, and tells the user.** The
    user tells the overall lead.
 4. **The overall lead checks the branch**: `git diff --name-only main...unit/team-a` names
@@ -112,6 +113,19 @@ is testing a combination that has never run anywhere.
 ---
 
 ## 4. What protects you, and what does not
+
+### Where an Antigravity agent finds its role card
+
+**Antigravity does not look for role cards itself.** No `.agent/rules/`, `.agent/workflows/`
+or `.gemini/` folder exists in this repository. The build lead reads `AGENTS.md`, "The
+build lead's procedure", and that procedure gives each subagent a pointer:
+`Read .claude/agents/<role>.md and follow it`. The path is relative, so it resolves in the
+build lead's workspace, which is **its own worktree**.
+
+**So a card changed on `main` reaches a team only when its branch contains that commit.**
+The overall lead fast-forwards a branch to `main` before it sets the team's next unit
+`ready` (section 3). A unit already in flight keeps the cards its branch had when it
+started, unless the overall lead's message names the main checkout's card by absolute path.
 
 ### Nothing in `.claude/` protects an Antigravity agent
 

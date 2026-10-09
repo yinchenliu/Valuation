@@ -18,17 +18,51 @@ formula; it photographs the current behaviour, **including the bug**. It goes gr
 the day someone breaks the thing it was written to protect, because it was never
 independent of it.
 
-**So the expected side of every assertion must exist before the code runs.** Three
+**So the expected side of every assertion must exist before the code runs.** Four
 sources are acceptable, in this order:
 
 | Source | How | Use it for |
 |---|---|---|
 | **Hand arithmetic** | inputs whose answer you can compute on paper, with the arithmetic written into the test as a comment | every formula in `analysis/` |
-| **Closed-form identity** | a property that holds whatever the inputs | discounting, weighting, aggregation |
+| **Closed-form identity** | a mathematical property that holds whatever the inputs | discounting, weighting, aggregation, two entry points that must agree |
 | **A figure read off a filing page** | open the PDF, read the printed number, cite the page | extraction tests only |
+| **A stated requirement** | a phrase, a field name or a behaviour that the assignment or a document states, cited by `file:line` | messages, labels, which field a stop names |
 
 **Never** the code's own output. **Never** a cached `.pkl`. **Never** a number another
-test already asserts.
+test already asserts. **Never the code's own literal**: an expected message copied from
+the f-string that produces it tests nothing, because it changes when the code changes.
+If the requirement says only "the stop names the field", assert the field name, not the
+whole formatted line.
+
+**Label each source truthfully.** A phrase is not a closed-form identity. A label that
+names the wrong source hides where the expectation really came from, and a reviewer
+cannot check it. Measured in the worktree pilot, 2026-10-08: one tester entry labelled
+assignment phrases "closed-form identity", and another cited the code's own f-string as
+"hand derivation".
+
+### Every test calls the code it is about
+
+A test that calls no production code cannot fail. It passes whatever the code does, so it
+adds a green line and no protection. **Measured, 2026-10-08**:
+`test_mutation_probe_simulating_raw_years_alone_omits_adjusted_only_year` asserts facts
+about Python sets, calls neither entry point, and passes under the very mutation the
+other six tests in its file catch (backlog item 148).
+
+**A mutation result is measured and reported, never encoded as a test.** Section 5b
+holds the procedure.
+
+### Every test holds on both machines
+
+This repository runs on macOS (Python 3.11.6) and Windows (Python 3.14.4)
+([../8-build/environment.md](../8-build/environment.md)). **A test asserts what the code
+does, never how the interpreter, a library or the platform behaves.** Measured,
+2026-10-08: three tests asserted that `repr()` of a `TextIOWrapper` subclass hides the
+subclass. That holds on 3.11 and 3.12 and is false on 3.13 and later, so the tests were
+green on macOS and red on Windows against correct code (`P1h-mac-gate`, round 1).
+
+**Do not hide a difference with `skipif` on the Python version.** Write the assertion so
+it holds on both: in that case, assert the text the code adds, not the text the
+interpreter leaves out.
 
 ### Choose inputs that make the arithmetic obvious
 
@@ -84,6 +118,22 @@ red.
 
 **If you are about to assert a default, you have found a finding.** Report it; do not
 encode it.
+
+**This is not only about money.** Any assertion of what a function returns, rather than
+raises, when an input is `None`, empty or missing locks that fallback in: `== 0.0`,
+`== []`, `== {}`, `== ""`, `is None`. Measured, 2026-10-08:
+`test_build_ebit_reconciliation_handles_none_inputs` asserts that `None` statements give
+`[]`, a branch neither caller reaches (backlog item 149). Before you finish, search your
+own test file and justify every hit in your entry. On `tests/unit/test_p3e_reconciliation_years.py`
+this search finds the three assertions of item 149 at lines 498 to 500:
+
+```bash
+grep -nE '^\s*assert .*(== *(0(\.0)?\b|\[\]|\{\}|"")|is None\b)' tests/unit/<your file>
+```
+
+A hit is a fallback only when the input is absent. `assert record.adjusted_ebit is None`
+for a year with no adjusted statement is the stated requirement, not a fallback, if the
+assignment or the code's rule 3 contract says so. Say which, with the citation.
 
 ## 3. No network, no keys
 
@@ -162,18 +212,48 @@ the legacy `file_path` branch.
 
 | Count | Question | Unit |
 |---|---|---|
-| **Accuracy** | of the values asserted, how many match? | assertions |
-| **Coverage** | of the functions and branches added, how many does any test touch? | functions, then branches |
+| **Sources** | of the assertions written, how many come from each of the four sources in section 1? | assertions, per source |
+| **Coverage** | of the functions and branches the unit added or changed, how many does any test touch? | statements, then branches |
+
+**Do not report "accuracy: N of N".** A suite that passes always reports 100%, so the
+figure shows nothing. The count per source shows where the expectations came from, and a
+reviewer can check that.
 
 A function no test calls cannot fail, so a coverage gap reads as a clean report — and
 the cleaner it reads, the worse it is. **State the unit of every count.** "12 passed" is
 not a measurement until you say 12 of what, out of how many.
 
-Measure it, do not estimate it:
+Measure coverage over **the files in scope**, not a fixed list of packages, and paste the
+line of output for each file into the entry:
 
 ```bash
-.venv/Scripts/python.exe -m pytest -q --cov=analysis --cov=models --cov-report=term-missing
+.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/<your file> \
+    --cov=<module> --cov-branch --cov-report=term-missing
+# for example --cov=cli, or --cov=ingestion.session_extraction
 ```
+
+**A coverage figure with no command beside it is not a measurement.** Measured,
+2026-10-08: a tester entry claimed "27 of 27 statements" with no command, and the command
+this file printed until then could not measure `cli.py` at all.
+
+## 5b. A mutation: how to run one
+
+Every assignment asks for one. It shows that a test fails when the code is wrong, which a
+passing run cannot show.
+
+1. Make a scratch worktree **outside the repository**, at the commit under test:
+   `git worktree add --detach /tmp/<unit>-mutant HEAD`. Link the venv:
+   `ln -s <repository>/.venv /tmp/<unit>-mutant/.venv`.
+2. In the scratch worktree only, change **one** line: the mutation the assignment names.
+3. Run the named tests there. Record the result: `N failed, M passed`.
+4. Restore the line (`git checkout -- <file>`) and run the same tests. Record the result.
+5. Remove the scratch worktree: `git worktree remove --force /tmp/<unit>-mutant`, then
+   `git worktree prune`.
+6. In the entry, give the mutation, both results, the commands, and the names of the tests
+   that went red.
+
+**Never edit the real working tree to run a mutation**, and never encode the mutation as
+a test (section 1).
 
 ## 6. Where to start · re-measured at `6cf34d3`
 

@@ -37,7 +37,9 @@ assignment file, or from an entry file (`AGENTS.md`, `CLAUDE.md`, `docs/0-start.
 separated from the code that judges them, so our answers can never be quietly tuned
 until they look right. **A tester that may edit `analysis/` is not a tester.** This is
 enforced by permission, not by good intentions: `.claude/hooks/guard_paths.py` denies
-the write, and `.claude/check_guard.py` holds the 48 cases it must get right.
+the write, and `.claude/check_guard.py` holds the 60 cases it must get right. **That hook
+runs in Claude Code only.** In Antigravity nothing enforces the split, so the build lead
+checks `git status` after every run and the code reviewer reviews the tests (below).
 
 The reviewer answers a different question from the tester. The reviewer asks *is this
 code correct and rule-compliant*. The tester asks *does each number equal what the
@@ -75,10 +77,12 @@ must check `git status` after each run, and reject a run that wrote outside its 
 1. The overall lead writes the assignment and sets the unit `ready` in
    `.agent/QUEUE.md`.
 2. The build lead sets it `building`, and runs programmer, code reviewer, revisions
-   (stop at round 3), then the tester, as this file describes for the orchestrator.
-3. The build lead commits the unit after its tester passes. It writes a `## Handoff`
-   section at the end of the assignment: the commits, the verdicts, the gates, every
-   new finding, and every question. It sets the unit `for acceptance` and stops.
+   (stop at round 3), then the tester, then the code reviewer on the tests, as this
+   file describes for the orchestrator.
+3. The build lead commits the unit after the test review approves. It writes a
+   `## Handoff` section at the end of the assignment: the commits by hash, the verdicts,
+   the gates, every new finding, and every question. **It commits the handoff too, and
+   never amends a commit.** It sets the unit `for acceptance` and stops.
 4. The overall lead reviews the diff and re-runs the done-criteria. It sets the unit
    `accepted`, or `rework` with numbered findings in a `## Overall lead review` section
    of the assignment. A `rework` goes back to step 2 with those findings.
@@ -108,7 +112,8 @@ two build leads working in parallel, and
 [docs/8-build/worktree-teams.md](docs/8-build/worktree-teams.md) changes three steps below.
 Do not write `.agent/QUEUE.md` or `.agent/journal/INDEX.md`: every merge would conflict on
 them, and the overall lead writes them on `main`. Your unit is the one your prompt names.
-At step 8, commit on your branch, write `## Handoff`, tell the user, and set no state.
+At the last step, commit on your branch, write and commit `## Handoff`, tell the user,
+and set no state.
 
 Read [docs/0-start.md](docs/0-start.md), [docs/2-rules/rules.md](docs/2-rules/rules.md),
 this file and [.agent/QUEUE.md](.agent/QUEUE.md). Then:
@@ -130,10 +135,22 @@ this file and [.agent/QUEUE.md](.agent/QUEUE.md). Then:
 7. On `approved`, write `.agent/assignments/<id>-tests.md` from
    `.agent/TEMPLATE-assignment.md`, and dispatch the tester with
    `.claude/agents/tester.md`.
-8. **When the tester passes, always do all of this:** run the gates in
-   [docs/8-build/environment.md](docs/8-build/environment.md) with the empty-key prefix,
-   commit the unit, write `## Handoff` at the end of the assignment, set the unit
-   `for acceptance`, and stop. Tell the user: "<id> is ready for the overall lead."
+8. **When the tester passes, dispatch the code reviewer again, in test-review mode**:
+   "You are the code reviewer, in test-review mode. Read `.claude/agents/code-reviewer.md`
+   and follow its section 'Test-review mode'. Skip its section 'Claude Code harness
+   notes'. The assignment is `.agent/assignments/<id>.md`; the tester's entry is
+   `<path>`. Write your entry from `.agent/TEMPLATE-review-entry.md`." **Why**: in the
+   worktree pilot of 2026-10-08 every defect was in a test file, and no subagent had read
+   a test.
+9. On `changes_requested` from the test review, send the tester back to answer every
+   finding by number, then run the test review again. Stop at round 3, set the unit
+   `blocked`, and say why.
+10. **When the test review approves, always do all of this:** run the gates in
+    [docs/8-build/environment.md](docs/8-build/environment.md) with the empty-key prefix,
+    commit the unit, write `## Handoff` at the end of the assignment with every commit
+    hash, **commit the handoff**, set the unit `for acceptance`, and stop. **Never amend
+    a commit**: a rework round is a new commit, so the record shows both rounds. Tell the
+    user: "<id> is ready for the overall lead."
 
 ---
 
@@ -175,6 +192,7 @@ The loop for **one** unit is always sequential:
 
 ```
 programmer → code-reviewer → (revision → code-reviewer)* → tester
+           → code-reviewer, test review → (tester revision → test review)*
 ```
 
 ### The review loop
@@ -186,7 +204,7 @@ Subagents cannot dispatch each other. **The orchestrator runs this loop.**
 
 | Verdict | What the orchestrator does |
 |---|---|
-| `approved` | accept; log it; dispatch the tester |
+| `approved` | code review: log it; dispatch the tester. Test review: log it; run the gates; commit |
 | `changes_requested` | re-dispatch the **programmer**, to answer every finding by number |
 | `blocked` | fix what blocked the review, or escalate |
 

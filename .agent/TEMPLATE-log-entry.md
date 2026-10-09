@@ -49,15 +49,35 @@ this unit moved, with the input that produced it.>
 
 ## Expected values — testers only
 
-| Assertion | Expected | Where the expected value came from |
+| Assertion | Expected | Source | How |
+|---|---|---|---|
+| | | hand arithmetic / closed-form identity / filing page / stated requirement | the arithmetic, the identity, page `<n>`, or the `file:line` that states it |
+
+**Never "what the code returned", and never the code's own literal.** An assertion whose
+source is not one of the four kinds in `docs/5-testing/strategy.md`, section 1, does not
+count, and the unit does not pass.
+
+**Two counts, with their units:**
+
+| Count | Value | Command |
 |---|---|---|
-| | | hand arithmetic (show it) / closed-form identity / filing page `<n>` |
+| assertions per source | hand arithmetic `<n>`, identity `<n>`, filing page `<n>`, stated requirement `<n>` | — |
+| coverage of the files in scope | `<file>`: statements `<n>` of `<n>`, branches `<n>` of `<n>` | the `--cov=<module> --cov-branch` command, and its output line |
 
-**Never "what the code returned".** An assertion whose source is not one of the three
-named kinds does not count, and the unit does not pass.
+**The five checks** (`.claude/agents/tester.md`):
 
-**Two counts, with their units:** accuracy (of assertions), coverage (of functions,
-then branches).
+| # | Check | Result |
+|---|---|---|
+| 1 | every test calls the code it is about | |
+| 2 | every test holds on Python 3.11 and 3.14 | |
+| 3 | no fallback asserted: the search output, and the reason for each hit | |
+| 4 | every source label is true | |
+| 5 | coverage measured over the files in scope | |
+
+**The mutation**, run in a scratch worktree outside the repository:
+
+| Mutation | `file:line` | Result with it | Result without it | Tests that went red |
+|---|---|---|---|---|
 
 ## What I did not do
 
