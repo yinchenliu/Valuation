@@ -212,3 +212,63 @@ None.
 
 None.
 
+
+## Overall lead review
+
+**Round 1, 2026-10-08. Verdict: `rework`, for the tester only.** The code change in
+`a67a225` is accepted as it stands: the programmer does not run again. This unit was built
+before the test review joined the loop (`919afd7`), so I ran the five test-review
+questions myself, from `.claude/agents/code-reviewer.md` on `main`.
+
+### What I re-ran, with the empty-key prefix
+
+| # | Check | I measured | Agree? |
+|---|---|---|---|
+| 1 | no `if target_years:` | `grep` exit 1 | yes |
+| 2, 3 | an empty list stops both builders | the 7 stop tests pass | yes |
+| 4 | the six real prompts unchanged | the six hashes match, from this worktree | yes |
+| 6 | the tests kill the old code | in a scratch worktree, `main`'s `ingestion/claude_extractor.py`: **8 failed, 15 passed** (the 7 stop tests and the source-text test); restored: 23 passed. The handoff says 7 failed, 10 passed; the difference is the 6 hash tests, which pass either way | yes |
+| 7 | gate form, seeds 7, 1234, 99 | `1 failed, 1625 passed`; the one failure is item 145, closed on `main` since `d13be2d` | yes |
+| 8 | lint, types, census | 4, 2 in 2, 64 | yes |
+| 9 | scope | the two files, two assignment files, three journal entries | yes |
+| T1 | every test calls the code | yes, except `test_no_truthiness_test_of_target_years_in_source`, which reads source text (F2) | — |
+| T2 | every test holds on both machines | **no**: F1 | — |
+| T3 | no fallback asserted | the search finds one line, `assert exit_code == 0`: a command's success, not a fallback | yes |
+| T4 | source labels | the prompt literals are the text on `main`, which criterion 5 states as the requirement | yes |
+| T5 | coverage, measured | `--cov=ingestion.claude_extractor --cov-branch`: `_build_financials_prompt` 11 of 11 statements, 6 of 6 branches; `_build_nri_prompt` 8 of 8, 4 of 4. The entry counted these by hand, which the card of its time allowed | — |
+
+### F1 — `major`. The six hash tests fail on the Windows machine, and they test nothing the literal tests do not
+
+**The fact.** `test_real_prompt_hash_invariance` normalises the output with
+`combined.replace(f"{Path.cwd()}/", "<REPO>/")`. The prompt header prints the session
+file's path, and on Windows that path uses backslashes: the measured Windows header in
+`.agent/assignments/P14f-prompt-encoding.md:17` reads `...\extractions\WMT.json`. So on
+Windows the replacement matches nothing, the machine's path stays in the hashed text, and
+all six tests fail against correct code. Run from another directory, they fail on macOS
+too: from `/tmp`, **7 failed** (the 6 hash tests and F2's test).
+
+**What follows.** The tests break `docs/5-testing/strategy.md`, section 1, "Every test holds
+on both machines". They also pin a hash of the code's own output on `main`, which section 1
+calls a photograph. The six hashes were this unit's **measurement** (criterion 4), not a
+requirement for every later unit. `P14c-layout-facts` will change the Pass 1 prompt on
+purpose, and these tests would then go red with an unreadable diff. The eight literal tests
+already pin the same text readably, so the hash tests add only the fragility.
+
+**The fix.** Delete `test_real_prompt_hash_invariance` and the `WMT_BASELINE_HASHES` table,
+and the imports only they use. Record the six hashes in the entry as the criterion 4
+measurement, with the command.
+
+### F2 — `minor`. The source-text test depends on the working directory
+
+`test_no_truthiness_test_of_target_years_in_source` reads `Path("ingestion/claude_extractor.py")`,
+relative to the working directory, so it fails when pytest starts anywhere else. The seven
+stop tests already kill the mutant. Either delete it, or anchor the path to the repository:
+`Path(__file__).resolve().parents[2] / "ingestion" / "claude_extractor.py"`.
+
+### To finish the rework
+
+1. Dispatch the tester with F1 and F2. It changes `tests/unit/test_p14h_target_years.py`
+   only. The programmer does not run.
+2. Re-run criterion 6 and the gates.
+3. Commit as a new commit, append `## Handoff, round 2` naming the commit, **commit the
+   handoff**, and tell the user "P14h-target-years is ready for the overall lead".
